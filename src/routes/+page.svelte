@@ -21,6 +21,47 @@
 		shares: null as number | null,
 		saves: null as number | null,
 	});
+	const platformOrder = ["youtube", "facebook", "instagram", "tiktok"] as const;
+	const platformLabel: Record<(typeof platformOrder)[number], string> = {
+		youtube: "YouTube",
+		facebook: "Facebook",
+		instagram: "Instagram",
+		tiktok: "TikTok",
+	};
+
+	const groupedIdeas = $derived.by(() => {
+		const grouped = new Map<string, IdeaBacklogRow[]>();
+
+		for (const idea of ideas) {
+			const bucket = grouped.get(idea.platform) ?? [];
+			bucket.push(idea);
+			grouped.set(idea.platform, bucket);
+		}
+
+		const orderedGroups: Array<{
+			key: string;
+			label: string;
+			items: IdeaBacklogRow[];
+		}> = platformOrder
+			.map((platform) => ({
+				key: platform,
+				label: platformLabel[platform],
+				items: grouped.get(platform) ?? [],
+			}))
+			.filter((group) => group.items.length > 0);
+
+		for (const [platform, items] of grouped.entries()) {
+			if (!platformOrder.includes(platform as (typeof platformOrder)[number])) {
+				orderedGroups.push({
+					key: platform,
+					label: platform.toUpperCase(),
+					items,
+				});
+			}
+		}
+
+		return orderedGroups;
+	});
 
 	function clearState() {
 		draft = null;
@@ -295,55 +336,66 @@
 		{#if ideas.length === 0}
 			<p class="empty text-center">ยังไม่มีรายการไอเดียในระบบ</p>
 		{:else}
-			<div class="grid">
-				{#each ideas as idea}
-					<article class="card">
-						{#if idea.thumbnail_url}
-							<img
-								src={idea.thumbnail_url}
-								alt={idea.title ?? "thumbnail"}
-							/>
-						{/if}
-						<div class="card-body">
-							<span class="platform"
-								>{idea.platform.toUpperCase()}</span
-							>
-							<h3>{idea.title ?? "Untitled idea"}</h3>
-
-							<div class="stats">
-								<div class="stat-badge">
-									<span>Views</span>
-									<span>{formatCount(idea.view_count)}</span>
-								</div>
-								<div class="stat-badge">
-									<span>Likes</span>
-									<span>{formatCount(idea.like_count)}</span>
-								</div>
-								<div class="stat-badge">
-									<span>Comments</span>
-									<span
-										>{formatCount(idea.comment_count)}</span
-									>
-								</div>
-								<div class="stat-badge">
-									<span>Shares</span>
-									<span>{formatCount(idea.share_count)}</span>
-								</div>
-							</div>
-
-							{#if idea.notes}
-								<p class="notes">{idea.notes}</p>
-							{/if}
-
-							<div class="link">
-								<a
-									href={idea.url}
-									target="_blank"
-									rel="noreferrer">{idea.url}</a
-								>
-							</div>
+			<div class="platform-groups">
+				{#each groupedIdeas as group}
+					<section class="platform-group">
+						<div class="platform-group-head">
+							<h3>{group.label}</h3>
+							<span class="group-count">{group.items.length}</span>
 						</div>
-					</article>
+
+						<div class="grid">
+							{#each group.items as idea}
+								<article class="card">
+									{#if idea.thumbnail_url}
+										<img
+											src={idea.thumbnail_url}
+											alt={idea.title ?? "thumbnail"}
+										/>
+									{/if}
+									<div class="card-body">
+										<span class="platform"
+											>{idea.platform.toUpperCase()}</span
+										>
+										<h3>{idea.title ?? "Untitled idea"}</h3>
+
+										<div class="stats">
+											<div class="stat-badge">
+												<span>Views</span>
+												<span>{formatCount(idea.view_count)}</span>
+											</div>
+											<div class="stat-badge">
+												<span>Likes</span>
+												<span>{formatCount(idea.like_count)}</span>
+											</div>
+											<div class="stat-badge">
+												<span>Comments</span>
+												<span
+													>{formatCount(idea.comment_count)}</span
+												>
+											</div>
+											<div class="stat-badge">
+												<span>Shares</span>
+												<span>{formatCount(idea.share_count)}</span>
+											</div>
+										</div>
+
+										{#if idea.notes}
+											<p class="notes">{idea.notes}</p>
+										{/if}
+
+										<div class="link">
+											<a
+												href={idea.url}
+												target="_blank"
+												rel="noreferrer">{idea.url}</a
+											>
+										</div>
+									</div>
+								</article>
+							{/each}
+						</div>
+					</section>
 				{/each}
 			</div>
 		{/if}
@@ -608,6 +660,35 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
 		gap: 2.5rem;
+	}
+
+	.platform-groups {
+		display: grid;
+		gap: 2.5rem;
+	}
+
+	.platform-group-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1.25rem;
+		padding-bottom: 0.9rem;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	}
+
+	.platform-group-head h3 {
+		margin: 0;
+		font-size: 1.3rem;
+		color: #0f172a;
+	}
+
+	.group-count {
+		background: rgba(37, 99, 235, 0.1);
+		color: #1d4ed8;
+		padding: 0.2rem 0.7rem;
+		border-radius: 1rem;
+		font-size: 0.8rem;
+		font-weight: 700;
 	}
 
 	.card {
