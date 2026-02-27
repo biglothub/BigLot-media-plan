@@ -1,0 +1,130 @@
+import type { SupportedPlatform } from '$lib/types';
+
+export const numberFormatter = new Intl.NumberFormat('en-US');
+
+export const platformOrder = ['youtube', 'facebook', 'instagram', 'tiktok'] as const;
+
+export const platformLabel: Record<SupportedPlatform, string> = {
+	youtube: 'YouTube',
+	facebook: 'Facebook',
+	instagram: 'Instagram',
+	tiktok: 'TikTok'
+};
+
+export function formatCount(value: number | null | undefined): string {
+	return value === null || value === undefined ? '-' : numberFormatter.format(value);
+}
+
+export function toIsoLocalDate(date: Date): string {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
+}
+
+export function parseIsoDate(isoDate: string): Date {
+	const [year, month, day] = isoDate.split('-').map(Number);
+	return new Date(year, month - 1, day);
+}
+
+export function getMonthStartIso(date: Date): string {
+	return toIsoLocalDate(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+export function addMonthsIso(isoDate: string, months: number): string {
+	const target = parseIsoDate(isoDate);
+	return toIsoLocalDate(new Date(target.getFullYear(), target.getMonth() + months, 1));
+}
+
+export function formatMonthLabel(monthStartIso: string): string {
+	return parseIsoDate(monthStartIso).toLocaleDateString('en-US', {
+		month: 'long',
+		year: 'numeric'
+	});
+}
+
+export function formatCalendarDate(isoDate: string): string {
+	return parseIsoDate(isoDate).toLocaleDateString('en-US', {
+		weekday: 'short',
+		month: 'short',
+		day: 'numeric'
+	});
+}
+
+export function formatCalendarDayNumber(isoDate: string): string {
+	return String(parseIsoDate(isoDate).getDate());
+}
+
+export function formatCalendarDayMeta(isoDate: string): string {
+	return parseIsoDate(isoDate).toLocaleDateString('en-US', {
+		month: 'short',
+		day: 'numeric'
+	});
+}
+
+export function buildMonthCells(monthStartIso: string): Array<{
+	dateIso: string;
+	inCurrentMonth: boolean;
+}> {
+	const monthStart = parseIsoDate(monthStartIso);
+	const firstDayOffset = (monthStart.getDay() + 6) % 7;
+	const gridStart = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1 - firstDayOffset);
+
+	return Array.from({ length: 42 }, (_, index) => {
+		const current = new Date(gridStart);
+		current.setDate(gridStart.getDate() + index);
+		return {
+			dateIso: toIsoLocalDate(current),
+			inCurrentMonth: current.getMonth() === monthStart.getMonth()
+		};
+	});
+}
+
+export function getTikTokEmbedUrl(videoUrl: string): string | null {
+	try {
+		const parsed = new URL(videoUrl);
+		const hostname = parsed.hostname.toLowerCase();
+		if (!hostname.includes('tiktok.com')) return null;
+
+		const videoId =
+			parsed.pathname.match(/\/video\/(\d+)/)?.[1] ?? parsed.pathname.match(/\/v\/(\d+)/)?.[1] ?? null;
+
+		return videoId ? `https://www.tiktok.com/embed/v2/${videoId}` : null;
+	} catch {
+		return null;
+	}
+}
+
+export function getInstagramEmbedUrl(videoUrl: string): string | null {
+	try {
+		const parsed = new URL(videoUrl);
+		const hostname = parsed.hostname.toLowerCase();
+		if (!hostname.includes('instagram.com')) return null;
+
+		const match = parsed.pathname.match(/\/(p|reel|tv)\/([^/?#]+)/);
+		if (!match) return null;
+
+		const type = match[1];
+		const shortcode = match[2];
+		return `https://www.instagram.com/${type}/${shortcode}/embed/captioned`;
+	} catch {
+		return null;
+	}
+}
+
+export function getPlatformFromUrl(url: string): SupportedPlatform | null {
+	try {
+		const host = new URL(url).hostname.toLowerCase();
+		if (host.includes('youtu.be') || host.includes('youtube.com')) return 'youtube';
+		if (host.includes('facebook.com') || host.includes('fb.watch')) return 'facebook';
+		if (host.includes('instagram.com')) return 'instagram';
+		if (host.includes('tiktok.com')) return 'tiktok';
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+export function normalizeMetricValue(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
