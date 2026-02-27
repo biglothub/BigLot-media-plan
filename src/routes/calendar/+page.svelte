@@ -254,9 +254,28 @@
 										draggable="true"
 										ondragstart={(event) => handleDragStart(event, item.backlog_id)}
 									>
-										<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? 'IDEA'}</span>
-										<p>{item.idea_backlog?.title ?? 'Untitled idea'}</p>
-										<button class="tiny-danger" onclick={() => unscheduleIdea(item.backlog_id)}>
+										<a
+											class="calendar-link"
+											href={item.idea_backlog?.url ?? '#'}
+											target="_blank"
+											rel="noopener noreferrer"
+											onclick={(event) => {
+												if (!item.idea_backlog?.url?.trim()) {
+													event.preventDefault();
+													errorMessage = 'ไม่พบลิงก์คลิปของไอเดียนี้';
+												}
+											}}
+										>
+											<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? 'IDEA'}</span>
+											<p>{item.idea_backlog?.title ?? 'Untitled idea'}</p>
+										</a>
+										<button
+											class="tiny-danger"
+											onclick={(event) => {
+												event.stopPropagation();
+												void unscheduleIdea(item.backlog_id);
+											}}
+										>
 											Remove
 										</button>
 									</article>
@@ -518,6 +537,13 @@
 		border: 1px solid rgba(15, 23, 42, 0.1);
 		background: #fff;
 		cursor: grab;
+	}
+
+	.calendar-link {
+		display: grid;
+		gap: 0.35rem;
+		color: inherit;
+		text-decoration: none;
 	}
 
 	.calendar-item p {

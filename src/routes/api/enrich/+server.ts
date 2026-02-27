@@ -140,6 +140,40 @@ function mergeMetrics(primary: EnrichMetrics, fallback: EnrichMetrics): EnrichMe
 	};
 }
 
+async function fetchInstagramOEmbed(
+	targetUrl: string,
+	fetchFn: typeof fetch
+): Promise<{ title: string | null; authorName: string | null; thumbnailUrl: string | null }> {
+	try {
+		const endpoint = `https://www.instagram.com/api/v1/oembed/?url=${encodeURIComponent(targetUrl)}`;
+		const response = await fetchFn(endpoint, {
+			headers: {
+				'User-Agent':
+					'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
+				Accept: 'application/json,text/plain,*/*',
+				'Accept-Language': 'en-US,en;q=0.9'
+			}
+		});
+		if (!response.ok) {
+			return { title: null, authorName: null, thumbnailUrl: null };
+		}
+
+		const payload = (await response.json()) as Record<string, unknown>;
+		const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+		const authorName = typeof payload.author_name === 'string' ? payload.author_name.trim() : '';
+		const thumbnailUrl =
+			typeof payload.thumbnail_url === 'string' ? payload.thumbnail_url.trim() : '';
+
+		return {
+			title: title || null,
+			authorName: authorName || null,
+			thumbnailUrl: thumbnailUrl || null
+		};
+	} catch {
+		return { title: null, authorName: null, thumbnailUrl: null };
+	}
+}
+
 export const GET: RequestHandler = async ({ url, fetch }) => {
 	const rawUrl = url.searchParams.get('url')?.trim();
 	if (!rawUrl) {
@@ -249,24 +283,38 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		(jsonLdMetrics.shares === null && regexMetrics.shares !== null) ||
 		(jsonLdMetrics.saves === null && regexMetrics.saves !== null);
 	const hasMetaTags = resultHasAnyMetaValue(html);
+	const extractedTitle =
+		(jsonLdSource?.name as string | undefined) ??
+		(jsonLdSource?.headline as string | undefined) ??
+		extractMetaContent(html, 'og:title') ??
+		extractMetaContent(html, 'twitter:title');
+	const extractedDescription =
+		(jsonLdSource?.description as string | undefined) ??
+		extractMetaContent(html, 'og:description') ??
+		extractMetaContent(html, 'description') ??
+		extractMetaContent(html, 'twitter:description');
+
+	const normalizedTitle = extractedTitle?.trim() || null;
+	const normalizedDescription = extractedDescription?.trim() || null;
+	const instagramOEmbed =
+		platform === 'instagram'
+			? await fetchInstagramOEmbed(resolvedUrl || target.toString(), fetch)
+			: { title: null, authorName: null, thumbnailUrl: null };
+	const resolvedTitle =
+		platform === 'instagram'
+			? normalizedTitle ?? instagramOEmbed.title ?? normalizedDescription
+			: normalizedTitle;
 
 	const result: EnrichResult = {
 		url: resolvedUrl,
 		platform,
-		title:
-			(jsonLdSource?.name as string | undefined) ??
-			(jsonLdSource?.headline as string | undefined) ??
-			extractMetaContent(html, 'og:title') ??
-			extractMetaContent(html, 'twitter:title'),
-		description:
-			(jsonLdSource?.description as string | undefined) ??
-			extractMetaContent(html, 'og:description') ??
-			extractMetaContent(html, 'description') ??
-			extractMetaContent(html, 'twitter:description'),
+		title: resolvedTitle,
+		description: normalizedDescription,
 		authorName:
 			(typeof jsonLdSource?.author === 'object' && jsonLdSource.author
 				? ((jsonLdSource.author as Record<string, unknown>).name as string | undefined)
 				: null) ??
+			instagramOEmbed.authorName ??
 			extractMetaContent(html, 'author') ??
 			extractMetaContent(html, 'og:site_name'),
 		thumbnailUrl:
@@ -275,6 +323,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 				: Array.isArray(jsonLdSource?.thumbnailUrl)
 					? (jsonLdSource.thumbnailUrl[0] as string | undefined)
 					: undefined) ??
+			instagramOEmbed.thumbnailUrl ??
 			extractMetaContent(html, 'og:image') ??
 			extractMetaContent(html, 'twitter:image'),
 		publishedAt:
