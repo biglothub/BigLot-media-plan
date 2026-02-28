@@ -253,6 +253,14 @@
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
+	function platformFrameClass(platform: SupportedPlatform | null | undefined): string {
+		if (platform === 'instagram') return 'platform-frame--instagram';
+		if (platform === 'tiktok') return 'platform-frame--tiktok';
+		if (platform === 'youtube') return 'platform-frame--youtube';
+		if (platform === 'facebook') return 'platform-frame--facebook';
+		return '';
+	}
+
 	function preferredPlatformForItem(item: ProductionCalendarRow | null): SupportedPlatform {
 		return item?.idea_backlog?.platform ?? 'youtube';
 	}
@@ -547,9 +555,9 @@
 				{:else}
 					<div class="kpi-idea-list">
 						{#each sortedCalendarIdeas as item}
-							<button
-								class={`kpi-idea-btn ${selectedCalendarId === item.id ? 'active' : ''}`}
-								onclick={() => selectCalendarItem(item.id)}
+								<button
+									class={`kpi-idea-btn ${selectedCalendarId === item.id ? 'active' : ''} ${platformFrameClass(item.idea_backlog?.platform)}`}
+									onclick={() => selectCalendarItem(item.id)}
 									>
 										<div>
 											<strong>{item.idea_backlog ? backlogCode(item.idea_backlog) : 'Unknown code'}</strong>
@@ -600,11 +608,11 @@
 							{#if selectedProducedVideos.length > 0}
 								<div class="produced-summary">
 									{#each selectedProducedVideos as video}
-										<button
-											type="button"
-											class={`produced-summary-item ${selectedPlatform === video.platform ? 'active' : ''}`}
-											onclick={() => selectProducedPlatform(video.platform)}
-										>
+											<button
+												type="button"
+												class={`produced-summary-item ${selectedPlatform === video.platform ? 'active' : ''} ${platformFrameClass(video.platform)}`}
+												onclick={() => selectProducedPlatform(video.platform)}
+											>
 											<strong>{platformLabel[video.platform]}</strong>
 											<span>{formatCount(video.view_count)} views</span>
 										</button>
@@ -848,8 +856,9 @@
 	}
 
 	.kpi-idea-btn {
+		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		text-align: left;
-		border: 1px solid rgba(15, 23, 42, 0.1);
+		border: 1px solid var(--platform-frame-color);
 		border-radius: 0.75rem;
 		background: #fff;
 		padding: 0.6rem;
@@ -877,8 +886,8 @@
 	}
 
 	.kpi-idea-btn.active {
-		border-color: rgba(37, 99, 235, 0.4);
 		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+		background: rgba(248, 250, 252, 0.95);
 	}
 
 	.chip {
@@ -939,7 +948,9 @@
 	}
 
 	.produced-summary-item {
+		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		border: 1px solid rgba(15, 23, 42, 0.1);
+		border-color: var(--platform-frame-color);
 		background: rgba(15, 23, 42, 0.03);
 		border-radius: 0.66rem;
 		padding: 0.45rem 0.5rem;
@@ -959,8 +970,23 @@
 	}
 
 	.produced-summary-item.active {
-		border-color: rgba(37, 99, 235, 0.42);
 		background: rgba(37, 99, 235, 0.08);
+	}
+
+	.platform-frame--instagram {
+		--platform-frame-color: #ec4899;
+	}
+
+	.platform-frame--tiktok {
+		--platform-frame-color: #111111;
+	}
+
+	.platform-frame--youtube {
+		--platform-frame-color: #dc2626;
+	}
+
+	.platform-frame--facebook {
+		--platform-frame-color: #1877f2;
 	}
 
 	.meta {

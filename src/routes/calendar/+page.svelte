@@ -42,6 +42,14 @@
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
+	function platformFrameClass(platform: IdeaBacklogRow['platform'] | null | undefined): string {
+		if (platform === 'instagram') return 'platform-frame--instagram';
+		if (platform === 'tiktok') return 'platform-frame--tiktok';
+		if (platform === 'youtube') return 'platform-frame--youtube';
+		if (platform === 'facebook') return 'platform-frame--facebook';
+		return '';
+	}
+
 	async function loadIdeas() {
 		if (!supabase) return;
 		loadingIdeas = true;
@@ -203,8 +211,8 @@
 				{:else}
 					<div class="idea-list">
 						{#each unscheduledIdeas as idea}
-							<article
-								class="idea-card"
+								<article
+									class={`idea-card ${platformFrameClass(idea.platform)}`}
 								draggable="true"
 								ondragstart={(event) => handleDragStart(event, idea.id)}
 								ondragend={() => {
@@ -255,8 +263,8 @@
 								{/if}
 
 								{#each calendarByDate.get(cell.dateIso) ?? [] as item}
-									<article
-										class="calendar-item"
+										<article
+											class={`calendar-item ${platformFrameClass(item.idea_backlog?.platform)}`}
 										draggable="true"
 										ondragstart={(event) => handleDragStart(event, item.backlog_id)}
 									>
@@ -435,7 +443,8 @@
 	}
 
 	.idea-card {
-		border: 1px solid rgba(15, 23, 42, 0.09);
+		--platform-frame-color: rgba(15, 23, 42, 0.09);
+		border: 1px solid var(--platform-frame-color);
 		padding: 0.55rem;
 		border-radius: 0.7rem;
 		cursor: grab;
@@ -537,13 +546,30 @@
 	}
 
 	.calendar-item {
+		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		display: grid;
 		gap: 0.35rem;
 		padding: 0.45rem;
 		border-radius: 0.65rem;
-		border: 1px solid rgba(15, 23, 42, 0.1);
+		border: 1px solid var(--platform-frame-color);
 		background: #fff;
 		cursor: grab;
+	}
+
+	.platform-frame--instagram {
+		--platform-frame-color: #ec4899;
+	}
+
+	.platform-frame--tiktok {
+		--platform-frame-color: #111111;
+	}
+
+	.platform-frame--youtube {
+		--platform-frame-color: #dc2626;
+	}
+
+	.platform-frame--facebook {
+		--platform-frame-color: #1877f2;
 	}
 
 	.calendar-link {

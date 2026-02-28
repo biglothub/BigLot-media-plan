@@ -73,6 +73,14 @@
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
+	function platformFrameClass(platform: IdeaBacklogRow['platform'] | null | undefined): string {
+		if (platform === 'instagram') return 'platform-frame--instagram';
+		if (platform === 'tiktok') return 'platform-frame--tiktok';
+		if (platform === 'youtube') return 'platform-frame--youtube';
+		if (platform === 'facebook') return 'platform-frame--facebook';
+		return '';
+	}
+
 	function clearState() {
 		draft = null;
 		notes = '';
@@ -370,7 +378,7 @@
 								{@const tiktokEmbedUrl = idea.platform === 'tiktok' ? getTikTokEmbedUrl(idea.url) : null}
 								{@const instagramEmbedUrl =
 									idea.platform === 'instagram' ? getInstagramEmbedUrl(idea.url) : null}
-								<article class="card">
+									<article class={`card ${platformFrameClass(idea.platform)}`}>
 									{#if tiktokEmbedUrl}
 										<iframe
 											class="card-media tiktok-frame"
@@ -649,12 +657,29 @@
 	}
 
 	.card {
+		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		background: #fff;
 		border-radius: 0.95rem;
-		border: 1px solid rgba(15, 23, 42, 0.1);
+		border: 1px solid var(--platform-frame-color);
 		padding: 0.7rem;
 		display: grid;
 		gap: 0.7rem;
+	}
+
+	.platform-frame--instagram {
+		--platform-frame-color: #ec4899;
+	}
+
+	.platform-frame--tiktok {
+		--platform-frame-color: #111111;
+	}
+
+	.platform-frame--youtube {
+		--platform-frame-color: #dc2626;
+	}
+
+	.platform-frame--facebook {
+		--platform-frame-color: #1877f2;
 	}
 
 	.card-body {
