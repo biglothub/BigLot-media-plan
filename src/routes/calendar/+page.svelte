@@ -37,6 +37,11 @@
 		return grouped;
 	});
 
+	function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
+		const code = idea.idea_code?.trim();
+		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
+	}
+
 	async function loadIdeas() {
 		if (!supabase) return;
 		loadingIdeas = true;
@@ -206,13 +211,14 @@
 									draggingBacklogId = null;
 									dragHoverDate = null;
 								}}
-							>
-								<span class="platform">{platformLabel[idea.platform]}</span>
-								<h4>{idea.title ?? 'Untitled idea'}</h4>
-								<p>Views: {formatCount(idea.view_count)}</p>
-							</article>
-						{/each}
-					</div>
+								>
+									<span class="platform">{platformLabel[idea.platform]}</span>
+									<h4>{backlogCode(idea)}</h4>
+									<p>{idea.title ?? 'Untitled idea'}</p>
+									<p>Views: {formatCount(idea.view_count)}</p>
+								</article>
+							{/each}
+						</div>
 				{/if}
 			</aside>
 
@@ -265,10 +271,11 @@
 													errorMessage = 'ไม่พบลิงก์คลิปของไอเดียนี้';
 												}
 											}}
-										>
-											<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? 'IDEA'}</span>
-											<p>{item.idea_backlog?.title ?? 'Untitled idea'}</p>
-										</a>
+											>
+												<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? 'IDEA'}</span>
+												<strong>{item.idea_backlog ? backlogCode(item.idea_backlog) : 'Unknown code'}</strong>
+												<p>{item.idea_backlog?.title ?? 'Untitled idea'}</p>
+											</a>
 										<button
 											class="tiny-danger"
 											onclick={(event) => {
@@ -544,6 +551,10 @@
 		gap: 0.35rem;
 		color: inherit;
 		text-decoration: none;
+	}
+
+	.calendar-link strong {
+		font-size: 0.76rem;
 	}
 
 	.calendar-item p {

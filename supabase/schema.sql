@@ -2,6 +2,7 @@ create extension if not exists "pgcrypto";
 
 create table if not exists public.idea_backlog (
   id uuid primary key default gen_random_uuid(),
+  idea_code text not null default ('BL-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8))),
   url text not null,
   platform text not null check (platform in ('youtube', 'facebook', 'instagram', 'tiktok')),
   title text,
@@ -20,6 +21,7 @@ create table if not exists public.idea_backlog (
   created_at timestamptz not null default timezone('utc', now())
 );
 
+create unique index if not exists ux_idea_backlog_idea_code on public.idea_backlog (idea_code);
 create index if not exists idx_idea_backlog_created_at on public.idea_backlog (created_at desc);
 create index if not exists idx_idea_backlog_platform on public.idea_backlog (platform);
 

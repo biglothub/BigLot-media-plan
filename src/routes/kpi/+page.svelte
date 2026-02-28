@@ -3,6 +3,7 @@
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
 	import type {
 		EnrichResult,
+		IdeaBacklogRow,
 		ProductionCalendarRow,
 		ProducedVideoRow,
 		SupportedPlatform
@@ -245,6 +246,11 @@
 			shares: current.shares ?? fallback.shares,
 			saves: current.saves ?? fallback.saves
 		};
+	}
+
+	function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
+		const code = idea.idea_code?.trim();
+		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
 	function preferredPlatformForItem(item: ProductionCalendarRow | null): SupportedPlatform {
@@ -544,11 +550,12 @@
 							<button
 								class={`kpi-idea-btn ${selectedCalendarId === item.id ? 'active' : ''}`}
 								onclick={() => selectCalendarItem(item.id)}
-								>
-									<div>
-										<strong>{item.idea_backlog?.title ?? 'Untitled idea'}</strong>
-										<p>{formatCalendarDate(item.shoot_date)}</p>
-									</div>
+									>
+										<div>
+											<strong>{item.idea_backlog ? backlogCode(item.idea_backlog) : 'Unknown code'}</strong>
+											<p class="idea-title">{item.idea_backlog?.title ?? 'Untitled idea'}</p>
+											<p>{formatCalendarDate(item.shoot_date)}</p>
+										</div>
 									{#if (producedByCalendarId.get(item.id) ?? []).length > 0}
 										<span class="chip">
 											{(producedByCalendarId.get(item.id) ?? []).length} Platform{(producedByCalendarId.get(item.id) ?? []).length > 1
@@ -568,7 +575,8 @@
 				{:else}
 						<div class="kpi-source">
 							<p class="kicker small">Original Idea</p>
-							<h3>{selectedCalendarItem.idea_backlog?.title ?? 'Untitled idea'}</h3>
+							<h3>{selectedCalendarItem.idea_backlog ? backlogCode(selectedCalendarItem.idea_backlog) : 'Unknown code'}</h3>
+							<p class="meta">{selectedCalendarItem.idea_backlog?.title ?? 'Untitled idea'}</p>
 							<p class="meta">{formatCalendarDate(selectedCalendarItem.shoot_date)}</p>
 						</div>
 
@@ -860,6 +868,12 @@
 		margin: 0.2rem 0 0;
 		font-size: 0.74rem;
 		color: #64748b;
+	}
+
+	.kpi-idea-btn .idea-title {
+		margin-top: 0.15rem;
+		font-size: 0.78rem;
+		color: #475569;
 	}
 
 	.kpi-idea-btn.active {

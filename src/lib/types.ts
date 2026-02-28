@@ -22,6 +22,7 @@ export interface EnrichResult {
 
 export interface IdeaBacklogRow {
 	id: string;
+	idea_code: string;
 	url: string;
 	platform: SupportedPlatform;
 	title: string | null;

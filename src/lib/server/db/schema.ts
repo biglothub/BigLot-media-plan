@@ -17,6 +17,11 @@ export const ideaBacklog = pgTable(
 	'idea_backlog',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
+		ideaCode: text('idea_code')
+			.notNull()
+			.default(
+				sql`'BL-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8))`
+			),
 		url: text('url').notNull(),
 		platform: text('platform').notNull().$type<'youtube' | 'facebook' | 'instagram' | 'tiktok'>(),
 		title: text('title'),
@@ -37,6 +42,7 @@ export const ideaBacklog = pgTable(
 			.defaultNow()
 	},
 	(table) => [
+		uniqueIndex('ux_idea_backlog_idea_code').on(table.ideaCode),
 		index('idx_idea_backlog_created_at').on(table.createdAt),
 		index('idx_idea_backlog_platform').on(table.platform),
 		check(

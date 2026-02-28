@@ -1,0 +1,2 @@
+ALTER TABLE "idea_backlog" ADD COLUMN "idea_code" text DEFAULT 'BL-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8)) NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "ux_idea_backlog_idea_code" ON "idea_backlog" USING btree ("idea_code");

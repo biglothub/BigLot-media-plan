@@ -68,6 +68,11 @@
 		draft && draft.platform === 'instagram' ? getInstagramEmbedUrl(draft.url) : null
 	);
 
+	function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
+		const code = idea.idea_code?.trim();
+		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
+	}
+
 	function clearState() {
 		draft = null;
 		notes = '';
@@ -205,7 +210,7 @@
 			return;
 		}
 
-		const confirmed = window.confirm(`ลบ backlog นี้ใช่ไหม?\n${idea.title ?? idea.url}`);
+		const confirmed = window.confirm(`ลบ backlog นี้ใช่ไหม?\n${backlogCode(idea)} • ${idea.title ?? idea.url}`);
 		if (!confirmed) return;
 
 		deletingId = idea.id;
@@ -395,7 +400,8 @@
 												<span class="chip">Scheduled</span>
 											{/if}
 										</div>
-										<h3>{idea.title ?? 'Untitled idea'}</h3>
+										<h3>{backlogCode(idea)}</h3>
+										<p class="idea-title">{idea.title ?? 'Untitled idea'}</p>
 										<div class="stats">
 											<div class="stat-badge"><span>Views</span><span>{formatCount(idea.view_count)}</span></div>
 											<div class="stat-badge"><span>Likes</span><span>{formatCount(idea.like_count)}</span></div>
@@ -675,6 +681,12 @@
 	.card h3 {
 		margin: 0;
 		font-size: 1rem;
+	}
+
+	.idea-title {
+		margin: 0;
+		font-size: 0.84rem;
+		color: #475569;
 	}
 
 	.stats {

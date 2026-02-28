@@ -1,6 +1,7 @@
 # BigLot Idea Backlog (Svelte + Supabase + Drizzle)
 
 MVP สำหรับเก็บ `idea backlog` จากลิงก์วิดีโอ YouTube / Facebook / Instagram / TikTok
+โดยทุก backlog จะมีรหัสอ้างอิงอัตโนมัติในรูปแบบ `BL-YYYYMMDD-XXXXXXXX`
 
 Workflow:
 1. วางลิงก์
