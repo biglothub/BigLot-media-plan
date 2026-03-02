@@ -128,3 +128,14 @@ export function getPlatformFromUrl(url: string): SupportedPlatform | null {
 export function normalizeMetricValue(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
+
+export function isYouTubeShort(url: string): boolean {
+	try {
+		const parsed = new URL(url);
+		const host = parsed.hostname.toLowerCase();
+		if (!host.includes('youtube.com') && !host.includes('youtu.be')) return false;
+		return parsed.pathname.toLowerCase().includes('/shorts/');
+	} catch {
+		return false;
+	}
+}

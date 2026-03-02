@@ -12,6 +12,7 @@
 		getInstagramEmbedUrl,
 		getPlatformFromUrl,
 		getTikTokEmbedUrl,
+		isYouTubeShort,
 		normalizeMetricValue,
 		platformLabel,
 		platformOrder,
@@ -202,21 +203,91 @@
 	});
 
 	const platformStats = $derived.by(() => {
-		const statsMap = new Map<SupportedPlatform, PlatformStat>();
-		for (const platform of availablePlatforms) {
-			statsMap.set(platform, {
-				platform,
-				clipCount: 0,
-				totalViews: null,
-				totalEngagement: null,
-				avgViews: null,
-				engagementRate: null,
-				hasAnyData: false,
-			});
-		}
+		type BiStatRow = {
+			key: string;
+			label: string;
+			platformClass: string;
+			clipCount: number;
+			totalViews: number | null;
+			totalEngagement: number | null;
+			avgViews: number | null;
+			engagementRate: number | null;
+			hasAnyData: boolean;
+		};
+
+		const biKeys = [
+			"youtube_short",
+			"youtube_long",
+			"facebook",
+			"instagram",
+			"tiktok",
+		] as const;
+		const statsMap = new Map<string, BiStatRow>();
+
+		statsMap.set("youtube_short", {
+			key: "youtube_short",
+			label: "YT Short",
+			platformClass: "platform-frame--youtube",
+			clipCount: 0,
+			totalViews: null,
+			totalEngagement: null,
+			avgViews: null,
+			engagementRate: null,
+			hasAnyData: false,
+		});
+		statsMap.set("youtube_long", {
+			key: "youtube_long",
+			label: "YT Long",
+			platformClass: "platform-frame--youtube",
+			clipCount: 0,
+			totalViews: null,
+			totalEngagement: null,
+			avgViews: null,
+			engagementRate: null,
+			hasAnyData: false,
+		});
+		statsMap.set("facebook", {
+			key: "facebook",
+			label: "Facebook",
+			platformClass: "platform-frame--facebook",
+			clipCount: 0,
+			totalViews: null,
+			totalEngagement: null,
+			avgViews: null,
+			engagementRate: null,
+			hasAnyData: false,
+		});
+		statsMap.set("instagram", {
+			key: "instagram",
+			label: "Instagram",
+			platformClass: "platform-frame--instagram",
+			clipCount: 0,
+			totalViews: null,
+			totalEngagement: null,
+			avgViews: null,
+			engagementRate: null,
+			hasAnyData: false,
+		});
+		statsMap.set("tiktok", {
+			key: "tiktok",
+			label: "TikTok",
+			platformClass: "platform-frame--tiktok",
+			clipCount: 0,
+			totalViews: null,
+			totalEngagement: null,
+			avgViews: null,
+			engagementRate: null,
+			hasAnyData: false,
+		});
 
 		for (const clip of clips) {
-			const stat = statsMap.get(clip.platform);
+			let statKey: string = clip.platform;
+			if (clip.platform === "youtube") {
+				statKey = isYouTubeShort(clip.url)
+					? "youtube_short"
+					: "youtube_long";
+			}
+			const stat = statsMap.get(statKey);
 			if (!stat) continue;
 			stat.clipCount += 1;
 			const hasViews =
@@ -242,17 +313,14 @@
 					: null;
 		}
 
-		return availablePlatforms.map(
-			(platform) =>
-				statsMap.get(platform) ?? {
-					platform,
-					clipCount: 0,
-					totalViews: 0,
-					totalEngagement: 0,
-					avgViews: null,
-					engagementRate: null,
-				},
-		);
+		return biKeys
+			.map((k) => statsMap.get(k)!)
+			.filter(
+				(s) =>
+					s.clipCount > 0 ||
+					s.key === "youtube_short" ||
+					s.key === "youtube_long",
+			);
 	});
 
 	const topClipRows = $derived.by(() => {
@@ -1193,8 +1261,8 @@
 							<tr>
 								<td
 									><span
-										class={`platform ${platformFrameClass(stat.platform)}`}
-										>{platformLabel[stat.platform]}</span
+										class={`platform ${stat.platformClass}`}
+										>{stat.label}</span
 									></td
 								>
 								<td>{stat.clipCount}</td>
