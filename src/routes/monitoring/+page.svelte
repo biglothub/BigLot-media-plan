@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { hasSupabaseConfig, supabase } from '$lib/supabase';
+	import { onMount } from "svelte";
+	import { hasSupabaseConfig, supabase } from "$lib/supabase";
 	import type {
 		EnrichResult,
 		MonitoringContentPlatformRow,
 		MonitoringContentRow,
-		SupportedPlatform
-	} from '$lib/types';
+		SupportedPlatform,
+	} from "$lib/types";
 	import {
 		formatCount,
 		getInstagramEmbedUrl,
@@ -14,8 +14,8 @@
 		getTikTokEmbedUrl,
 		normalizeMetricValue,
 		platformLabel,
-		platformOrder
-	} from '$lib/media-plan';
+		platformOrder,
+	} from "$lib/media-plan";
 
 	type MetricsDraft = {
 		views: number | null;
@@ -36,13 +36,13 @@
 
 	const availablePlatforms = platformOrder as readonly SupportedPlatform[];
 	const platformRank = new Map<SupportedPlatform, number>(
-		availablePlatforms.map((platform, index) => [platform, index])
+		availablePlatforms.map((platform, index) => [platform, index]),
 	);
 	const clipPlaceholderByPlatform: Record<SupportedPlatform, string> = {
-		youtube: 'https://www.youtube.com/watch?v=...',
-		facebook: 'https://www.facebook.com/.../videos/...',
-		instagram: 'https://www.instagram.com/reel/...',
-		tiktok: 'https://www.tiktok.com/@username/video/...'
+		youtube: "https://www.youtube.com/watch?v=...",
+		facebook: "https://www.facebook.com/.../videos/...",
+		instagram: "https://www.instagram.com/reel/...",
+		tiktok: "https://www.tiktok.com/@username/video/...",
 	};
 
 	let contents = $state<MonitoringContentRow[]>([]);
@@ -51,29 +51,34 @@
 	let loadingClips = $state(false);
 
 	let selectedContentId = $state<string | null>(null);
-	let selectedPlatform = $state<SupportedPlatform>('youtube');
-	let contentTitleInput = $state('');
-	let contentDescriptionInput = $state('');
+	let selectedPlatform = $state<SupportedPlatform>("youtube");
+	let contentTitleInput = $state("");
+	let contentDescriptionInput = $state("");
 	let creatingContent = $state(false);
 	let deletingContent = $state(false);
 
-	let clipLinkInput = $state('');
-	let clipNotes = $state('');
+	let clipLinkInput = $state("");
+	let clipNotes = $state("");
 	let analyzing = $state(false);
 	let savingClip = $state(false);
 	let deletingClip = $state(false);
-	let message = $state('');
-	let errorMessage = $state('');
+	let refreshingAll = $state(false);
+	let refreshProgress = $state("");
+	let refreshingSingle = $state<string | null>(null);
+	let message = $state("");
+	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let metrics = $state<MetricsDraft>({
 		views: null,
 		likes: null,
 		comments: null,
 		shares: null,
-		saves: null
+		saves: null,
 	});
 
-	const contentMap = $derived.by(() => new Map(contents.map((item) => [item.id, item])));
+	const contentMap = $derived.by(
+		() => new Map(contents.map((item) => [item.id, item])),
+	);
 
 	const clipsByContentId = $derived.by(() => {
 		const grouped = new Map<string, MonitoringContentPlatformRow[]>();
@@ -84,7 +89,11 @@
 		}
 
 		for (const bucket of grouped.values()) {
-			bucket.sort((a, b) => (platformRank.get(a.platform) ?? 99) - (platformRank.get(b.platform) ?? 99));
+			bucket.sort(
+				(a, b) =>
+					(platformRank.get(a.platform) ?? 99) -
+					(platformRank.get(b.platform) ?? 99),
+			);
 		}
 
 		return grouped;
@@ -94,35 +103,48 @@
 		return contents
 			.map((content) => {
 				const contentClips = clipsByContentId.get(content.id) ?? [];
-				const totalViews = contentClips.reduce((sum, item) => sum + (item.view_count ?? 0), 0);
+				const totalViews = contentClips.reduce(
+					(sum, item) => sum + (item.view_count ?? 0),
+					0,
+				);
 				return {
 					content,
 					clips: contentClips,
 					clipCount: contentClips.length,
 					totalViews,
-					updatedAt: contentClips[0]?.created_at ?? content.created_at
+					updatedAt:
+						contentClips[0]?.created_at ?? content.created_at,
 				};
 			})
 			.sort((a, b) => {
-				if (b.clipCount !== a.clipCount) return b.clipCount - a.clipCount;
+				if (b.clipCount !== a.clipCount)
+					return b.clipCount - a.clipCount;
 				return b.updatedAt.localeCompare(a.updatedAt);
 			});
 	});
 
 	const selectedContent = $derived.by(() =>
-		selectedContentId ? contentMap.get(selectedContentId) ?? null : null
+		selectedContentId ? (contentMap.get(selectedContentId) ?? null) : null,
 	);
 	const selectedContentClips = $derived.by(() =>
-		selectedContentId ? (clipsByContentId.get(selectedContentId) ?? []) : []
+		selectedContentId
+			? (clipsByContentId.get(selectedContentId) ?? [])
+			: [],
 	);
 	const selectedClipByPlatform = $derived.by(() => {
 		const map = new Map<SupportedPlatform, MonitoringContentPlatformRow>();
 		for (const clip of selectedContentClips) map.set(clip.platform, clip);
 		return map;
 	});
-	const selectedPlatformClip = $derived.by(() => selectedClipByPlatform.get(selectedPlatform) ?? null);
-	const selectedPlatformSet = $derived.by(() => new Set(selectedContentClips.map((clip) => clip.platform)));
-	const clipPlaceholder = $derived.by(() => clipPlaceholderByPlatform[selectedPlatform]);
+	const selectedPlatformClip = $derived.by(
+		() => selectedClipByPlatform.get(selectedPlatform) ?? null,
+	);
+	const selectedPlatformSet = $derived.by(
+		() => new Set(selectedContentClips.map((clip) => clip.platform)),
+	);
+	const clipPlaceholder = $derived.by(
+		() => clipPlaceholderByPlatform[selectedPlatform],
+	);
 
 	const currentPreview = $derived.by(() => {
 		if (draft && draft.platform === selectedPlatform) {
@@ -130,7 +152,7 @@
 				platform: draft.platform,
 				url: draft.url,
 				title: draft.title,
-				thumbnailUrl: draft.thumbnailUrl
+				thumbnailUrl: draft.thumbnailUrl,
 			};
 		}
 		if (!selectedPlatformClip) return null;
@@ -138,20 +160,24 @@
 			platform: selectedPlatformClip.platform,
 			url: selectedPlatformClip.url,
 			title: selectedPlatformClip.title,
-			thumbnailUrl: selectedPlatformClip.thumbnail_url
+			thumbnailUrl: selectedPlatformClip.thumbnail_url,
 		};
 	});
 
 	const currentTikTokEmbed = $derived(
-		currentPreview && currentPreview.platform === 'tiktok' ? getTikTokEmbedUrl(currentPreview.url) : null
+		currentPreview && currentPreview.platform === "tiktok"
+			? getTikTokEmbedUrl(currentPreview.url)
+			: null,
 	);
 	const currentInstagramEmbed = $derived(
-		currentPreview && currentPreview.platform === 'instagram'
+		currentPreview && currentPreview.platform === "instagram"
 			? getInstagramEmbedUrl(currentPreview.url)
-			: null
+			: null,
 	);
 
-	const contentsWithClips = $derived.by(() => monitoredRows.filter((row) => row.clipCount > 0).length);
+	const contentsWithClips = $derived.by(
+		() => monitoredRows.filter((row) => row.clipCount > 0).length,
+	);
 
 	const biTotals = $derived.by(() => {
 		let totalViews = 0;
@@ -160,15 +186,17 @@
 			totalViews += clip.view_count ?? 0;
 			totalEngagement += engagementValue(clip);
 		}
-		const engagementRate = totalViews > 0 ? (totalEngagement / totalViews) * 100 : null;
-		const coveredContents = new Set(clips.map((clip) => clip.content_id)).size;
+		const engagementRate =
+			totalViews > 0 ? (totalEngagement / totalViews) * 100 : null;
+		const coveredContents = new Set(clips.map((clip) => clip.content_id))
+			.size;
 
 		return {
 			totalClips: clips.length,
 			totalViews,
 			totalEngagement,
 			engagementRate,
-			coveredContents
+			coveredContents,
 		};
 	});
 
@@ -181,7 +209,7 @@
 				totalViews: 0,
 				totalEngagement: 0,
 				avgViews: null,
-				engagementRate: null
+				engagementRate: null,
 			});
 		}
 
@@ -194,19 +222,24 @@
 		}
 
 		for (const stat of statsMap.values()) {
-			stat.avgViews = stat.clipCount > 0 ? stat.totalViews / stat.clipCount : null;
-			stat.engagementRate = stat.totalViews > 0 ? (stat.totalEngagement / stat.totalViews) * 100 : null;
+			stat.avgViews =
+				stat.clipCount > 0 ? stat.totalViews / stat.clipCount : null;
+			stat.engagementRate =
+				stat.totalViews > 0
+					? (stat.totalEngagement / stat.totalViews) * 100
+					: null;
 		}
 
-		return availablePlatforms.map((platform) =>
-			statsMap.get(platform) ?? {
-				platform,
-				clipCount: 0,
-				totalViews: 0,
-				totalEngagement: 0,
-				avgViews: null,
-				engagementRate: null
-			}
+		return availablePlatforms.map(
+			(platform) =>
+				statsMap.get(platform) ?? {
+					platform,
+					clipCount: 0,
+					totalViews: 0,
+					totalEngagement: 0,
+					avgViews: null,
+					engagementRate: null,
+				},
 		);
 	});
 
@@ -215,87 +248,105 @@
 			.map((clip) => ({
 				clip,
 				content: contentMap.get(clip.content_id) ?? null,
-				engagement: engagementValue(clip)
+				engagement: engagementValue(clip),
 			}))
 			.sort((a, b) => {
-				const viewsDiff = (b.clip.view_count ?? -1) - (a.clip.view_count ?? -1);
+				const viewsDiff =
+					(b.clip.view_count ?? -1) - (a.clip.view_count ?? -1);
 				if (viewsDiff !== 0) return viewsDiff;
 				return b.engagement - a.engagement;
 			})
 			.slice(0, 8);
 	});
 
-	function contentCode(content: Pick<MonitoringContentRow, 'id' | 'content_code'>): string {
+	function contentCode(
+		content: Pick<MonitoringContentRow, "id" | "content_code">,
+	): string {
 		const code = content.content_code?.trim();
 		return code ? code : `MC-${content.id.slice(0, 8).toUpperCase()}`;
 	}
 
-	function platformFrameClass(platform: SupportedPlatform | null | undefined): string {
-		if (platform === 'instagram') return 'platform-frame--instagram';
-		if (platform === 'tiktok') return 'platform-frame--tiktok';
-		if (platform === 'youtube') return 'platform-frame--youtube';
-		if (platform === 'facebook') return 'platform-frame--facebook';
-		return '';
+	function platformFrameClass(
+		platform: SupportedPlatform | null | undefined,
+	): string {
+		if (platform === "instagram") return "platform-frame--instagram";
+		if (platform === "tiktok") return "platform-frame--tiktok";
+		if (platform === "youtube") return "platform-frame--youtube";
+		if (platform === "facebook") return "platform-frame--facebook";
+		return "";
 	}
 
 	function engagementValue(
 		clip: Pick<
 			MonitoringContentPlatformRow,
-			'like_count' | 'comment_count' | 'share_count' | 'save_count'
-		>
+			"like_count" | "comment_count" | "share_count" | "save_count"
+		>,
 	): number {
-		return (clip.like_count ?? 0) + (clip.comment_count ?? 0) + (clip.share_count ?? 0) + (clip.save_count ?? 0);
+		return (
+			(clip.like_count ?? 0) +
+			(clip.comment_count ?? 0) +
+			(clip.share_count ?? 0) +
+			(clip.save_count ?? 0)
+		);
 	}
 
 	function formatRate(value: number | null): string {
-		if (value === null || !Number.isFinite(value)) return '-';
+		if (value === null || !Number.isFinite(value)) return "-";
 		return `${value.toFixed(2)}%`;
 	}
 
 	function formatAvg(value: number | null): string {
-		if (value === null || !Number.isFinite(value)) return '-';
+		if (value === null || !Number.isFinite(value)) return "-";
 		return formatCount(Math.round(value));
 	}
 
 	function hasAnyMetricValue(input: MetricsDraft): boolean {
-		return Object.values(input).some((value) => typeof value === 'number' && Number.isFinite(value));
+		return Object.values(input).some(
+			(value) => typeof value === "number" && Number.isFinite(value),
+		);
 	}
 
 	function resetClipForm() {
-		clipLinkInput = '';
-		clipNotes = '';
+		clipLinkInput = "";
+		clipNotes = "";
 		draft = null;
 		metrics = {
 			views: null,
 			likes: null,
 			comments: null,
 			shares: null,
-			saves: null
+			saves: null,
 		};
 	}
 
-	function hydrateClipForm(contentId: string, platform: SupportedPlatform = selectedPlatform) {
-		const existing = (clipsByContentId.get(contentId) ?? []).find((clip) => clip.platform === platform) ?? null;
+	function hydrateClipForm(
+		contentId: string,
+		platform: SupportedPlatform = selectedPlatform,
+	) {
+		const existing =
+			(clipsByContentId.get(contentId) ?? []).find(
+				(clip) => clip.platform === platform,
+			) ?? null;
 		if (!existing) {
 			resetClipForm();
 			return;
 		}
 		clipLinkInput = existing.url;
-		clipNotes = existing.notes ?? '';
+		clipNotes = existing.notes ?? "";
 		draft = null;
 		metrics = {
 			views: existing.view_count,
 			likes: existing.like_count,
 			comments: existing.comment_count,
 			shares: existing.share_count,
-			saves: existing.save_count
+			saves: existing.save_count,
 		};
 	}
 
 	function selectContent(contentId: string) {
 		selectedContentId = contentId;
 		const existing = clipsByContentId.get(contentId) ?? [];
-		const nextPlatform = existing[0]?.platform ?? 'youtube';
+		const nextPlatform = existing[0]?.platform ?? "youtube";
 		selectPlatform(nextPlatform);
 	}
 
@@ -309,10 +360,12 @@
 	}
 
 	async function fetchEnrichResult(targetUrl: string): Promise<EnrichResult> {
-		const response = await fetch(`/api/enrich?url=${encodeURIComponent(targetUrl)}`);
+		const response = await fetch(
+			`/api/enrich?url=${encodeURIComponent(targetUrl)}`,
+		);
 		const body = await response.json();
 		if (!response.ok) {
-			throw new Error(body.error ?? 'Analyze link ไม่สำเร็จ');
+			throw new Error(body.error ?? "Analyze link ไม่สำเร็จ");
 		}
 		return body as EnrichResult;
 	}
@@ -321,9 +374,9 @@
 		if (!supabase) return;
 		loadingContents = true;
 		const { data, error } = await supabase
-			.from('monitoring_content')
-			.select('*')
-			.order('created_at', { ascending: false });
+			.from("monitoring_content")
+			.select("*")
+			.order("created_at", { ascending: false });
 		loadingContents = false;
 
 		if (error) {
@@ -338,9 +391,9 @@
 		if (!supabase) return;
 		loadingClips = true;
 		const { data, error } = await supabase
-			.from('monitoring_content_platform')
-			.select('*')
-			.order('created_at', { ascending: false });
+			.from("monitoring_content_platform")
+			.select("*")
+			.order("created_at", { ascending: false });
 		loadingClips = false;
 
 		if (error) {
@@ -353,63 +406,68 @@
 
 	async function createContent() {
 		if (!supabase) {
-			errorMessage = 'ยังไม่ได้ตั้งค่า Supabase';
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
 			return;
 		}
 
 		if (!contentTitleInput.trim()) {
-			errorMessage = 'กรุณาใส่ชื่อ content ที่ทำจริง';
+			errorMessage = "กรุณาใส่ชื่อ content ที่ทำจริง";
 			return;
 		}
 
 		creatingContent = true;
-		errorMessage = '';
-		message = '';
+		errorMessage = "";
+		message = "";
 
 		const payload = {
 			title: contentTitleInput.trim(),
 			description: contentDescriptionInput.trim() || null,
 			notes: null,
-			status: 'active'
+			status: "active",
 		};
 
 		const { data, error } = await supabase
-			.from('monitoring_content')
+			.from("monitoring_content")
 			.insert(payload)
-			.select('*')
+			.select("*")
 			.single();
 		creatingContent = false;
 
 		if (error || !data) {
-			errorMessage = `สร้าง content ไม่สำเร็จ: ${error?.message ?? 'unknown error'}`;
+			errorMessage = `สร้าง content ไม่สำเร็จ: ${error?.message ?? "unknown error"}`;
 			return;
 		}
 
 		contents = [data as MonitoringContentRow, ...contents];
-		contentTitleInput = '';
-		contentDescriptionInput = '';
+		contentTitleInput = "";
+		contentDescriptionInput = "";
 		selectContent((data as MonitoringContentRow).id);
-		message = 'เพิ่ม content สำหรับ monitoring แล้ว';
+		message = "เพิ่ม content สำหรับ monitoring แล้ว";
 	}
 
 	async function deleteSelectedContent() {
 		if (!supabase) {
-			errorMessage = 'ยังไม่ได้ตั้งค่า Supabase';
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
 			return;
 		}
 		if (!selectedContent) {
-			errorMessage = 'ยังไม่ได้เลือก content';
+			errorMessage = "ยังไม่ได้เลือก content";
 			return;
 		}
 
-		const confirmed = window.confirm(`ลบ content นี้ทั้งหมดใช่ไหม?\n${contentCode(selectedContent)} • ${selectedContent.title}`);
+		const confirmed = window.confirm(
+			`ลบ content นี้ทั้งหมดใช่ไหม?\n${contentCode(selectedContent)} • ${selectedContent.title}`,
+		);
 		if (!confirmed) return;
 
 		deletingContent = true;
-		errorMessage = '';
-		message = '';
+		errorMessage = "";
+		message = "";
 
-		const { error } = await supabase.from('monitoring_content').delete().eq('id', selectedContent.id);
+		const { error } = await supabase
+			.from("monitoring_content")
+			.delete()
+			.eq("id", selectedContent.id);
 		deletingContent = false;
 
 		if (error) {
@@ -425,19 +483,19 @@
 		if (contents.length > 0) {
 			selectContent(contents[0].id);
 		}
-		message = 'ลบ content และคลิปใน content นี้แล้ว';
+		message = "ลบ content และคลิปใน content นี้แล้ว";
 	}
 
 	async function analyzeClipLink() {
-		message = '';
-		errorMessage = '';
+		message = "";
+		errorMessage = "";
 
 		if (!selectedContentId) {
-			errorMessage = 'เลือก content ที่ต้องการ monitor ก่อน';
+			errorMessage = "เลือก content ที่ต้องการ monitor ก่อน";
 			return;
 		}
 		if (!clipLinkInput.trim()) {
-			errorMessage = 'กรุณาวางลิงก์คลิปก่อน';
+			errorMessage = "กรุณาวางลิงก์คลิปก่อน";
 			return;
 		}
 
@@ -452,7 +510,7 @@
 				likes: result.metrics.likes,
 				comments: result.metrics.comments,
 				shares: result.metrics.shares,
-				saves: result.metrics.saves
+				saves: result.metrics.saves,
 			};
 			if (hasAnyMetricValue(metrics)) {
 				message = `Analyze สำเร็จแล้ว (${platformLabel[result.platform]})`;
@@ -460,40 +518,46 @@
 				message = `อ่าน metadata ได้แล้ว (${platformLabel[result.platform]}) แต่ยังไม่เจอ metrics อัตโนมัติ`;
 			}
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'เกิดข้อผิดพลาดระหว่าง analyze';
+			errorMessage =
+				error instanceof Error
+					? error.message
+					: "เกิดข้อผิดพลาดระหว่าง analyze";
 		} finally {
 			analyzing = false;
 		}
 	}
 
-	function mergeMetrics(current: MetricsDraft, fallback: MetricsDraft): MetricsDraft {
+	function mergeMetrics(
+		current: MetricsDraft,
+		fallback: MetricsDraft,
+	): MetricsDraft {
 		return {
 			views: current.views ?? fallback.views,
 			likes: current.likes ?? fallback.likes,
 			comments: current.comments ?? fallback.comments,
 			shares: current.shares ?? fallback.shares,
-			saves: current.saves ?? fallback.saves
+			saves: current.saves ?? fallback.saves,
 		};
 	}
 
 	async function saveClip() {
 		if (!supabase) {
-			errorMessage = 'ยังไม่ได้ตั้งค่า Supabase';
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
 			return;
 		}
 		if (!selectedContentId) {
-			errorMessage = 'เลือก content ก่อนบันทึกคลิป';
+			errorMessage = "เลือก content ก่อนบันทึกคลิป";
 			return;
 		}
 
-		const finalUrl = clipLinkInput.trim() || draft?.url?.trim() || '';
+		const finalUrl = clipLinkInput.trim() || draft?.url?.trim() || "";
 		if (!finalUrl) {
-			errorMessage = 'กรุณาใส่ลิงก์คลิป';
+			errorMessage = "กรุณาใส่ลิงก์คลิป";
 			return;
 		}
 
-		errorMessage = '';
-		message = '';
+		errorMessage = "";
+		message = "";
 		savingClip = true;
 
 		let effectiveDraft = draft;
@@ -511,30 +575,39 @@
 			likes: effectiveDraft?.metrics.likes ?? null,
 			comments: effectiveDraft?.metrics.comments ?? null,
 			shares: effectiveDraft?.metrics.shares ?? null,
-			saves: effectiveDraft?.metrics.saves ?? null
+			saves: effectiveDraft?.metrics.saves ?? null,
 		});
 
 		const sourcePlatform =
-			effectiveDraft?.platform ?? getPlatformFromUrl(finalUrl) ?? selectedPlatform ?? 'youtube';
+			effectiveDraft?.platform ??
+			getPlatformFromUrl(finalUrl) ??
+			selectedPlatform ??
+			"youtube";
 
 		const payload = {
 			content_id: selectedContentId,
 			url: effectiveDraft?.url ?? finalUrl,
 			platform: sourcePlatform,
 			title: effectiveDraft?.title ?? selectedPlatformClip?.title ?? null,
-			thumbnail_url: effectiveDraft?.thumbnailUrl ?? selectedPlatformClip?.thumbnail_url ?? null,
-			published_at: effectiveDraft?.publishedAt ?? selectedPlatformClip?.published_at ?? null,
+			thumbnail_url:
+				effectiveDraft?.thumbnailUrl ??
+				selectedPlatformClip?.thumbnail_url ??
+				null,
+			published_at:
+				effectiveDraft?.publishedAt ??
+				selectedPlatformClip?.published_at ??
+				null,
 			view_count: normalizeMetricValue(mergedMetrics.views),
 			like_count: normalizeMetricValue(mergedMetrics.likes),
 			comment_count: normalizeMetricValue(mergedMetrics.comments),
 			share_count: normalizeMetricValue(mergedMetrics.shares),
 			save_count: normalizeMetricValue(mergedMetrics.saves),
-			notes: clipNotes.trim() || null
+			notes: clipNotes.trim() || null,
 		};
 
 		const { error } = await supabase
-			.from('monitoring_content_platform')
-			.upsert(payload, { onConflict: 'content_id,platform' });
+			.from("monitoring_content_platform")
+			.upsert(payload, { onConflict: "content_id,platform" });
 		savingClip = false;
 
 		if (error) {
@@ -554,25 +627,27 @@
 
 	async function deleteSelectedClip() {
 		if (!supabase) {
-			errorMessage = 'ยังไม่ได้ตั้งค่า Supabase';
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
 			return;
 		}
 		if (!selectedPlatformClip || !selectedContentId) {
-			errorMessage = 'ยังไม่มีคลิปของแพลตฟอร์มนี้ให้ลบ';
+			errorMessage = "ยังไม่มีคลิปของแพลตฟอร์มนี้ให้ลบ";
 			return;
 		}
 
-		const confirmed = window.confirm(`ลบคลิป ${platformLabel[selectedPlatform]} นี้ใช่ไหม?`);
+		const confirmed = window.confirm(
+			`ลบคลิป ${platformLabel[selectedPlatform]} นี้ใช่ไหม?`,
+		);
 		if (!confirmed) return;
 
 		deletingClip = true;
-		errorMessage = '';
-		message = '';
+		errorMessage = "";
+		message = "";
 
 		const { error } = await supabase
-			.from('monitoring_content_platform')
+			.from("monitoring_content_platform")
 			.delete()
-			.eq('id', selectedPlatformClip.id);
+			.eq("id", selectedPlatformClip.id);
 		deletingClip = false;
 
 		if (error) {
@@ -585,10 +660,91 @@
 		message = `ลบคลิป ${platformLabel[selectedPlatform]} แล้ว`;
 	}
 
+	async function refreshSingleClip(clip: MonitoringContentPlatformRow) {
+		if (!supabase) return;
+		refreshingSingle = clip.id;
+		errorMessage = "";
+		message = "";
+
+		try {
+			const result = await fetchEnrichResult(clip.url);
+			const updatedMetrics = {
+				view_count: result.metrics.views ?? clip.view_count,
+				like_count: result.metrics.likes ?? clip.like_count,
+				comment_count: result.metrics.comments ?? clip.comment_count,
+				share_count: result.metrics.shares ?? clip.share_count,
+				save_count: result.metrics.saves ?? clip.save_count,
+				title: result.title ?? clip.title,
+				thumbnail_url: result.thumbnailUrl ?? clip.thumbnail_url,
+			};
+
+			await supabase
+				.from("monitoring_content_platform")
+				.update(updatedMetrics)
+				.eq("id", clip.id);
+
+			await loadClips();
+			if (selectedContentId)
+				hydrateClipForm(selectedContentId, selectedPlatform);
+			message = `Refresh ${platformLabel[clip.platform]} สำเร็จ`;
+		} catch (err) {
+			errorMessage = `Refresh ไม่สำเร็จ: ${err instanceof Error ? err.message : "unknown"}`;
+		} finally {
+			refreshingSingle = null;
+		}
+	}
+
+	async function refreshAllClips() {
+		if (!supabase || clips.length === 0) return;
+		refreshingAll = true;
+		errorMessage = "";
+		message = "";
+
+		let successCount = 0;
+		let failCount = 0;
+
+		for (let i = 0; i < clips.length; i++) {
+			const clip = clips[i];
+			refreshProgress = `${i + 1}/${clips.length}`;
+
+			try {
+				const result = await fetchEnrichResult(clip.url);
+				const updatedMetrics = {
+					view_count: result.metrics.views ?? clip.view_count,
+					like_count: result.metrics.likes ?? clip.like_count,
+					comment_count:
+						result.metrics.comments ?? clip.comment_count,
+					share_count: result.metrics.shares ?? clip.share_count,
+					save_count: result.metrics.saves ?? clip.save_count,
+					title: result.title ?? clip.title,
+					thumbnail_url: result.thumbnailUrl ?? clip.thumbnail_url,
+				};
+
+				await supabase
+					.from("monitoring_content_platform")
+					.update(updatedMetrics)
+					.eq("id", clip.id);
+
+				successCount++;
+			} catch {
+				failCount++;
+			}
+		}
+
+		await loadClips();
+		if (selectedContentId)
+			hydrateClipForm(selectedContentId, selectedPlatform);
+		refreshingAll = false;
+		refreshProgress = "";
+		message = `Refresh เสร็จแล้ว: ${successCount} สำเร็จ${failCount > 0 ? `, ${failCount} ไม่สำเร็จ` : ""}`;
+	}
+
 	onMount(async () => {
 		await Promise.all([loadContents(), loadClips()]);
 		if (contents.length > 0) {
-			const target = monitoredRows.find((row) => row.clipCount > 0)?.content.id ?? contents[0].id;
+			const target =
+				monitoredRows.find((row) => row.clipCount > 0)?.content.id ??
+				contents[0].id;
 			selectContent(target);
 		}
 	});
@@ -598,7 +754,9 @@
 	<section class="hero">
 		<p class="kicker">Monitoring</p>
 		<h1>BigLot Content Monitoring</h1>
-		<p>หน้านี้ใช้เฉพาะ content ที่ทีม BigLot ผลิตจริง ไม่อิง backlog ideas</p>
+		<p>
+			หน้านี้ใช้เฉพาะ content ที่ทีม BigLot ผลิตจริง ไม่อิง backlog ideas
+		</p>
 	</section>
 
 	{#if !hasSupabaseConfig}
@@ -630,7 +788,9 @@
 						/>
 					</div>
 					<div class="row small-gap">
-						<label for="content-description">Description (optional)</label>
+						<label for="content-description"
+							>Description (optional)</label
+						>
 						<textarea
 							id="content-description"
 							rows={2}
@@ -638,8 +798,14 @@
 							placeholder="บริบท content นี้ เช่น campaign, objective"
 						></textarea>
 					</div>
-					<button class="primary full" onclick={createContent} disabled={creatingContent}>
-						{creatingContent ? 'Creating...' : 'Create Monitoring Content'}
+					<button
+						class="primary full"
+						onclick={createContent}
+						disabled={creatingContent}
+					>
+						{creatingContent
+							? "Creating..."
+							: "Create Monitoring Content"}
 					</button>
 				</div>
 
@@ -657,16 +823,25 @@
 						{#each monitoredRows as row}
 							<button
 								type="button"
-								class={`content-btn ${selectedContentId === row.content.id ? 'active' : ''}`}
+								class={`content-btn ${selectedContentId === row.content.id ? "active" : ""}`}
 								onclick={() => selectContent(row.content.id)}
 							>
 								<div>
 									<strong>{contentCode(row.content)}</strong>
-									<p class="content-title">{row.content.title}</p>
+									<p class="content-title">
+										{row.content.title}
+									</p>
 								</div>
 								<div class="content-meta">
-									<span class="chip">{row.clipCount} Platform{row.clipCount === 1 ? '' : 's'}</span>
-									<span>{formatCount(row.totalViews)} views</span>
+									<span class="chip"
+										>{row.clipCount} Platform{row.clipCount ===
+										1
+											? ""
+											: "s"}</span
+									>
+									<span
+										>{formatCount(row.totalViews)} views</span
+									>
 								</div>
 							</button>
 						{/each}
@@ -676,7 +851,9 @@
 
 			<div class="monitor-right">
 				{#if !selectedContent}
-					<p class="empty">เลือก content จากฝั่งซ้ายเพื่อเริ่ม monitor</p>
+					<p class="empty">
+						เลือก content จากฝั่งซ้ายเพื่อเริ่ม monitor
+					</p>
 				{:else}
 					<div class="source-head">
 						<p class="kicker small">Monitored Content</p>
@@ -686,8 +863,14 @@
 							<p class="meta">{selectedContent.description}</p>
 						{/if}
 						<div class="head-actions">
-							<button class="danger" onclick={deleteSelectedContent} disabled={deletingContent}>
-								{deletingContent ? 'Deleting...' : 'Delete Content'}
+							<button
+								class="danger"
+								onclick={deleteSelectedContent}
+								disabled={deletingContent}
+							>
+								{deletingContent
+									? "Deleting..."
+									: "Delete Content"}
 							</button>
 						</div>
 					</div>
@@ -696,7 +879,7 @@
 						{#each availablePlatforms as platform}
 							<button
 								type="button"
-								class={`platform-btn ${selectedPlatform === platform ? 'active' : ''}`}
+								class={`platform-btn ${selectedPlatform === platform ? "active" : ""}`}
 								onclick={() => selectPlatform(platform)}
 							>
 								<span>{platformLabel[platform]}</span>
@@ -708,46 +891,89 @@
 					</div>
 
 					<div class="row">
-						<label for="clip-link">Clip Link ({platformLabel[selectedPlatform]})</label>
-						<input id="clip-link" bind:value={clipLinkInput} placeholder={clipPlaceholder} />
+						<label for="clip-link"
+							>Clip Link ({platformLabel[
+								selectedPlatform
+							]})</label
+						>
+						<input
+							id="clip-link"
+							bind:value={clipLinkInput}
+							placeholder={clipPlaceholder}
+						/>
 					</div>
 
 					<div class="action-row">
-						<button class="ghost" onclick={analyzeClipLink} disabled={analyzing}>
-							{analyzing ? 'Analyzing...' : 'Analyze Link'}
+						<button
+							class="ghost"
+							onclick={analyzeClipLink}
+							disabled={analyzing}
+						>
+							{analyzing ? "Analyzing..." : "Analyze Link"}
 						</button>
-						<button class="primary" onclick={saveClip} disabled={savingClip}>
-							{savingClip ? 'Saving...' : 'Save Clip'}
+						<button
+							class="primary"
+							onclick={saveClip}
+							disabled={savingClip}
+						>
+							{savingClip ? "Saving..." : "Save Clip"}
 						</button>
 						<button
 							class="danger"
 							onclick={deleteSelectedClip}
 							disabled={!selectedPlatformClip || deletingClip}
 						>
-							{deletingClip ? 'Deleting...' : 'Delete Platform Clip'}
+							{deletingClip
+								? "Deleting..."
+								: "Delete Platform Clip"}
 						</button>
 					</div>
 
 					<div class="metrics">
 						<div class="metric-item">
 							<label for="m-views">Views</label>
-							<input id="m-views" type="number" min="0" bind:value={metrics.views} />
+							<input
+								id="m-views"
+								type="number"
+								min="0"
+								bind:value={metrics.views}
+							/>
 						</div>
 						<div class="metric-item">
 							<label for="m-likes">Likes</label>
-							<input id="m-likes" type="number" min="0" bind:value={metrics.likes} />
+							<input
+								id="m-likes"
+								type="number"
+								min="0"
+								bind:value={metrics.likes}
+							/>
 						</div>
 						<div class="metric-item">
 							<label for="m-comments">Comments</label>
-							<input id="m-comments" type="number" min="0" bind:value={metrics.comments} />
+							<input
+								id="m-comments"
+								type="number"
+								min="0"
+								bind:value={metrics.comments}
+							/>
 						</div>
 						<div class="metric-item">
 							<label for="m-shares">Shares</label>
-							<input id="m-shares" type="number" min="0" bind:value={metrics.shares} />
+							<input
+								id="m-shares"
+								type="number"
+								min="0"
+								bind:value={metrics.shares}
+							/>
 						</div>
 						<div class="metric-item">
 							<label for="m-saves">Saves</label>
-							<input id="m-saves" type="number" min="0" bind:value={metrics.saves} />
+							<input
+								id="m-saves"
+								type="number"
+								min="0"
+								bind:value={metrics.saves}
+							/>
 						</div>
 					</div>
 
@@ -782,11 +1008,19 @@
 									allowfullscreen
 								></iframe>
 							{:else if currentPreview.thumbnailUrl}
-								<img class="preview-media" src={currentPreview.thumbnailUrl} alt={currentPreview.title ?? 'thumbnail'} />
+								<img
+									class="preview-media"
+									src={currentPreview.thumbnailUrl}
+									alt={currentPreview.title ?? "thumbnail"}
+								/>
 							{/if}
 							<div>
-								<span class="platform">{currentPreview.platform.toUpperCase()}</span>
-								<h4>{currentPreview.title ?? 'Untitled clip'}</h4>
+								<span class="platform"
+									>{currentPreview.platform.toUpperCase()}</span
+								>
+								<h4>
+									{currentPreview.title ?? "Untitled clip"}
+								</h4>
 								<p class="meta">{currentPreview.url}</p>
 							</div>
 						</div>
@@ -794,18 +1028,27 @@
 
 					<div class="platform-grid">
 						{#each availablePlatforms as platform}
-							{@const clip = selectedClipByPlatform.get(platform) ?? null}
-							{@const clipTikTokEmbed = clip && clip.platform === 'tiktok' ? getTikTokEmbedUrl(clip.url) : null}
+							{@const clip =
+								selectedClipByPlatform.get(platform) ?? null}
+							{@const clipTikTokEmbed =
+								clip && clip.platform === "tiktok"
+									? getTikTokEmbedUrl(clip.url)
+									: null}
 							{@const clipInstagramEmbed =
-								clip && clip.platform === 'instagram' ? getInstagramEmbedUrl(clip.url) : null}
+								clip && clip.platform === "instagram"
+									? getInstagramEmbedUrl(clip.url)
+									: null}
 							<button
 								type="button"
-								class={`platform-card ${selectedPlatform === platform ? 'active' : ''} ${platformFrameClass(platform)}`}
+								class={`platform-card ${selectedPlatform === platform ? "active" : ""} ${platformFrameClass(platform)}`}
 								onclick={() => selectPlatform(platform)}
 							>
 								<div class="platform-card-head">
 									<strong>{platformLabel[platform]}</strong>
-									<span class={`status ${clip ? 'ok' : 'missing'}`}>{clip ? 'Monitored' : 'Missing'}</span>
+									<span
+										class={`status ${clip ? "ok" : "missing"}`}
+										>{clip ? "Monitored" : "Missing"}</span
+									>
 								</div>
 
 								{#if clipTikTokEmbed}
@@ -827,16 +1070,51 @@
 										allowfullscreen
 									></iframe>
 								{:else if clip?.thumbnail_url}
-									<img class="card-media" src={clip.thumbnail_url} alt={clip.title ?? 'thumbnail'} />
+									<img
+										class="card-media"
+										src={clip.thumbnail_url}
+										alt={clip.title ?? "thumbnail"}
+									/>
 								{:else}
 									<div class="card-empty">No preview</div>
 								{/if}
 
 								{#if clip}
-									<p class="card-title">{clip.title ?? 'Untitled clip'}</p>
-									<p class="card-metric">Views: {formatCount(clip.view_count)}</p>
+									<p class="card-title">
+										{clip.title ?? "Untitled clip"}
+									</p>
+									<div class="card-bottom">
+										<p class="card-metric">
+											Views: {formatCount(
+												clip.view_count,
+											)}
+										</p>
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<span
+											class="refresh-icon"
+											role="button"
+											tabindex="0"
+											title="Refresh metrics"
+											onclick={(e: MouseEvent) => {
+												e.stopPropagation();
+												refreshSingleClip(clip);
+											}}
+											onkeydown={(e: KeyboardEvent) => {
+												if (e.key === "Enter") {
+													e.stopPropagation();
+													refreshSingleClip(clip);
+												}
+											}}
+										>
+											{refreshingSingle === clip.id
+												? "⏳"
+												: "🔄"}
+										</span>
+									</div>
 								{:else}
-									<p class="card-title muted">ยังไม่มีคลิปในแพลตฟอร์มนี้</p>
+									<p class="card-title muted">
+										ยังไม่มีคลิปในแพลตฟอร์มนี้
+									</p>
 								{/if}
 							</button>
 						{/each}
@@ -849,7 +1127,20 @@
 	<section class="panel bi-panel">
 		<div class="list-head">
 			<h2>BI: Creator Analysis</h2>
-			<span>{biTotals.totalClips} clips tracked</span>
+			<div class="bi-head-actions">
+				<span>{biTotals.totalClips} clips tracked</span>
+				<button
+					class="ghost refresh-btn"
+					onclick={refreshAllClips}
+					disabled={refreshingAll || clips.length === 0}
+				>
+					{#if refreshingAll}
+						🔄 Refreshing {refreshProgress}...
+					{:else}
+						🔄 Refresh All Metrics
+					{/if}
+				</button>
+			</div>
 		</div>
 
 		<div class="summary-grid">
@@ -888,7 +1179,12 @@
 					<tbody>
 						{#each platformStats as stat}
 							<tr>
-								<td><span class={`platform ${platformFrameClass(stat.platform)}`}>{platformLabel[stat.platform]}</span></td>
+								<td
+									><span
+										class={`platform ${platformFrameClass(stat.platform)}`}
+										>{platformLabel[stat.platform]}</span
+									></td
+								>
 								<td>{stat.clipCount}</td>
 								<td>{formatCount(stat.totalViews)}</td>
 								<td>{formatCount(stat.totalEngagement)}</td>
@@ -910,13 +1206,27 @@
 							<article class="leader-item">
 								<div>
 									<p class="rank">#{index + 1}</p>
-									<strong>{row.content ? contentCode(row.content) : 'Unknown content'}</strong>
-									<p class="muted">{row.clip.title ?? row.content?.title ?? 'Untitled clip'}</p>
-									<p class="muted">{platformLabel[row.clip.platform]}</p>
+									<strong
+										>{row.content
+											? contentCode(row.content)
+											: "Unknown content"}</strong
+									>
+									<p class="muted">
+										{row.clip.title ??
+											row.content?.title ??
+											"Untitled clip"}
+									</p>
+									<p class="muted">
+										{platformLabel[row.clip.platform]}
+									</p>
 								</div>
 								<div class="leader-metrics">
-									<p>{formatCount(row.clip.view_count)} views</p>
-									<p>{formatCount(row.engagement)} engagement</p>
+									<p>
+										{formatCount(row.clip.view_count)} views
+									</p>
+									<p>
+										{formatCount(row.engagement)} engagement
+									</p>
 								</div>
 							</article>
 						{/each}
@@ -937,7 +1247,7 @@
 	h2,
 	h3,
 	h4 {
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		font-family: "Space Grotesk", "Noto Sans Thai", sans-serif;
 	}
 
 	.hero {
@@ -1503,6 +1813,47 @@
 		.metrics {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
+	}
+
+	.card-bottom {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.3rem;
+	}
+
+	.refresh-icon {
+		background: none;
+		border: none;
+		cursor: pointer;
+		font-size: 0.82rem;
+		padding: 0.15rem;
+		border-radius: 0.4rem;
+		line-height: 1;
+		opacity: 0.6;
+		transition: opacity 0.15s;
+	}
+
+	.refresh-icon:hover:not(:disabled) {
+		opacity: 1;
+		background: rgba(37, 99, 235, 0.08);
+	}
+
+	.refresh-icon:disabled {
+		cursor: not-allowed;
+		opacity: 0.35;
+	}
+
+	.bi-head-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+	}
+
+	.refresh-btn {
+		font-size: 0.78rem;
+		padding: 0.4rem 0.65rem;
+		white-space: nowrap;
 	}
 
 	@media (max-width: 560px) {

@@ -1,6 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { EnrichMetrics, EnrichResult, SupportedPlatform } from '$lib/types';
+import {
+	fetchYouTubeOEmbed,
+	fetchFacebookOEmbed,
+	fetchTikTokOEmbed,
+	extractTikTokMetricsFromHtml,
+	type OEmbedResult
+} from '$lib/server/platform-oembed';
 
 const SUPPORTED_HOSTS: Record<SupportedPlatform, string[]> = {
 	youtube: ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'],
@@ -135,10 +142,10 @@ function extractInteractionMetrics(videoNode: Record<string, unknown>): EnrichMe
 				? interactionType
 				: typeof interactionType === 'object' && interactionType
 					? String(
-							(interactionType as Record<string, unknown>).name ??
-								(interactionType as Record<string, unknown>)['@type'] ??
-								''
-						).toLowerCase()
+						(interactionType as Record<string, unknown>).name ??
+						(interactionType as Record<string, unknown>)['@type'] ??
+						''
+					).toLowerCase()
 					: '';
 
 		if (/comment/.test(interactionName)) metrics.comments = count;
@@ -312,6 +319,23 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			? await fetchInstagramOEmbed(resolvedUrl || target.toString(), fetch)
 			: { title: null, authorName: null, thumbnailUrl: null };
 
+	// ── oEmbed calls (free, no API key) ──────────────────────────────
+	let oEmbedResult: OEmbedResult | null = null;
+	const oEmbedTarget = resolvedUrl || target.toString();
+	if (platform === 'youtube') {
+		oEmbedResult = await fetchYouTubeOEmbed(oEmbedTarget, fetch);
+	} else if (platform === 'facebook') {
+		oEmbedResult = await fetchFacebookOEmbed(oEmbedTarget, fetch);
+	} else if (platform === 'tiktok') {
+		oEmbedResult = await fetchTikTokOEmbed(oEmbedTarget, fetch);
+	}
+
+	// ── TikTok rehydration metrics ──────────────────────────────────
+	const tiktokRehydrationMetrics: EnrichMetrics =
+		platform === 'tiktok' ? extractTikTokMetricsFromHtml(html) : {
+			views: null, likes: null, comments: null, shares: null, saves: null
+		};
+
 	let jsonLdSource: Record<string, unknown> | null = null;
 	const jsonLdMatches = html.matchAll(
 		/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -385,8 +409,14 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const oEmbedTitleMetrics = extractMetricsFromDescription(instagramOEmbed.title);
 	const jsonLdMetrics = jsonLdSource ? extractInteractionMetrics(jsonLdSource) : regexMetrics;
 	const metrics = mergeMetrics(
-		mergeMetrics(mergeMetrics(jsonLdMetrics, regexMetrics), pageDescriptionMetrics),
-		oEmbedTitleMetrics
+		mergeMetrics(
+			mergeMetrics(
+				mergeMetrics(jsonLdMetrics, regexMetrics),
+				pageDescriptionMetrics
+			),
+			oEmbedTitleMetrics
+		),
+		tiktokRehydrationMetrics
 	);
 	const fallbackUsed =
 		(jsonLdMetrics.views === null && regexMetrics.views !== null) ||
@@ -411,7 +441,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const resolvedTitle =
 		platform === 'instagram'
 			? normalizedTitle ?? instagramOEmbed.title ?? normalizedDescription
-			: normalizedTitle;
+			: normalizedTitle ?? oEmbedResult?.title ?? null;
 
 	const result: EnrichResult = {
 		url: resolvedUrl,
@@ -423,27 +453,31 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 				? ((jsonLdSource.author as Record<string, unknown>).name as string | undefined)
 				: null) ??
 			instagramOEmbed.authorName ??
+			oEmbedResult?.authorName ??
 			extractMetaContent(html, 'author') ??
 			extractMetaContent(html, 'og:site_name'),
-			thumbnailUrl:
-				(typeof jsonLdSource?.thumbnailUrl === 'string'
-					? (jsonLdSource.thumbnailUrl as string)
-					: Array.isArray(jsonLdSource?.thumbnailUrl)
-						? (jsonLdSource.thumbnailUrl[0] as string | undefined)
-						: undefined) ??
-				instagramOEmbed.thumbnailUrl ??
-				extractMetaContent(metricsHtml, 'og:image') ??
-				extractMetaContent(metricsHtml, 'twitter:image'),
-			publishedAt:
-				(jsonLdSource?.uploadDate as string | undefined) ??
-				(jsonLdSource?.datePublished as string | undefined) ??
-				extractMetaContent(metricsHtml, 'article:published_time'),
+		thumbnailUrl:
+			(typeof jsonLdSource?.thumbnailUrl === 'string'
+				? (jsonLdSource.thumbnailUrl as string)
+				: Array.isArray(jsonLdSource?.thumbnailUrl)
+					? (jsonLdSource.thumbnailUrl[0] as string | undefined)
+					: undefined) ??
+			instagramOEmbed.thumbnailUrl ??
+			oEmbedResult?.thumbnailUrl ??
+			extractMetaContent(metricsHtml, 'og:image') ??
+			extractMetaContent(metricsHtml, 'twitter:image'),
+		publishedAt:
+			(jsonLdSource?.uploadDate as string | undefined) ??
+			(jsonLdSource?.datePublished as string | undefined) ??
+			extractMetaContent(metricsHtml, 'article:published_time'),
 		metrics,
 		source: [
 			jsonLdSource ? 'json-ld' : null,
 			hasMetaTags ? 'meta-tags' : null,
 			fallbackUsed ? 'regex-fallback' : null,
-			platform === 'instagram' && hasAnyMetricValue(oEmbedTitleMetrics) ? 'instagram-oembed' : null
+			platform === 'instagram' && hasAnyMetricValue(oEmbedTitleMetrics) ? 'instagram-oembed' : null,
+			oEmbedResult ? oEmbedResult.source : null,
+			platform === 'tiktok' && hasAnyMetricValue(tiktokRehydrationMetrics) ? 'tiktok-rehydration' : null
 		].filter((value, index, self): value is string => value !== null && self.indexOf(value) === index)
 	};
 
@@ -457,7 +491,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 function resultHasAnyMetaValue(html: string): boolean {
 	return Boolean(
 		extractMetaContent(html, 'og:title') ||
-			extractMetaContent(html, 'og:description') ||
-			extractMetaContent(html, 'og:image')
+		extractMetaContent(html, 'og:description') ||
+		extractMetaContent(html, 'og:image')
 	);
 }
