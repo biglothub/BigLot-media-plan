@@ -1,0 +1,1 @@
+ALTER TABLE "idea_backlog" ALTER COLUMN "url" DROP NOT NULL;

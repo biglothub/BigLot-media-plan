@@ -3,8 +3,9 @@ create extension if not exists "pgcrypto";
 create table if not exists public.idea_backlog (
   id uuid primary key default gen_random_uuid(),
   idea_code text not null default ('BL-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8))),
-  url text not null,
+  url text,
   platform text not null check (platform in ('youtube', 'facebook', 'instagram', 'tiktok')),
+  content_type text not null default 'video' check (content_type in ('video', 'post', 'image')),
   title text,
   description text,
   author_name text,

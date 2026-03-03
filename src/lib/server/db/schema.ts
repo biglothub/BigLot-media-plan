@@ -22,8 +22,9 @@ export const ideaBacklog = pgTable(
 			.default(
 				sql`'BL-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8))`
 			),
-		url: text('url').notNull(),
+		url: text('url'),
 		platform: text('platform').notNull().$type<'youtube' | 'facebook' | 'instagram' | 'tiktok'>(),
+		contentType: text('content_type').notNull().default('video').$type<'video' | 'post' | 'image'>(),
 		title: text('title'),
 		description: text('description'),
 		authorName: text('author_name'),
@@ -48,6 +49,10 @@ export const ideaBacklog = pgTable(
 		check(
 			'idea_backlog_platform_check',
 			sql`${table.platform} in ('youtube', 'facebook', 'instagram', 'tiktok')`
+		),
+		check(
+			'idea_backlog_content_type_check',
+			sql`${table.contentType} in ('video', 'post', 'image')`
 		),
 		pgPolicy('public_read_backlog', {
 			for: 'select',

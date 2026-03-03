@@ -1,4 +1,5 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
+export type BacklogContentType = 'video' | 'post' | 'image';
 
 export interface EnrichMetrics {
 	views: number | null;
@@ -11,6 +12,7 @@ export interface EnrichMetrics {
 export interface EnrichResult {
 	url: string;
 	platform: SupportedPlatform;
+	contentType: BacklogContentType;
 	title: string | null;
 	description: string | null;
 	authorName: string | null;
@@ -23,8 +25,9 @@ export interface EnrichResult {
 export interface IdeaBacklogRow {
 	id: string;
 	idea_code: string;
-	url: string;
+	url: string | null;
 	platform: SupportedPlatform;
+	content_type: BacklogContentType;
 	title: string | null;
 	description: string | null;
 	author_name: string | null;

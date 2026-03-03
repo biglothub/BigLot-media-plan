@@ -339,6 +339,10 @@
 			.slice(0, 8);
 	});
 
+	function scrollToTop() {
+		window.scrollTo({ top: 0, behavior: "smooth" });
+	}
+
 	function contentCode(
 		content: Pick<MonitoringContentRow, "id" | "content_code">,
 	): string {
@@ -515,6 +519,7 @@
 
 		if (error || !data) {
 			errorMessage = `สร้าง content ไม่สำเร็จ: ${error?.message ?? "unknown error"}`;
+			scrollToTop();
 			return;
 		}
 
@@ -523,6 +528,7 @@
 		contentDescriptionInput = "";
 		selectContent((data as MonitoringContentRow).id);
 		message = "เพิ่ม content สำหรับ monitoring แล้ว";
+		scrollToTop();
 	}
 
 	async function deleteSelectedContent() {
@@ -552,6 +558,7 @@
 
 		if (error) {
 			errorMessage = `ลบ content ไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
 			return;
 		}
 
@@ -564,6 +571,7 @@
 			selectContent(contents[0].id);
 		}
 		message = "ลบ content และคลิปใน content นี้แล้ว";
+		scrollToTop();
 	}
 
 	async function analyzeClipLink() {
@@ -604,6 +612,7 @@
 					: "เกิดข้อผิดพลาดระหว่าง analyze";
 		} finally {
 			analyzing = false;
+			scrollToTop();
 		}
 	}
 
@@ -692,6 +701,7 @@
 
 		if (error) {
 			errorMessage = `บันทึกคลิปไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
 			return;
 		}
 
@@ -703,6 +713,7 @@
 		message = autoAnalyzeFailed
 			? `บันทึกคลิปแล้ว (${platformLabel[sourcePlatform]}) โดยใช้ค่าที่กรอกเอง`
 			: `บันทึกคลิปแล้ว (${platformLabel[sourcePlatform]})`;
+		scrollToTop();
 	}
 
 	async function deleteSelectedClip() {
@@ -732,12 +743,14 @@
 
 		if (error) {
 			errorMessage = `ลบคลิปไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
 			return;
 		}
 
 		clips = clips.filter((item) => item.id !== selectedPlatformClip.id);
 		hydrateClipForm(selectedContentId, selectedPlatform);
 		message = `ลบคลิป ${platformLabel[selectedPlatform]} แล้ว`;
+		scrollToTop();
 	}
 
 	async function refreshSingleClip(clip: MonitoringContentPlatformRow) {

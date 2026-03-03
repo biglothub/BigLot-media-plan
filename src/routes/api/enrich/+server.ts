@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { EnrichMetrics, EnrichResult, SupportedPlatform } from '$lib/types';
+import type { BacklogContentType, EnrichMetrics, EnrichResult, SupportedPlatform } from '$lib/types';
 import {
 	fetchYouTubeOEmbed,
 	fetchFacebookOEmbed,
@@ -25,6 +25,51 @@ function detectPlatform(hostname: string): SupportedPlatform | null {
 		}
 	}
 
+	return null;
+}
+
+function inferContentTypeFromUrl(platform: SupportedPlatform, targetUrl: string): BacklogContentType {
+	const pathname = (() => {
+		try {
+			return new URL(targetUrl).pathname.toLowerCase();
+		} catch {
+			return '';
+		}
+	})();
+
+	if (platform === 'youtube') {
+		return pathname.includes('/post/') ? 'post' : 'video';
+	}
+
+	if (platform === 'tiktok') {
+		if (pathname.includes('/photo/')) return 'image';
+		return 'video';
+	}
+
+	if (platform === 'facebook') {
+		if (pathname.includes('/videos/') || pathname.includes('/watch/')) return 'video';
+		return 'post';
+	}
+
+	if (pathname.includes('/reel/') || pathname.includes('/tv/')) return 'video';
+	if (pathname.includes('/p/')) return 'post';
+
+	return 'post';
+}
+
+function normalizeContentType(value: unknown): BacklogContentType | null {
+	if (typeof value !== 'string') return null;
+	const normalized = value.toLowerCase();
+	if (normalized.includes('video')) return 'video';
+	if (normalized.includes('image') || normalized.includes('photo')) return 'image';
+	if (
+		normalized.includes('post') ||
+		normalized.includes('article') ||
+		normalized.includes('socialmediaposting') ||
+		normalized.includes('creativework')
+	) {
+		return 'post';
+	}
 	return null;
 }
 
@@ -294,7 +339,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		if (!response.ok) {
 			return json(
 				{
-					error: `Failed to fetch the video page (${response.status}). Some platforms block automated metadata requests.`
+					error: `Failed to fetch the content page (${response.status}). Some platforms block automated metadata requests.`
 				},
 				{ status: 502 }
 			);
@@ -348,12 +393,15 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		try {
 			const parsed = JSON.parse(scriptBody);
 			const nodes = collectJsonLdObjects(parsed);
-			const videoNode = nodes.find((node) => {
+			const preferredNode = nodes.find((node) => {
 				const typeField = String(node['@type'] ?? '').toLowerCase();
-				return typeField.includes('videoobject') || typeField.includes('video');
+				if (typeField.includes('videoobject') || typeField.includes('video')) return true;
+				if (typeField.includes('imageobject') || typeField.includes('image')) return true;
+				if (typeField.includes('socialmediaposting') || typeField.includes('article')) return true;
+				return false;
 			});
-			if (videoNode) {
-				jsonLdSource = videoNode;
+			if (preferredNode) {
+				jsonLdSource = preferredNode;
 				break;
 			}
 		} catch {
@@ -438,6 +486,16 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 
 	const normalizedTitle = extractedTitle?.trim() || null;
 	const normalizedDescription = extractedDescription?.trim() || null;
+	const inferredFromJsonLd = normalizeContentType(jsonLdSource?.['@type']);
+	const inferredFromOgType = normalizeContentType(extractMetaContent(metricsHtml, 'og:type'));
+	const inferredFromTwitterCard = normalizeContentType(
+		extractMetaContent(metricsHtml, 'twitter:card')
+	);
+	const contentType =
+		inferredFromJsonLd ??
+		inferredFromOgType ??
+		inferredFromTwitterCard ??
+		inferContentTypeFromUrl(platform, resolvedUrl || target.toString());
 	const resolvedTitle =
 		platform === 'instagram'
 			? normalizedTitle ?? instagramOEmbed.title ?? normalizedDescription
@@ -446,6 +504,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const result: EnrichResult = {
 		url: resolvedUrl,
 		platform,
+		contentType,
 		title: resolvedTitle,
 		description: normalizedDescription,
 		authorName:

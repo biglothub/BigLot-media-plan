@@ -1,0 +1,2 @@
+ALTER TABLE "idea_backlog" ADD COLUMN "content_type" text DEFAULT 'video' NOT NULL;--> statement-breakpoint
+ALTER TABLE "idea_backlog" ADD CONSTRAINT "idea_backlog_content_type_check" CHECK ("idea_backlog"."content_type" in ('video', 'post', 'image'));

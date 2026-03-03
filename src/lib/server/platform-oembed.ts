@@ -59,31 +59,40 @@ export async function fetchFacebookOEmbed(
     fetchFn: typeof fetch = fetch
 ): Promise<OEmbedResult | null> {
     try {
-        const endpoint = `https://www.facebook.com/plugins/video/oembed.json/?url=${encodeURIComponent(videoUrl)}`;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), OEMBED_TIMEOUT_MS);
+        const endpoints = [
+            `https://www.facebook.com/plugins/video/oembed.json/?url=${encodeURIComponent(videoUrl)}`,
+            `https://www.facebook.com/plugins/post/oembed.json/?url=${encodeURIComponent(videoUrl)}`
+        ];
 
-        const res = await fetchFn(endpoint, {
-            headers: {
-                Accept: 'application/json',
-                'User-Agent':
-                    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36'
-            },
-            signal: controller.signal
-        });
-        clearTimeout(timer);
+        for (const endpoint of endpoints) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), OEMBED_TIMEOUT_MS);
 
-        if (!res.ok) return null;
+            const res = await fetchFn(endpoint, {
+                headers: {
+                    Accept: 'application/json',
+                    'User-Agent':
+                        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36'
+                },
+                signal: controller.signal
+            });
+            clearTimeout(timer);
 
-        const data = (await res.json()) as Record<string, unknown>;
-        return {
-            platform: 'facebook',
-            title: typeof data.title === 'string' ? data.title.trim() || null : null,
-            authorName: typeof data.author_name === 'string' ? data.author_name.trim() || null : null,
-            thumbnailUrl: null, // Facebook oEmbed for video doesn't typically return thumbnail
-            metrics: emptyMetrics(),
-            source: 'facebook-oembed'
-        };
+            if (!res.ok) continue;
+
+            const data = (await res.json()) as Record<string, unknown>;
+            return {
+                platform: 'facebook',
+                title: typeof data.title === 'string' ? data.title.trim() || null : null,
+                authorName:
+                    typeof data.author_name === 'string' ? data.author_name.trim() || null : null,
+                thumbnailUrl: null,
+                metrics: emptyMetrics(),
+                source: endpoint.includes('/video/') ? 'facebook-video-oembed' : 'facebook-post-oembed'
+            };
+        }
+
+        return null;
     } catch {
         return null;
     }

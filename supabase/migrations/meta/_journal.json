@@ -57,6 +57,20 @@
       "when": 1772255872109,
       "tag": "0007_unique_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1772524770539,
+      "tag": "0008_common_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1772530211206,
+      "tag": "0009_amused_paper_doll",
+      "breakpoints": true
     }
   ]
 }

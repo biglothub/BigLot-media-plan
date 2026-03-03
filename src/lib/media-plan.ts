@@ -1,4 +1,4 @@
-import type { SupportedPlatform } from '$lib/types';
+import type { BacklogContentType, SupportedPlatform } from '$lib/types';
 
 export const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -9,6 +9,12 @@ export const platformLabel: Record<SupportedPlatform, string> = {
 	facebook: 'Facebook',
 	instagram: 'Instagram',
 	tiktok: 'TikTok'
+};
+
+export const contentTypeLabel: Record<BacklogContentType, string> = {
+	video: 'Video',
+	post: 'Post',
+	image: 'Image'
 };
 
 export function formatCount(value: number | null | undefined): string {

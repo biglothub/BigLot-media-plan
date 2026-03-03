@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { hasSupabaseConfig, supabase } from '$lib/supabase';
-	import type { IdeaBacklogRow, ProductionCalendarRow } from '$lib/types';
+	import { onMount } from "svelte";
+	import { hasSupabaseConfig, supabase } from "$lib/supabase";
+	import type { IdeaBacklogRow, ProductionCalendarRow } from "$lib/types";
 	import {
 		addMonthsIso,
 		buildMonthCells,
@@ -10,23 +10,27 @@
 		formatCount,
 		formatMonthLabel,
 		getMonthStartIso,
-		platformLabel
-	} from '$lib/media-plan';
+		platformLabel,
+	} from "$lib/media-plan";
 
 	let ideas = $state<IdeaBacklogRow[]>([]);
 	let calendarItems = $state<ProductionCalendarRow[]>([]);
 	let loadingIdeas = $state(false);
 	let loadingCalendar = $state(false);
-	let message = $state('');
-	let errorMessage = $state('');
+	let message = $state("");
+	let errorMessage = $state("");
 	let currentMonthStart = $state(getMonthStartIso(new Date()));
 	let dragHoverDate = $state<string | null>(null);
 	let draggingBacklogId = $state<string | null>(null);
 
 	const monthLabel = $derived.by(() => formatMonthLabel(currentMonthStart));
 	const monthCells = $derived.by(() => buildMonthCells(currentMonthStart));
-	const scheduledBacklogIds = $derived.by(() => new Set(calendarItems.map((item) => item.backlog_id)));
-	const unscheduledIdeas = $derived.by(() => ideas.filter((idea) => !scheduledBacklogIds.has(idea.id)));
+	const scheduledBacklogIds = $derived.by(
+		() => new Set(calendarItems.map((item) => item.backlog_id)),
+	);
+	const unscheduledIdeas = $derived.by(() =>
+		ideas.filter((idea) => !scheduledBacklogIds.has(idea.id)),
+	);
 	const calendarByDate = $derived.by(() => {
 		const grouped = new Map<string, ProductionCalendarRow[]>();
 		for (const item of calendarItems) {
@@ -37,17 +41,21 @@
 		return grouped;
 	});
 
-	function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
+	function backlogCode(
+		idea: Pick<IdeaBacklogRow, "id" | "idea_code">,
+	): string {
 		const code = idea.idea_code?.trim();
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
-	function platformFrameClass(platform: IdeaBacklogRow['platform'] | null | undefined): string {
-		if (platform === 'instagram') return 'platform-frame--instagram';
-		if (platform === 'tiktok') return 'platform-frame--tiktok';
-		if (platform === 'youtube') return 'platform-frame--youtube';
-		if (platform === 'facebook') return 'platform-frame--facebook';
-		return '';
+	function platformFrameClass(
+		platform: IdeaBacklogRow["platform"] | null | undefined,
+	): string {
+		if (platform === "instagram") return "platform-frame--instagram";
+		if (platform === "tiktok") return "platform-frame--tiktok";
+		if (platform === "youtube") return "platform-frame--youtube";
+		if (platform === "facebook") return "platform-frame--facebook";
+		return "";
 	}
 
 	async function loadIdeas() {
@@ -55,9 +63,9 @@
 		loadingIdeas = true;
 
 		const { data, error } = await supabase
-			.from('idea_backlog')
-			.select('*')
-			.order('created_at', { ascending: false });
+			.from("idea_backlog")
+			.select("*")
+			.order("created_at", { ascending: false });
 
 		loadingIdeas = false;
 		if (error) {
@@ -72,10 +80,12 @@
 		loadingCalendar = true;
 
 		const { data, error } = await supabase
-			.from('production_calendar')
-			.select('id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*)')
-			.order('shoot_date', { ascending: true })
-			.order('created_at', { ascending: true });
+			.from("production_calendar")
+			.select(
+				"id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*)",
+			)
+			.order("shoot_date", { ascending: true })
+			.order("created_at", { ascending: true });
 
 		loadingCalendar = false;
 		if (error) {
@@ -88,7 +98,9 @@
 			const linkedIdea = row.idea_backlog;
 			return {
 				...row,
-				idea_backlog: Array.isArray(linkedIdea) ? (linkedIdea[0] ?? null) : (linkedIdea ?? null)
+				idea_backlog: Array.isArray(linkedIdea)
+					? (linkedIdea[0] ?? null)
+					: (linkedIdea ?? null),
 			};
 		});
 
@@ -101,9 +113,9 @@
 
 	function handleDragStart(event: DragEvent, backlogId: string) {
 		draggingBacklogId = backlogId;
-		event.dataTransfer?.setData('text/plain', backlogId);
+		event.dataTransfer?.setData("text/plain", backlogId);
 		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.effectAllowed = "move";
 		}
 	}
 
@@ -111,35 +123,42 @@
 		event.preventDefault();
 		dragHoverDate = dateIso;
 		if (event.dataTransfer) {
-			event.dataTransfer.dropEffect = 'move';
+			event.dataTransfer.dropEffect = "move";
 		}
+	}
+
+	function scrollToTop() {
+		window.scrollTo({ top: 0, behavior: "smooth" });
 	}
 
 	async function scheduleIdeaOnDate(backlogId: string, dateIso: string) {
 		if (!supabase) return;
-		errorMessage = '';
+		errorMessage = "";
 
-		const { error } = await supabase.from('production_calendar').upsert(
+		const { error } = await supabase.from("production_calendar").upsert(
 			{
 				backlog_id: backlogId,
 				shoot_date: dateIso,
-				status: 'planned'
+				status: "planned",
 			},
-			{ onConflict: 'backlog_id' }
+			{ onConflict: "backlog_id" },
 		);
 
 		if (error) {
 			errorMessage = `วางแผนใน calendar ไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
 			return;
 		}
 
-		message = 'อัปเดตตารางถ่ายทำแล้ว';
+		message = "อัปเดตตารางถ่ายทำแล้ว";
+		scrollToTop();
 		await loadCalendar();
 	}
 
 	async function handleDropOnDate(event: DragEvent, dateIso: string) {
 		event.preventDefault();
-		const backlogId = event.dataTransfer?.getData('text/plain') || draggingBacklogId;
+		const backlogId =
+			event.dataTransfer?.getData("text/plain") || draggingBacklogId;
 		draggingBacklogId = null;
 		dragHoverDate = null;
 		if (!backlogId) return;
@@ -148,17 +167,24 @@
 
 	async function unscheduleIdea(backlogId: string) {
 		if (!supabase) return;
-		errorMessage = '';
+		errorMessage = "";
 
-		const { error } = await supabase.from('production_calendar').delete().eq('backlog_id', backlogId);
+		const { error } = await supabase
+			.from("production_calendar")
+			.delete()
+			.eq("backlog_id", backlogId);
 
 		if (error) {
 			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
 			return;
 		}
 
-		message = 'นำออกจาก calendar แล้ว';
-		calendarItems = calendarItems.filter((item) => item.backlog_id !== backlogId);
+		message = "นำออกจาก calendar แล้ว";
+		scrollToTop();
+		calendarItems = calendarItems.filter(
+			(item) => item.backlog_id !== backlogId,
+		);
 	}
 
 	onMount(async () => {
@@ -170,7 +196,9 @@
 	<section class="hero">
 		<p class="kicker">Planning</p>
 		<h1>Shoot Calendar</h1>
-		<p>ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน</p>
+		<p>
+			ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน
+		</p>
 	</section>
 
 	{#if !hasSupabaseConfig}
@@ -192,9 +220,13 @@
 		<div class="list-head">
 			<h2>Monthly Plan</h2>
 			<div class="calendar-controls">
-				<button class="ghost" onclick={() => shiftMonth(-1)}>&larr; Prev</button>
+				<button class="ghost" onclick={() => shiftMonth(-1)}
+					>&larr; Prev</button
+				>
 				<span>{monthLabel}</span>
-				<button class="ghost" onclick={() => shiftMonth(1)}>Next &rarr;</button>
+				<button class="ghost" onclick={() => shiftMonth(1)}
+					>Next &rarr;</button
+				>
 			</div>
 		</div>
 
@@ -211,22 +243,25 @@
 				{:else}
 					<div class="idea-list">
 						{#each unscheduledIdeas as idea}
-								<article
-									class={`idea-card ${platformFrameClass(idea.platform)}`}
+							<article
+								class={`idea-card ${platformFrameClass(idea.platform)}`}
 								draggable="true"
-								ondragstart={(event) => handleDragStart(event, idea.id)}
+								ondragstart={(event) =>
+									handleDragStart(event, idea.id)}
 								ondragend={() => {
 									draggingBacklogId = null;
 									dragHoverDate = null;
 								}}
+							>
+								<span class="platform"
+									>{platformLabel[idea.platform]}</span
 								>
-									<span class="platform">{platformLabel[idea.platform]}</span>
-									<h4>{backlogCode(idea)}</h4>
-									<p>{idea.title ?? 'Untitled idea'}</p>
-									<p>Views: {formatCount(idea.view_count)}</p>
-								</article>
-							{/each}
-						</div>
+								<h4>{backlogCode(idea)}</h4>
+								<p>{idea.title ?? "Untitled idea"}</p>
+								<p>Views: {formatCount(idea.view_count)}</p>
+							</article>
+						{/each}
+					</div>
 				{/if}
 			</aside>
 
@@ -246,16 +281,26 @@
 					<div class="calendar-grid">
 						{#each monthCells as cell}
 							<div
-								class={`calendar-day ${cell.inCurrentMonth ? '' : 'outside-month'} ${dragHoverDate === cell.dateIso ? 'drop-hover' : ''}`}
+								class={`calendar-day ${cell.inCurrentMonth ? "" : "outside-month"} ${dragHoverDate === cell.dateIso ? "drop-hover" : ""}`}
 								role="region"
 								aria-label={`Shoot day ${cell.dateIso}`}
-								ondragover={(event) => handleDragOver(event, cell.dateIso)}
+								ondragover={(event) =>
+									handleDragOver(event, cell.dateIso)}
 								ondragleave={() => (dragHoverDate = null)}
-								ondrop={(event) => handleDropOnDate(event, cell.dateIso)}
+								ondrop={(event) =>
+									handleDropOnDate(event, cell.dateIso)}
 							>
 								<div class="calendar-day-head">
-									<strong>{formatCalendarDayNumber(cell.dateIso)}</strong>
-									<small>{formatCalendarDayMeta(cell.dateIso)}</small>
+									<strong
+										>{formatCalendarDayNumber(
+											cell.dateIso,
+										)}</strong
+									>
+									<small
+										>{formatCalendarDayMeta(
+											cell.dateIso,
+										)}</small
+									>
 								</div>
 
 								{#if (calendarByDate.get(cell.dateIso) ?? []).length === 0}
@@ -263,35 +308,56 @@
 								{/if}
 
 								{#each calendarByDate.get(cell.dateIso) ?? [] as item}
-										<article
-											class={`calendar-item ${platformFrameClass(item.idea_backlog?.platform)}`}
+									<article
+										class={`calendar-item ${platformFrameClass(item.idea_backlog?.platform)}`}
 										draggable="true"
-										ondragstart={(event) => handleDragStart(event, item.backlog_id)}
+										ondragstart={(event) =>
+											handleDragStart(
+												event,
+												item.backlog_id,
+											)}
 									>
 										<a
 											class="calendar-link"
-											href={item.idea_backlog?.url ?? '#'}
+											href={item.idea_backlog?.url ?? "#"}
 											target="_blank"
 											rel="noopener noreferrer"
 											onclick={(event) => {
-												if (!item.idea_backlog?.url?.trim()) {
+												if (
+													!item.idea_backlog?.url?.trim()
+												) {
 													event.preventDefault();
-													errorMessage = 'ไม่พบลิงก์คลิปของไอเดียนี้';
+													errorMessage =
+														"ไม่พบลิงก์คลิปของไอเดียนี้";
 												}
 											}}
+										>
+											<span class="platform"
+												>{item.idea_backlog?.platform?.toUpperCase() ??
+													"IDEA"}</span
 											>
-												<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? 'IDEA'}</span>
-												<strong>{item.idea_backlog ? backlogCode(item.idea_backlog) : 'Unknown code'}</strong>
-												<p>{item.idea_backlog?.title ?? 'Untitled idea'}</p>
-											</a>
+											<strong
+												>{item.idea_backlog
+													? backlogCode(
+															item.idea_backlog,
+														)
+													: "Unknown code"}</strong
+											>
+											<p>
+												{item.idea_backlog?.title ??
+													"Untitled idea"}
+											</p>
+										</a>
 										<button
 											class="tiny-danger"
 											onclick={(event) => {
 												event.stopPropagation();
-												void unscheduleIdea(item.backlog_id);
+												void unscheduleIdea(
+													item.backlog_id,
+												);
 											}}
 										>
-											Remove
+											Unschedule
 										</button>
 									</article>
 								{/each}
@@ -314,7 +380,7 @@
 	h2,
 	h3,
 	h4 {
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		font-family: "Space Grotesk", "Noto Sans Thai", sans-serif;
 	}
 
 	.hero {

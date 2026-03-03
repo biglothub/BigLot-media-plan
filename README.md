@@ -1,16 +1,18 @@
 # BigLot Idea Backlog (Svelte + Supabase + Drizzle)
 
-MVP สำหรับเก็บ `idea backlog` จากลิงก์วิดีโอ YouTube / Facebook / Instagram / TikTok
+MVP สำหรับเก็บ `idea backlog` จากลิงก์คอนเทนต์ YouTube / Facebook / Instagram / TikTok
+รองรับการระบุประเภทคอนเทนต์เป็น `Video` / `Post` / `Image`
 โดยทุก backlog จะมีรหัสอ้างอิงอัตโนมัติในรูปแบบ `BL-YYYYMMDD-XXXXXXXX`
 
 Workflow:
 1. วางลิงก์
 2. กด `Analyze Link`
-3. ตรวจ/แก้ค่า engagement
+3. เลือกประเภทคอนเทนต์ + ตรวจ/แก้ค่า engagement
 4. กด `Save To Backlog`
-5. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
-6. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` ได้หลายแพลตฟอร์ม (YouTube/Facebook/Instagram/TikTok) เพื่อเทียบ KPI แยกแพลตฟอร์ม
-7. เข้า `Content Monitoring` เพื่อสร้างรายการ `content ที่ผลิตจริง` โดยตรง (ไม่อิง backlog) แล้วเพิ่มคลิปย้อนหลัง/ดู preview ครบทุกแพลตฟอร์ม/ดู BI performance summary
+5. หรือถ้าต้องการสร้างไอเดียเอง ให้กรอกในส่วน `Create Manually` แล้วกด `Save Manual Idea` (ช่อง `Content Link` ไม่บังคับ)
+6. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
+7. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` ได้หลายแพลตฟอร์ม (YouTube/Facebook/Instagram/TikTok) เพื่อเทียบ KPI แยกแพลตฟอร์ม
+8. เข้า `Content Monitoring` เพื่อสร้างรายการ `content ที่ผลิตจริง` โดยตรง (ไม่อิง backlog) แล้วเพิ่มคลิปย้อนหลัง/ดู preview ครบทุกแพลตฟอร์ม/ดู BI performance summary
 
 ## Tech Stack
 - SvelteKit
