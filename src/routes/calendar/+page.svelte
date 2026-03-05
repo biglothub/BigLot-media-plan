@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
-	import type { IdeaBacklogRow, ProductionCalendarRow } from "$lib/types";
+	import type { IdeaBacklogRow, ProductionCalendarRow, CalendarAssignmentRow, TeamMember, ProductionStage } from "$lib/types";
 	import {
 		addMonthsIso,
 		buildMonthCells,
@@ -9,8 +9,12 @@
 		formatCalendarDayNumber,
 		formatCount,
 		formatMonthLabel,
+		getInstagramEmbedUrl,
 		getMonthStartIso,
+		getTikTokEmbedUrl,
 		platformLabel,
+		PRODUCTION_STAGES,
+		stageLabel,
 	} from "$lib/media-plan";
 
 	let ideas = $state<IdeaBacklogRow[]>([]);
@@ -22,6 +26,17 @@
 	let currentMonthStart = $state(getMonthStartIso(new Date()));
 	let dragHoverDate = $state<string | null>(null);
 	let draggingBacklogId = $state<string | null>(null);
+	let detailItem = $state<ProductionCalendarRow | null>(null);
+	let assignmentDraft = $state<Record<TeamMember, { enabled: boolean; role_detail: string }>>({
+		'โฟน': { enabled: false, role_detail: '' },
+		'ฟิวส์': { enabled: false, role_detail: '' },
+		'อิก': { enabled: false, role_detail: '' },
+		'ต้า': { enabled: false, role_detail: '' },
+	});
+	let savingAssignments = $state(false);
+	let detailNotes = $state("");
+	let ideaSearch = $state("");
+	const TEAM_MEMBERS: TeamMember[] = ['โฟน', 'ฟิวส์', 'อิก', 'ต้า'];
 
 	const monthLabel = $derived.by(() => formatMonthLabel(currentMonthStart));
 	const monthCells = $derived.by(() => buildMonthCells(currentMonthStart));
@@ -31,6 +46,15 @@
 	const unscheduledIdeas = $derived.by(() =>
 		ideas.filter((idea) => !scheduledBacklogIds.has(idea.id)),
 	);
+	const filteredUnscheduledIdeas = $derived.by(() => {
+		const q = ideaSearch.trim().toLowerCase();
+		if (!q) return unscheduledIdeas;
+		return unscheduledIdeas.filter((idea) => {
+			const code = backlogCode(idea).toLowerCase();
+			const title = (idea.title ?? "").toLowerCase();
+			return code.includes(q) || title.includes(q);
+		});
+	});
 	const calendarByDate = $derived.by(() => {
 		const grouped = new Map<string, ProductionCalendarRow[]>();
 		for (const item of calendarItems) {
@@ -82,7 +106,7 @@
 		const { data, error } = await supabase
 			.from("production_calendar")
 			.select(
-				"id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*)",
+				"id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*), calendar_assignments(*)",
 			)
 			.order("shoot_date", { ascending: true })
 			.order("created_at", { ascending: true });
@@ -96,11 +120,13 @@
 		const normalized = (data ?? []).map((item) => {
 			const row = item as Record<string, unknown>;
 			const linkedIdea = row.idea_backlog;
+			const assignments = row.calendar_assignments;
 			return {
 				...row,
 				idea_backlog: Array.isArray(linkedIdea)
 					? (linkedIdea[0] ?? null)
 					: (linkedIdea ?? null),
+				calendar_assignments: Array.isArray(assignments) ? assignments : [],
 			};
 		});
 
@@ -193,6 +219,86 @@
 		await loadCalendar();
 	}
 
+	function openDetail(item: ProductionCalendarRow) {
+		detailItem = item;
+		detailNotes = item.notes ?? '';
+		const existing = item.calendar_assignments ?? [];
+		assignmentDraft = {
+			'โฟน': { enabled: false, role_detail: '' },
+			'ฟิวส์': { enabled: false, role_detail: '' },
+			'อิก': { enabled: false, role_detail: '' },
+			'ต้า': { enabled: false, role_detail: '' },
+		};
+		for (const a of existing) {
+			assignmentDraft[a.member_name] = { enabled: true, role_detail: a.role_detail };
+		}
+	}
+
+	function closeDetail() {
+		detailItem = null;
+	}
+
+	async function saveAssignments() {
+		if (!supabase || !detailItem) return;
+		savingAssignments = true;
+		errorMessage = "";
+
+		const calendarId = detailItem.id;
+
+		// Save notes to production_calendar
+		const { error: notesError } = await supabase
+			.from("production_calendar")
+			.update({ notes: detailNotes.trim() || null })
+			.eq("id", calendarId);
+
+		if (notesError) {
+			errorMessage = `บันทึกโน้ตไม่สำเร็จ: ${notesError.message}`;
+			savingAssignments = false;
+			return;
+		}
+
+		// Delete existing assignments for this calendar item
+		await supabase.from("calendar_assignments").delete().eq("calendar_id", calendarId);
+
+		// Insert enabled ones
+		const toInsert = TEAM_MEMBERS
+			.filter((m) => assignmentDraft[m].enabled)
+			.map((m) => ({
+				calendar_id: calendarId,
+				member_name: m,
+				role_detail: assignmentDraft[m].role_detail,
+			}));
+
+		if (toInsert.length > 0) {
+			const { error } = await supabase.from("calendar_assignments").insert(toInsert);
+			if (error) {
+				errorMessage = `บันทึกหน้าที่ไม่สำเร็จ: ${error.message}`;
+				savingAssignments = false;
+				return;
+			}
+		}
+
+		savingAssignments = false;
+		message = "บันทึกหน้าที่เรียบร้อยแล้ว";
+		closeDetail();
+		await loadCalendar();
+	}
+
+	async function updateStatus(calendarId: string, newStatus: ProductionStage) {
+		if (!supabase) return;
+		const { error } = await supabase
+			.from("production_calendar")
+			.update({ status: newStatus })
+			.eq("id", calendarId);
+
+		if (error) {
+			errorMessage = `อัปเดตสถานะไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
+			return;
+		}
+		await loadCalendar();
+	}
+
 	onMount(async () => {
 		await Promise.all([loadIdeas(), loadCalendar()]);
 	});
@@ -242,13 +348,23 @@
 					<h3>Unscheduled Ideas</h3>
 					<span>{unscheduledIdeas.length}</span>
 				</div>
+				<input
+					class="idea-search"
+					type="text"
+					placeholder="ค้นหาด้วยรหัสหรือชื่อ..."
+					bind:value={ideaSearch}
+				/>
 				{#if loadingIdeas}
 					<p class="empty">Loading ideas...</p>
 				{:else if unscheduledIdeas.length === 0}
 					<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
+				{:else if filteredUnscheduledIdeas.length === 0}
+					<p class="empty">ไม่พบไอเดียที่ค้นหา</p>
 				{:else}
 					<div class="idea-list">
-						{#each unscheduledIdeas as idea}
+						{#each filteredUnscheduledIdeas as idea}
+							{@const tiktokEmbed = idea.platform === 'tiktok' && idea.url ? getTikTokEmbedUrl(idea.url) : null}
+							{@const igEmbed = idea.platform === 'instagram' && idea.url ? getInstagramEmbedUrl(idea.url) : null}
 							<article
 								class={`idea-card ${platformFrameClass(idea.platform)}`}
 								draggable="true"
@@ -259,6 +375,29 @@
 									dragHoverDate = null;
 								}}
 							>
+								{#if tiktokEmbed}
+									<iframe
+										class="idea-preview tiktok-preview"
+										src={tiktokEmbed}
+										title="TikTok Preview"
+										loading="lazy"
+										allow="encrypted-media"
+									></iframe>
+								{:else if igEmbed}
+									<iframe
+										class="idea-preview ig-preview"
+										src={igEmbed}
+										title="Instagram Preview"
+										loading="lazy"
+										allow="encrypted-media"
+									></iframe>
+								{:else if idea.thumbnail_url}
+									<img
+										class="idea-preview"
+										src={idea.thumbnail_url}
+										alt={idea.title ?? 'thumbnail'}
+									/>
+								{/if}
 								<span class="platform"
 									>{platformLabel[idea.platform]}</span
 								>
@@ -315,7 +454,7 @@
 
 								{#each calendarByDate.get(cell.dateIso) ?? [] as item}
 									<article
-										class={`calendar-item ${platformFrameClass(item.idea_backlog?.platform)}`}
+										class={`calendar-item stage--${item.status || 'planned'} ${platformFrameClass(item.idea_backlog?.platform)}`}
 										draggable="true"
 										ondragstart={(event) =>
 											handleDragStart(
@@ -354,6 +493,37 @@
 													"Untitled idea"}
 											</p>
 										</a>
+										<select
+											class="stage-select stage-select--{item.status || 'planned'}"
+											value={item.status || 'planned'}
+											onclick={(e) => e.stopPropagation()}
+											onchange={(e) => {
+												e.stopPropagation();
+												const target = e.target as HTMLSelectElement;
+												void updateStatus(item.id, target.value as ProductionStage);
+											}}
+										>
+											{#each PRODUCTION_STAGES as stage}
+												<option value={stage}>{stageLabel[stage]}</option>
+											{/each}
+										</select>
+										{#if (item.calendar_assignments ?? []).length > 0}
+										<div class="assignment-badges">
+											{#each item.calendar_assignments ?? [] as a}
+												<span class="badge-member">{a.member_name}</span>
+											{/each}
+										</div>
+									{/if}
+									<div class="calendar-item-actions">
+										<button
+											class="tiny-detail"
+											onclick={(event) => {
+												event.stopPropagation();
+												openDetail(item);
+											}}
+										>
+											Detail
+										</button>
 										<button
 											class="tiny-danger"
 											onclick={(event) => {
@@ -365,6 +535,7 @@
 										>
 											Unschedule
 										</button>
+									</div>
 									</article>
 								{/each}
 							</div>
@@ -374,6 +545,63 @@
 			</div>
 		</div>
 	</section>
+	{#if detailItem}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={closeDetail} onkeydown={(e) => e.key === 'Escape' && closeDetail()}>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+				<div class="modal-header">
+					<h3>
+						{detailItem.idea_backlog ? backlogCode(detailItem.idea_backlog) : 'Unknown'} —
+						{detailItem.idea_backlog?.title ?? 'Untitled'}
+					</h3>
+					<button class="ghost" onclick={closeDetail}>X</button>
+				</div>
+
+				<p class="modal-subtitle">Shoot Date: {detailItem.shoot_date}</p>
+
+				<div class="assignment-list">
+					<h4>Team Assignments</h4>
+					{#each TEAM_MEMBERS as member}
+						<div class="assignment-row">
+							<label class="member-toggle">
+								<input
+									type="checkbox"
+									bind:checked={assignmentDraft[member].enabled}
+								/>
+								<span class="member-name">{member}</span>
+							</label>
+							{#if assignmentDraft[member].enabled}
+								<input
+									type="text"
+									class="role-input"
+									placeholder="รายละเอียดหน้าที่..."
+									bind:value={assignmentDraft[member].role_detail}
+								/>
+							{/if}
+						</div>
+					{/each}
+				</div>
+
+				<div class="detail-notes">
+					<h4>Notes</h4>
+					<textarea
+						class="notes-input"
+						placeholder="รายละเอียดเพิ่มเติม / โน้ตอื่นๆ..."
+						rows="4"
+						bind:value={detailNotes}
+					></textarea>
+				</div>
+
+				<div class="modal-footer">
+					<button class="btn-save" onclick={saveAssignments} disabled={savingAssignments}>
+						{savingAssignments ? 'Saving...' : 'Save'}
+					</button>
+					<button class="ghost" onclick={closeDetail}>Cancel</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -510,7 +738,7 @@
 	.idea-list {
 		display: grid;
 		gap: 0.5rem;
-		max-height: 560px;
+		max-height: 680px;
 		overflow: auto;
 	}
 
@@ -522,6 +750,47 @@
 		cursor: grab;
 		display: grid;
 		gap: 0.25rem;
+	}
+
+	.idea-search {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		padding: 0.5rem 0.7rem;
+		border-radius: 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: #fff;
+		font-size: 0.82rem;
+		margin-bottom: 0.6rem;
+	}
+
+	.idea-search:focus {
+		outline: none;
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+	}
+
+	.idea-preview {
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		object-fit: cover;
+		border-radius: 0.55rem;
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		pointer-events: none;
+	}
+
+	.tiktok-preview {
+		border: 0;
+		background: #000;
+		aspect-ratio: 9 / 16;
+		max-height: 180px;
+	}
+
+	.ig-preview {
+		border: 0;
+		background: #fff;
+		aspect-ratio: 4 / 5;
+		max-height: 180px;
 	}
 
 	.idea-card h4 {
@@ -670,6 +939,237 @@
 		padding: 0.2rem 0.35rem;
 		cursor: pointer;
 		justify-self: end;
+	}
+
+	.assignment-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.badge-member {
+		display: inline-block;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		font-size: 0.62rem;
+		font-weight: 700;
+		background: rgba(37, 99, 235, 0.12);
+		color: #1d4ed8;
+	}
+
+	.calendar-item-actions {
+		display: flex;
+		gap: 0.3rem;
+		justify-content: flex-end;
+	}
+
+	.tiny-detail {
+		border: 0;
+		background: rgba(37, 99, 235, 0.12);
+		color: #1d4ed8;
+		border-radius: 0.5rem;
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 0.2rem 0.35rem;
+		cursor: pointer;
+	}
+
+	/* ── Production Stage Styles ── */
+	.stage-select {
+		appearance: none;
+		-webkit-appearance: none;
+		border: 0;
+		border-radius: 999px;
+		padding: 0.18rem 0.55rem;
+		font-size: 0.65rem;
+		font-weight: 700;
+		cursor: pointer;
+		width: fit-content;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 0.35rem center;
+		padding-right: 1.1rem;
+	}
+
+	.stage-select--planned {
+		background-color: rgba(100, 116, 139, 0.14);
+		color: #475569;
+	}
+
+	.stage-select--scripting {
+		background-color: rgba(139, 92, 246, 0.14);
+		color: #6d28d9;
+	}
+
+	.stage-select--shooting {
+		background-color: rgba(245, 158, 11, 0.14);
+		color: #b45309;
+	}
+
+	.stage-select--editing {
+		background-color: rgba(59, 130, 246, 0.14);
+		color: #1d4ed8;
+	}
+
+	.stage-select--published {
+		background-color: rgba(22, 163, 74, 0.14);
+		color: #166534;
+	}
+
+	/* Stage left border accent on calendar items */
+	.calendar-item.stage--planned {
+		border-left: 3px solid #94a3b8;
+	}
+
+	.calendar-item.stage--scripting {
+		border-left: 3px solid #8b5cf6;
+	}
+
+	.calendar-item.stage--shooting {
+		border-left: 3px solid #f59e0b;
+	}
+
+	.calendar-item.stage--editing {
+		border-left: 3px solid #3b82f6;
+	}
+
+	.calendar-item.stage--published {
+		border-left: 3px solid #16a34a;
+	}
+
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		background: rgba(0, 0, 0, 0.45);
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+	}
+
+	.modal-box {
+		background: #fff;
+		border-radius: 1rem;
+		padding: 1.5rem;
+		width: 100%;
+		max-width: 480px;
+		max-height: 90vh;
+		overflow-y: auto;
+		display: grid;
+		gap: 1rem;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.05rem;
+	}
+
+	.modal-subtitle {
+		margin: 0;
+		font-size: 0.85rem;
+		color: #64748b;
+	}
+
+	.assignment-list {
+		display: grid;
+		gap: 0.65rem;
+	}
+
+	.assignment-list h4 {
+		margin: 0;
+		font-size: 0.95rem;
+	}
+
+	.assignment-row {
+		display: grid;
+		gap: 0.35rem;
+		padding: 0.55rem;
+		border: 1px solid rgba(15, 23, 42, 0.09);
+		border-radius: 0.7rem;
+	}
+
+	.member-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		cursor: pointer;
+	}
+
+	.member-name {
+		font-weight: 700;
+		font-size: 0.9rem;
+	}
+
+	.role-input {
+		width: 100%;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.15);
+		border-radius: 0.55rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+
+	.role-input:focus {
+		outline: none;
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+	}
+
+	.detail-notes {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.detail-notes h4 {
+		margin: 0;
+		font-size: 0.95rem;
+	}
+
+	.notes-input {
+		width: 100%;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.15);
+		border-radius: 0.55rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		box-sizing: border-box;
+		resize: vertical;
+	}
+
+	.notes-input:focus {
+		outline: none;
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: flex-end;
+	}
+
+	.btn-save {
+		border: 0;
+		background: #1d4ed8;
+		color: #fff;
+		padding: 0.5rem 1.2rem;
+		border-radius: 0.65rem;
+		font-weight: 700;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+
+	.btn-save:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
 	}
 
 	@media (max-width: 940px) {

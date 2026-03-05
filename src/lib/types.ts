@@ -44,6 +44,18 @@ export interface IdeaBacklogRow {
 	created_at: string;
 }
 
+export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'published';
+
+export type TeamMember = 'โฟน' | 'ฟิวส์' | 'อิก' | 'ต้า';
+
+export interface CalendarAssignmentRow {
+	id: string;
+	calendar_id: string;
+	member_name: TeamMember;
+	role_detail: string;
+	created_at: string;
+}
+
 export interface ProductionCalendarRow {
 	id: string;
 	backlog_id: string;
@@ -52,6 +64,7 @@ export interface ProductionCalendarRow {
 	notes: string | null;
 	created_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
+	calendar_assignments?: CalendarAssignmentRow[];
 }
 
 export interface ProducedVideoRow {

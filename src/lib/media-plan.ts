@@ -1,4 +1,4 @@
-import type { BacklogContentType, SupportedPlatform } from '$lib/types';
+import type { BacklogContentType, ProductionStage, SupportedPlatform } from '$lib/types';
 
 export const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -16,6 +16,31 @@ export const contentTypeLabel: Record<BacklogContentType, string> = {
 	post: 'Post',
 	image: 'Image'
 };
+
+export const PRODUCTION_STAGES: ProductionStage[] = [
+	'planned', 'scripting', 'shooting', 'editing', 'published'
+];
+
+export const stageLabel: Record<ProductionStage, string> = {
+	planned: 'วางแผนแล้ว',
+	scripting: 'เขียนสคริปต์',
+	shooting: 'ถ่ายทำ',
+	editing: 'ตัดต่อ',
+	published: 'เผยแพร่แล้ว'
+};
+
+export const stageEmoji: Record<ProductionStage, string> = {
+	planned: '',
+	scripting: '',
+	shooting: '',
+	editing: '',
+	published: ''
+};
+
+export function nextStage(current: ProductionStage): ProductionStage {
+	const idx = PRODUCTION_STAGES.indexOf(current);
+	return PRODUCTION_STAGES[(idx + 1) % PRODUCTION_STAGES.length];
+}
 
 export function formatCount(value: number | null | undefined): string {
 	return value === null || value === undefined ? '-' : numberFormatter.format(value);
