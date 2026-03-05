@@ -12,8 +12,11 @@
 		formatCount,
 		getInstagramEmbedUrl,
 		getTikTokEmbedUrl,
+		numberFormatter,
 		platformLabel,
 		platformOrder,
+		PRODUCTION_STAGES,
+		stageLabel,
 	} from "$lib/media-plan";
 
 	let linkInput = $state("");
@@ -33,7 +36,22 @@
 			.filter(([, v]) => v.status === 'published')
 			.map(([k]) => k))
 	);
+
+	const dashboardStats = $derived.by(() => {
+		const platformCount: Record<string, number> = {};
+		let totalViews = 0;
+		for (const idea of ideas) {
+			platformCount[idea.platform] = (platformCount[idea.platform] ?? 0) + 1;
+			if (idea.view_count) totalViews += idea.view_count;
+		}
+		const stageCount: Record<string, number> = { planned: 0, scripting: 0, shooting: 0, editing: 0, published: 0 };
+		for (const { status } of scheduledCalendarMap.values()) {
+			if (status in stageCount) stageCount[status]++;
+		}
+		return { platformCount, stageCount, totalIdeas: ideas.length, totalViews };
+	});
 	let selectedContentType = $state<BacklogContentType>("video");
+	let showPublished = $state(false);
 
 	// Context menu state
 	let contextMenuIdea = $state<IdeaBacklogRow | null>(null);
@@ -93,7 +111,7 @@
 		const grouped = new Map<string, IdeaBacklogRow[]>();
 
 		for (const idea of ideas) {
-			if (publishedBacklogIds.has(idea.id)) continue;
+			if (!showPublished && publishedBacklogIds.has(idea.id)) continue;
 			const bucket = grouped.get(idea.platform) ?? [];
 			bucket.push(idea);
 			grouped.set(idea.platform, bucket);
@@ -503,6 +521,7 @@
 		}
 
 		message = `${backlogCode(contextMenuIdea)} ถูกจัดลงตาราง ${scheduleDate} แล้ว`;
+		setTimeout(() => { message = ''; }, 4000);
 		scrollToTop();
 		await loadScheduledBacklogIds();
 	}
@@ -603,8 +622,35 @@
 
 		savingEdit = false;
 		message = 'แก้ไข backlog เรียบร้อยแล้ว';
+		setTimeout(() => { message = ''; }, 4000);
 		closeEditModal();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
+	}
+
+	function exportBacklogCSV() {
+		const headers = ['Code','Platform','Content Type','Title','URL','Views','Likes','Comments','Shares','Saves','Notes','Created'];
+		const rows = ideas.map(idea => [
+			backlogCode(idea),
+			idea.platform,
+			idea.content_type ?? '',
+			(idea.title ?? '').replace(/"/g, '""'),
+			(idea.url ?? '').replace(/"/g, '""'),
+			idea.view_count ?? '',
+			idea.like_count ?? '',
+			idea.comment_count ?? '',
+			idea.share_count ?? '',
+			idea.save_count ?? '',
+			(idea.notes ?? '').replace(/"/g, '""'),
+			new Date(idea.created_at).toLocaleDateString('th-TH'),
+		].map(v => `"${v}"`).join(','));
+		const csv = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `backlog-${new Date().toISOString().slice(0,10)}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	onMount(async () => {
@@ -628,6 +674,47 @@
 			ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ
 			<code>PUBLIC_SUPABASE_ANON_KEY</code>
 		</p>
+	{/if}
+
+	{#if ideas.length > 0}
+	<section class="dashboard">
+		<div class="dash-cards">
+			<div class="dash-card">
+				<p class="dash-value">{dashboardStats.totalIdeas}</p>
+				<p class="dash-label">Ideas ในคลัง</p>
+			</div>
+			<div class="dash-card">
+				<p class="dash-value">{scheduledCalendarMap.size}</p>
+				<p class="dash-label">Scheduled</p>
+			</div>
+			<div class="dash-card">
+				<p class="dash-value">{numberFormatter.format(dashboardStats.totalViews)}</p>
+				<p class="dash-label">Total Views (backlog)</p>
+			</div>
+		</div>
+		<div class="dash-row">
+			<div class="dash-group">
+				<p class="dash-group-label">Platform</p>
+				<div class="dash-pills">
+					{#each platformOrder as p}
+						{#if (dashboardStats.platformCount[p] ?? 0) > 0}
+							<span class="dash-pill platform-frame--{p}">{platformLabel[p]} <strong>{dashboardStats.platformCount[p]}</strong></span>
+						{/if}
+					{/each}
+				</div>
+			</div>
+			<div class="dash-group">
+				<p class="dash-group-label">Production Stage</p>
+				<div class="dash-pills">
+					{#each PRODUCTION_STAGES as stage}
+						{#if (dashboardStats.stageCount[stage] ?? 0) > 0}
+							<span class="dash-pill stage--{stage}">{stageLabel[stage]} <strong>{dashboardStats.stageCount[stage]}</strong></span>
+						{/if}
+					{/each}
+				</div>
+			</div>
+		</div>
+	</section>
 	{/if}
 
 	<section class="panel">
@@ -942,10 +1029,19 @@
 
 	<section class="panel">
 		<div class="list-head">
-			<h2>Backlog ({ideas.length})</h2>
-			{#if loadingIdeas}
-				<span>Loading...</span>
-			{/if}
+			<h2>Backlog ({ideas.length - publishedBacklogIds.size} active{publishedBacklogIds.size > 0 ? ` · ${publishedBacklogIds.size} published` : ''})</h2>
+			<div style="display:flex;gap:0.5rem;align-items:center">
+				{#if loadingIdeas}<span>Loading...</span>{/if}
+				{#if publishedBacklogIds.size > 0}
+					<button
+						class="toggle-btn {showPublished ? 'active' : ''}"
+						onclick={() => (showPublished = !showPublished)}
+					>{showPublished ? 'ซ่อน Published' : 'แสดง Published'}</button>
+				{/if}
+				{#if ideas.length > 0}
+					<button class="export-btn" onclick={exportBacklogCSV}>Export CSV</button>
+				{/if}
+			</div>
 		</div>
 
 		{#if ideas.length === 0}
@@ -1869,6 +1965,94 @@
 		cursor: pointer;
 	}
 
+	/* ── Dashboard ── */
+	.dashboard {
+		display: grid;
+		gap: 0.65rem;
+	}
+
+	.dash-cards {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.6rem;
+	}
+
+	.dash-card {
+		background: rgba(255, 255, 255, 0.85);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.9rem;
+		padding: 0.85rem 1rem;
+		text-align: center;
+	}
+
+	.dash-value {
+		margin: 0;
+		font-size: 1.7rem;
+		font-weight: 800;
+		color: #0f172a;
+		font-family: 'Space Grotesk', sans-serif;
+		line-height: 1.1;
+	}
+
+	.dash-label {
+		margin: 0.2rem 0 0;
+		font-size: 0.72rem;
+		color: #64748b;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.dash-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
+	}
+
+	.dash-group {
+		background: rgba(255, 255, 255, 0.85);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.9rem;
+		padding: 0.75rem 0.9rem;
+		display: grid;
+		gap: 0.45rem;
+	}
+
+	.dash-group-label {
+		margin: 0;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		font-weight: 700;
+		color: #94a3b8;
+	}
+
+	.dash-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+
+	.dash-pill {
+		padding: 0.22rem 0.6rem;
+		border-radius: 999px;
+		font-size: 0.72rem;
+		background: rgba(15, 23, 42, 0.06);
+		color: #475569;
+		border: 1px solid rgba(15, 23, 42, 0.1);
+	}
+
+	.dash-pill.platform-frame--youtube { background: rgba(220, 38, 38, 0.1); color: #991b1b; border-color: rgba(220, 38, 38, 0.2); }
+	.dash-pill.platform-frame--facebook { background: rgba(24, 119, 242, 0.1); color: #1d4ed8; border-color: rgba(24, 119, 242, 0.2); }
+	.dash-pill.platform-frame--instagram { background: rgba(236, 72, 153, 0.1); color: #9d174d; border-color: rgba(236, 72, 153, 0.2); }
+	.dash-pill.platform-frame--tiktok { background: rgba(17, 17, 17, 0.08); color: #334155; border-color: rgba(17, 17, 17, 0.15); }
+
+	.dash-pill.stage--planned   { background: rgba(71, 85, 105, 0.1); color: #334155; border-color: rgba(71, 85, 105, 0.2); }
+	.dash-pill.stage--scripting { background: rgba(109, 40, 217, 0.1); color: #5b21b6; border-color: rgba(109, 40, 217, 0.2); }
+	.dash-pill.stage--shooting  { background: rgba(180, 83, 9, 0.1); color: #92400e; border-color: rgba(180, 83, 9, 0.2); }
+	.dash-pill.stage--editing   { background: rgba(29, 78, 216, 0.1); color: #1e3a8a; border-color: rgba(29, 78, 216, 0.2); }
+	.dash-pill.stage--published { background: rgba(22, 101, 52, 0.1); color: #14532d; border-color: rgba(22, 101, 52, 0.2); }
+
 	@media (max-width: 900px) {
 		.preview {
 			grid-template-columns: 1fr;
@@ -1879,6 +2063,14 @@
 		}
 
 		.row-inline {
+			grid-template-columns: 1fr;
+		}
+
+		.dash-cards {
+			grid-template-columns: 1fr 1fr;
+		}
+
+		.dash-row {
 			grid-template-columns: 1fr;
 		}
 
@@ -1894,5 +2086,42 @@
 			max-height: 95vh;
 			border-radius: 0.75rem;
 		}
+	}
+
+	.export-btn {
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: rgba(15, 23, 42, 0.04);
+		color: #475569;
+		padding: 0.3rem 0.7rem;
+		border-radius: 0.55rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.export-btn:hover {
+		background: rgba(15, 23, 42, 0.08);
+	}
+
+	.toggle-btn {
+		border: 1px solid rgba(22, 163, 74, 0.25);
+		background: rgba(22, 163, 74, 0.07);
+		color: #166534;
+		padding: 0.3rem 0.7rem;
+		border-radius: 0.55rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.toggle-btn:hover {
+		background: rgba(22, 163, 74, 0.14);
+	}
+
+	.toggle-btn.active {
+		background: rgba(22, 163, 74, 0.18);
+		border-color: rgba(22, 163, 74, 0.45);
 	}
 </style>

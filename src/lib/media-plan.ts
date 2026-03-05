@@ -29,14 +29,6 @@ export const stageLabel: Record<ProductionStage, string> = {
 	published: 'เผยแพร่แล้ว'
 };
 
-export const stageEmoji: Record<ProductionStage, string> = {
-	planned: '',
-	scripting: '',
-	shooting: '',
-	editing: '',
-	published: ''
-};
-
 export function nextStage(current: ProductionStage): ProductionStage {
 	const idx = PRODUCTION_STAGES.indexOf(current);
 	return PRODUCTION_STAGES[(idx + 1) % PRODUCTION_STAGES.length];
