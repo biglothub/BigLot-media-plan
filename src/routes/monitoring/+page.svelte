@@ -9,7 +9,7 @@
 		MonitoringPriority,
 		SupportedPlatform
 	} from '$lib/types';
-	import { formatCount, platformLabel, platformOrder } from '$lib/media-plan';
+	import { formatCount, getMetricSource, platformLabel, platformOrder } from '$lib/media-plan';
 
 	type ContentListRow = {
 		content: MonitoringContentRow;
@@ -61,12 +61,14 @@
 	let contentDescriptionInput = $state('');
 	let contentOwnerInput = $state('');
 	let contentPriorityInput = $state<MonitoringPriority>('normal');
+	let contentIsOwnInput = $state(false);
 	let creatingContent = $state(false);
 	let deletingContent = $state(false);
 
 	let searchInput = $state('');
 	let ownerFilter = $state('all');
 	let priorityFilter = $state<'all' | MonitoringPriority>('all');
+	let isOwnFilter = $state<'all' | 'own' | 'reference'>('all');
 	let dueOnly = $state(false);
 
 	let linkInput = $state('');
@@ -85,6 +87,8 @@
 	let snapshotSaves = $state<number | null>(null);
 	let snapshotNotes = $state('');
 	let savingSnapshot = $state(false);
+	let autoSyncing = $state(false);
+	let autoSyncResult = $state<{ snapshots_saved: number; scraped: number; skipped: number } | null>(null);
 
 	const contentMap = $derived.by(() => new Map(contents.map((item) => [item.id, item])));
 
@@ -178,6 +182,8 @@
 		return contentRows.filter((row) => {
 			if (ownerFilter !== 'all' && (row.content.owner ?? '') !== ownerFilter) return false;
 			if (priorityFilter !== 'all' && row.content.priority !== priorityFilter) return false;
+			if (isOwnFilter === 'own' && !row.content.is_own) return false;
+			if (isOwnFilter === 'reference' && row.content.is_own) return false;
 			if (dueOnly && row.dueCount === 0) return false;
 			if (!q) return true;
 			const code = contentCode(row.content).toLowerCase();
@@ -450,6 +456,7 @@
 			description: contentDescriptionInput.trim() || null,
 			owner: contentOwnerInput.trim() || null,
 			priority: contentPriorityInput,
+			is_own: contentIsOwnInput,
 			notes: null,
 			status: 'active'
 		};
@@ -466,9 +473,27 @@
 		contentDescriptionInput = '';
 		contentOwnerInput = '';
 		contentPriorityInput = 'normal';
+		contentIsOwnInput = false;
 		await loadContents();
 		selectContent((data as MonitoringContentRow).id);
 		message = 'เพิ่ม monitoring content แล้ว';
+		dismissMessageSoon();
+	}
+
+	async function toggleIsOwn() {
+		if (!supabase || !selectedContent) return;
+		const newVal = !selectedContent.is_own;
+		const { error } = await supabase
+			.from('monitoring_content')
+			.update({ is_own: newVal })
+			.eq('id', selectedContent.id);
+		if (error) {
+			errorMessage = `อัปเดตไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+		const idx = contents.findIndex((c) => c.id === selectedContent.id);
+		if (idx !== -1) contents[idx] = { ...contents[idx], is_own: newVal };
+		message = newVal ? 'ตั้งเป็น channel ของเราแล้ว' : 'เปลี่ยนเป็น channel อ้างอิงแล้ว';
 		dismissMessageSoon();
 	}
 
@@ -635,6 +660,36 @@
 		dismissMessageSoon();
 	}
 
+	async function autoSync() {
+		if (!selectedContentId) return;
+		autoSyncing = true;
+		autoSyncResult = null;
+		errorMessage = '';
+		message = '';
+		try {
+			const resp = await fetch(`/api/openclaw/monitoring/${selectedContentId}/auto-snapshot`, { method: 'POST' });
+			const body = await resp.json();
+			if (!resp.ok) {
+				errorMessage = body.error ?? 'Auto sync ไม่สำเร็จ';
+				return;
+			}
+			const results: { scraped: boolean }[] = body.results ?? [];
+			autoSyncResult = {
+				snapshots_saved: body.snapshots_saved ?? 0,
+				scraped: results.filter((r) => r.scraped).length,
+				skipped: results.filter((r) => !r.scraped).length
+			};
+			await Promise.all([loadPlatformLinks(), loadSnapshots()]);
+			hydrateSelectedForms();
+			message = `Auto sync เสร็จ: บันทึก ${autoSyncResult.snapshots_saved} snapshots`;
+			dismissMessageSoon();
+		} catch (err) {
+			errorMessage = err instanceof Error ? err.message : 'Auto sync ไม่สำเร็จ';
+		} finally {
+			autoSyncing = false;
+		}
+	}
+
 	function exportCSV() {
 		const headers = [
 			'Content Code',
@@ -781,6 +836,10 @@
 						<label for="mc-description">Description</label>
 						<textarea id="mc-description" rows={2} bind:value={contentDescriptionInput} placeholder="บริบทที่ต้อง monitor"></textarea>
 					</div>
+					<label class="check-row">
+						<input type="checkbox" bind:checked={contentIsOwnInput} />
+						<span>Channel ของเรา (แสดงใน KPI Dashboard)</span>
+					</label>
 					<button class="primary full" onclick={createContent} disabled={creatingContent}>
 						{creatingContent ? 'Creating...' : 'Create Content'}
 					</button>
@@ -811,6 +870,14 @@
 							</select>
 						</div>
 					</div>
+					<div class="row">
+						<label for="filter-is-own">Type</label>
+						<select id="filter-is-own" bind:value={isOwnFilter}>
+							<option value="all">All</option>
+							<option value="own">ของเรา</option>
+							<option value="reference">อ้างอิง</option>
+						</select>
+					</div>
 					<label class="check-row">
 						<input type="checkbox" bind:checked={dueOnly} />
 						<span>Show only due items</span>
@@ -840,6 +907,11 @@
 									<p class="muted">{row.content.owner ?? 'No owner'}</p>
 								</div>
 								<div class="content-meta">
+									{#if row.content.is_own}
+										<span class="badge own-badge">ของเรา</span>
+									{:else}
+										<span class="badge ref-badge">อ้างอิง</span>
+									{/if}
 									<span class={`badge ${priorityClass(row.content.priority)}`}>{priorityLabel[row.content.priority]}</span>
 									<span class="chip">{row.linkCount} links</span>
 									<span class={`chip ${row.dueCount > 0 ? 'chip-due' : ''}`}>{row.dueCount} due</span>
@@ -858,13 +930,36 @@
 						<p class="kicker small">Selected Content</p>
 						<h3>{contentCode(selectedContent)}</h3>
 						<p class="meta"><strong>{selectedContent.title}</strong></p>
-						<p class="meta">Owner: {selectedContent.owner ?? 'No owner'} · Priority: {priorityLabel[selectedContent.priority]}</p>
+						<p class="meta">Owner: {selectedContent.owner ?? 'No owner'} · Priority: {priorityLabel[selectedContent.priority]}
+							{#if selectedContent.is_own}
+								<span class="badge own-badge">ของเรา</span>
+							{:else}
+								<span class="badge ref-badge">อ้างอิง</span>
+							{/if}
+						</p>
+						<label class="check-row">
+							<input type="checkbox" checked={selectedContent.is_own} onchange={toggleIsOwn} />
+							<span>Channel ของเรา (แสดงใน KPI Dashboard)</span>
+						</label>
 						{#if selectedContent.description}
 							<p class="meta">{selectedContent.description}</p>
 						{/if}
 						<div class="head-actions">
+							<button
+								class="auto-sync-btn"
+								onclick={autoSync}
+								disabled={autoSyncing}
+								title="ดึงข้อมูล metrics อัตโนมัติจาก YouTube/TikTok/Facebook และบันทึก snapshot วันนี้"
+							>
+								{autoSyncing ? '⏳ Syncing...' : '⚡ Auto Sync'}
+							</button>
+							{#if autoSyncResult}
+								<span class="sync-result">
+									✓ {autoSyncResult.snapshots_saved} saved · {autoSyncResult.skipped} skipped
+								</span>
+							{/if}
 							<button class="danger" onclick={deleteSelectedContent} disabled={deletingContent}>
-								{deletingContent ? 'Deleting...' : 'Delete Content'}
+								{deletingContent ? 'Deleting...' : 'Delete'}
 							</button>
 						</div>
 					</div>
@@ -942,6 +1037,9 @@
 
 					<div class="editor-block">
 						<h4>Daily Snapshot ({platformLabel[selectedPlatform]})</h4>
+						{#if selectedPlatform === 'instagram'}
+							<p class="hint">Instagram: ต้องกรอกมือทุก metric (ไม่สามารถดึงอัตโนมัติ)</p>
+						{/if}
 						<div class="row two-col">
 							<div>
 								<label for="snap-date">Date</label>
@@ -950,31 +1048,31 @@
 						</div>
 						<div class="metrics-grid">
 							<div class="metric-item">
-								<label for="snap-followers">Followers/Subscribers</label>
+								<label for="snap-followers">Followers/Subscribers <span class="source-badge manual">Manual</span></label>
 								<input id="snap-followers" type="number" min="0" bind:value={snapshotFollowers} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-views">Views</label>
+								<label for="snap-views">Views <span class="source-badge {getMetricSource(selectedPlatform, 'views')}">{getMetricSource(selectedPlatform, 'views') === 'auto' ? 'Auto' : 'Manual'}</span></label>
 								<input id="snap-views" type="number" min="0" bind:value={snapshotViews} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-posts">Posts</label>
+								<label for="snap-posts">Posts <span class="source-badge manual">Manual</span></label>
 								<input id="snap-posts" type="number" min="0" bind:value={snapshotPosts} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-likes">Likes</label>
+								<label for="snap-likes">Likes <span class="source-badge {getMetricSource(selectedPlatform, 'likes')}">{getMetricSource(selectedPlatform, 'likes') === 'auto' ? 'Auto' : 'Manual'}</span></label>
 								<input id="snap-likes" type="number" min="0" bind:value={snapshotLikes} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-comments">Comments</label>
+								<label for="snap-comments">Comments <span class="source-badge {getMetricSource(selectedPlatform, 'comments')}">{getMetricSource(selectedPlatform, 'comments') === 'auto' ? 'Auto' : 'Manual'}</span></label>
 								<input id="snap-comments" type="number" min="0" bind:value={snapshotComments} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-shares">Shares</label>
+								<label for="snap-shares">Shares <span class="source-badge {getMetricSource(selectedPlatform, 'shares')}">{getMetricSource(selectedPlatform, 'shares') === 'auto' ? 'Auto' : 'Manual'}</span></label>
 								<input id="snap-shares" type="number" min="0" bind:value={snapshotShares} />
 							</div>
 							<div class="metric-item">
-								<label for="snap-saves">Saves</label>
+								<label for="snap-saves">Saves <span class="source-badge {getMetricSource(selectedPlatform, 'saves')}">{getMetricSource(selectedPlatform, 'saves') === 'auto' ? 'Auto' : 'Manual'}</span></label>
 								<input id="snap-saves" type="number" min="0" bind:value={snapshotSaves} />
 							</div>
 						</div>
@@ -1331,6 +1429,44 @@
 		font-weight: 700;
 	}
 
+	.own-badge {
+		background: rgba(37, 99, 235, 0.14);
+		color: #1d4ed8;
+	}
+
+	.ref-badge {
+		background: rgba(100, 116, 139, 0.1);
+		color: #94a3b8;
+	}
+
+	.source-badge {
+		font-size: 0.58rem;
+		font-weight: 700;
+		padding: 0.06rem 0.3rem;
+		border-radius: 999px;
+		vertical-align: middle;
+		margin-left: 0.2rem;
+	}
+
+	.source-badge.auto {
+		background: rgba(37, 99, 235, 0.12);
+		color: #1d4ed8;
+	}
+
+	.source-badge.manual {
+		background: rgba(234, 88, 12, 0.12);
+		color: #c2410c;
+	}
+
+	.hint {
+		font-size: 0.74rem;
+		color: #c2410c;
+		background: rgba(234, 88, 12, 0.08);
+		padding: 0.4rem 0.6rem;
+		border-radius: 0.5rem;
+		margin: 0 0 0.5rem;
+	}
+
 	.priority--low {
 		background: rgba(100, 116, 139, 0.14);
 		color: #475569;
@@ -1372,6 +1508,30 @@
 
 	.head-actions {
 		margin-top: 0.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.auto-sync-btn {
+		padding: 0.4rem 0.9rem;
+		border-radius: 0.55rem;
+		font-size: 0.82rem;
+		font-weight: 700;
+		background: #1d4ed8;
+		color: #fff;
+		border: none;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+	.auto-sync-btn:hover:not(:disabled) { background: #1e40af; }
+	.auto-sync-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+	.sync-result {
+		font-size: 0.75rem;
+		color: #16a34a;
+		font-weight: 600;
 	}
 
 	.platform-switcher {

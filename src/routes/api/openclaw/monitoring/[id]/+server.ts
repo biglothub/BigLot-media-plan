@@ -25,7 +25,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		return json({ error: 'priority must be one of: low, normal, high, urgent' }, { status: 400 });
 	}
 	const updates: Record<string, unknown> = {};
-	for (const key of ['title', 'description', 'notes', 'status', 'owner', 'priority']) {
+	for (const key of ['title', 'description', 'notes', 'status', 'owner', 'priority', 'is_own']) {
 		if (body[key] !== undefined) updates[key] = body[key];
 	}
 

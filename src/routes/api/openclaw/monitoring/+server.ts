@@ -41,7 +41,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			owner: body.owner ?? null,
 			priority,
 			notes: body.notes ?? null,
-			status: 'active'
+			status: 'active',
+			is_own: body.is_own === true
 		})
 		.select()
 		.single();

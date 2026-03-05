@@ -7,6 +7,7 @@
 		ProductionCalendarRow,
 		TeamMember,
 		ProductionStage,
+		ApprovalStatus,
 		SupportedPlatform,
 		BacklogContentType,
 		BacklogContentCategory
@@ -53,6 +54,8 @@
 	let detailNotes = $state('');
 	let detailShootDate = $state('');
 	let detailStatus = $state<ProductionStage>('planned');
+	let detailRevisionCount = $state(0);
+	let detailApprovalStatus = $state<ApprovalStatus>('draft');
 	let detailPlatform = $state<SupportedPlatform>('youtube');
 	let detailContentType = $state<BacklogContentType>('video');
 	let detailContentCategory = $state<BacklogContentCategory | null>(null);
@@ -82,7 +85,22 @@
 		scripting: { color: '#6d28d9', bg: '#f5f3ff', headerBg: '#ede9fe' },
 		shooting:  { color: '#b45309', bg: '#fffbeb', headerBg: '#fef3c7' },
 		editing:   { color: '#1d4ed8', bg: '#eff6ff', headerBg: '#dbeafe' },
+		review:    { color: '#c2410c', bg: '#fff7ed', headerBg: '#fed7aa' },
 		published: { color: '#166534', bg: '#f0fdf4', headerBg: '#dcfce7' }
+	};
+
+	const approvalStatusLabel: Record<ApprovalStatus, string> = {
+		draft: 'Draft',
+		pending_review: 'รออนุมัติ',
+		approved: 'อนุมัติแล้ว',
+		rejected: 'Rejected'
+	};
+
+	const approvalStatusColor: Record<ApprovalStatus, string> = {
+		draft: '#94a3b8',
+		pending_review: '#c2410c',
+		approved: '#16a34a',
+		rejected: '#b91c1c'
 	};
 
 	const boardColumns = $derived.by(() => {
@@ -166,6 +184,8 @@
 		detailNotes = item.notes ?? '';
 		detailShootDate = item.shoot_date ?? '';
 		detailStatus = (item.status as ProductionStage) ?? 'planned';
+		detailRevisionCount = item.revision_count ?? 0;
+		detailApprovalStatus = (item.approval_status as ApprovalStatus) ?? 'draft';
 		const bl = item.idea_backlog;
 		detailPlatform = (bl?.platform as SupportedPlatform) ?? 'youtube';
 		detailContentType = (bl?.content_type as BacklogContentType) ?? 'video';
@@ -224,6 +244,11 @@
 			shoot_date: detailShootDate,
 			publish_deadline: detailPublishDeadline || null,
 			status: detailStatus,
+			revision_count: detailRevisionCount,
+			approval_status: detailApprovalStatus,
+			submitted_at: detailApprovalStatus === 'pending_review' && !detailItem.submitted_at
+				? new Date().toISOString()
+				: detailItem.submitted_at,
 			notes: detailNotes.trim() || null
 		}).eq('id', calendarId);
 		if (calErr) { errorMessage = `บันทึก calendar ไม่สำเร็จ: ${calErr.message}`; savingDetail = false; return; }
@@ -340,6 +365,18 @@
 													Deadline: {formatCalendarDate(item.publish_deadline)}
 												</p>
 											{/if}
+											<div class="card-status-row">
+												{#if (item.revision_count ?? 0) > 0}
+													<span class="badge revision {(item.revision_count ?? 0) >= 2 ? 'revision--warn' : ''}">
+														Rev {item.revision_count ?? 0}
+													</span>
+												{/if}
+												{#if item.approval_status && item.approval_status !== 'draft'}
+													<span class="badge approval" style="--approval-color:{approvalStatusColor[item.approval_status as ApprovalStatus]}">
+														{approvalStatusLabel[item.approval_status as ApprovalStatus]}
+													</span>
+												{/if}
+											</div>
 											{#if (item.calendar_assignments ?? []).length > 0}
 												<div class="card-members">
 													{#each item.calendar_assignments ?? [] as a}
@@ -487,13 +524,28 @@
 						<input id="k-published-at" type="datetime-local" bind:value={detailPublishedAt} />
 					</div>
 				</div>
+				<div class="form-row">
+					<div class="form-field">
+						<label for="k-status">Production Stage</label>
+						<select id="k-status" bind:value={detailStatus}>
+							{#each PRODUCTION_STAGES as stage}
+								<option value={stage}>{stageLabel[stage]}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="form-field">
+						<label for="k-approval">Approval Status</label>
+						<select id="k-approval" bind:value={detailApprovalStatus}>
+							<option value="draft">Draft</option>
+							<option value="pending_review">รออนุมัติ</option>
+							<option value="approved">อนุมัติแล้ว</option>
+							<option value="rejected">Rejected</option>
+						</select>
+					</div>
+				</div>
 				<div class="form-field">
-					<label for="k-status">Production Stage</label>
-					<select id="k-status" bind:value={detailStatus}>
-						{#each PRODUCTION_STAGES as stage}
-							<option value={stage}>{stageLabel[stage]}</option>
-						{/each}
-					</select>
+					<label for="k-revision">Revision Count {#if detailRevisionCount >= 2}<span class="revision-warn">เกินเกณฑ์ KPI (≤2)</span>{/if}</label>
+					<input id="k-revision" type="number" min="0" max="99" bind:value={detailRevisionCount} />
 				</div>
 			</section>
 
@@ -572,11 +624,11 @@
 
 	.board {
 		display: grid;
-		grid-template-columns: repeat(5, minmax(220px, 1fr));
+		grid-template-columns: repeat(6, minmax(200px, 1fr));
 		gap: 0.75rem;
 		align-items: start;
 		padding-bottom: 1rem;
-		min-width: 1100px;
+		min-width: 1220px;
 	}
 
 	/* ── Column ── */
@@ -628,6 +680,7 @@
 	.card.stage--scripting { border-left-color: #8b5cf6; }
 	.card.stage--shooting  { border-left-color: #f59e0b; }
 	.card.stage--editing   { border-left-color: #3b82f6; }
+	.card.stage--review    { border-left-color: #ea580c; }
 	.card.stage--published { border-left-color: #16a34a; }
 
 	.card-thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; border-bottom: 1px solid rgba(15,23,42,0.06); }
@@ -639,6 +692,10 @@
 	.badge.content-type { background: rgba(100,116,139,0.12); color: #475569; }
 	.badge.content-category { background: rgba(99,102,241,0.12); color: #4f46e5; }
 	.badge.member { background: rgba(37,99,235,0.12); color: #1d4ed8; }
+	.badge.revision { background: rgba(251,191,36,0.18); color: #92400e; }
+	.badge.revision--warn { background: rgba(220,38,38,0.14); color: #b91c1c; }
+	.badge.approval { background: color-mix(in srgb, var(--approval-color) 14%, transparent); color: var(--approval-color); }
+	.card-status-row { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
 
 	.card-code { margin: 0; font-size: 0.72rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.05em; }
 	.card-title { margin: 0; font-size: 0.82rem; font-weight: 600; color: #0f172a; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -735,6 +792,8 @@
 	.btn-save { border: 0; background: #1d4ed8; color: #fff; padding: 0.5rem 1.2rem; border-radius: 0.65rem; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
 	.btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
 
-	@media (max-width: 1100px) { .board { grid-template-columns: repeat(3, minmax(220px, 1fr)); } }
-	@media (max-width: 700px)  { .board { grid-template-columns: repeat(2, minmax(200px, 1fr)); } }
+	.revision-warn { color: #b91c1c; font-size: 0.72rem; font-weight: 700; margin-left: 0.3rem; }
+
+	@media (max-width: 1300px) { .board { grid-template-columns: repeat(3, minmax(200px, 1fr)); } }
+	@media (max-width: 700px)  { .board { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
 </style>

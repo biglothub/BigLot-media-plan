@@ -56,10 +56,14 @@ CREATE TABLE IF NOT EXISTS public.production_calendar (
   backlog_id  uuid NOT NULL REFERENCES public.idea_backlog (id) ON DELETE CASCADE,
   shoot_date  date NOT NULL,
   publish_deadline date,
-  status      text NOT NULL DEFAULT 'planned'
-    CHECK (status IN ('planned', 'scripting', 'shooting', 'editing', 'published')),
-  notes       text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  status          text    NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned', 'scripting', 'shooting', 'editing', 'review', 'published')),
+  revision_count  integer NOT NULL DEFAULT 0,
+  approval_status text    NOT NULL DEFAULT 'draft'
+    CHECK (approval_status IN ('draft', 'pending_review', 'approved', 'rejected')),
+  submitted_at    timestamptz,
+  notes           text,
+  created_at      timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_production_calendar_backlog
@@ -125,6 +129,7 @@ CREATE TABLE IF NOT EXISTS public.monitoring_content (
     CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
   notes         text,
   status        text NOT NULL DEFAULT 'active',
+  is_own        boolean NOT NULL DEFAULT false,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
@@ -132,6 +137,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_monitoring_content_code
   ON public.monitoring_content (content_code);
 CREATE INDEX IF NOT EXISTS idx_monitoring_content_created_at
   ON public.monitoring_content (created_at);
+CREATE INDEX IF NOT EXISTS idx_monitoring_content_is_own
+  ON public.monitoring_content (is_own) WHERE is_own = true;
 
 ALTER TABLE public.monitoring_content ENABLE ROW LEVEL SECURITY;
 

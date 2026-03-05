@@ -25,7 +25,7 @@ export const contentCategoryLabel: Record<BacklogContentCategory, string> = {
 };
 
 export const PRODUCTION_STAGES: ProductionStage[] = [
-	'planned', 'scripting', 'shooting', 'editing', 'published'
+	'planned', 'scripting', 'shooting', 'editing', 'review', 'published'
 ];
 
 export const stageLabel: Record<ProductionStage, string> = {
@@ -33,6 +33,7 @@ export const stageLabel: Record<ProductionStage, string> = {
 	scripting: 'เขียนสคริปต์',
 	shooting: 'ถ่ายทำ',
 	editing: 'ตัดต่อ',
+	review: 'รออนุมัติ',
 	published: 'เผยแพร่แล้ว'
 };
 
@@ -189,6 +190,23 @@ export function getPlatformFromUrl(url: string): SupportedPlatform | null {
 
 export function normalizeMetricValue(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export type MetricSourceType = 'auto' | 'manual';
+
+const autoMetrics: Record<SupportedPlatform, string[]> = {
+	youtube: ['views', 'likes', 'comments'],
+	tiktok: ['views', 'likes', 'comments', 'shares', 'saves'],
+	facebook: ['views', 'likes', 'comments', 'shares'],
+	instagram: []
+};
+
+export function getMetricSource(
+	platform: SupportedPlatform,
+	metric: 'followers' | 'views' | 'likes' | 'comments' | 'shares' | 'saves'
+): MetricSourceType {
+	if (metric === 'followers') return 'manual';
+	return autoMetrics[platform].includes(metric) ? 'auto' : 'manual';
 }
 
 export function isYouTubeShort(url: string): boolean {

@@ -49,7 +49,8 @@ export interface IdeaBacklogRow {
 	created_at: string;
 }
 
-export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'published';
+export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'review' | 'published';
+export type ApprovalStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
 
 export interface CalendarAssignmentRow {
 	id: string;
@@ -65,6 +66,9 @@ export interface ProductionCalendarRow {
 	shoot_date: string;
 	publish_deadline: string | null;
 	status: string;
+	revision_count: number;
+	approval_status: ApprovalStatus;
+	submitted_at: string | null;
 	notes: string | null;
 	created_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
@@ -97,6 +101,7 @@ export interface MonitoringContentRow {
 	priority: MonitoringPriority;
 	notes: string | null;
 	status: string;
+	is_own: boolean;
 	created_at: string;
 }
 
