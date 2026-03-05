@@ -6,6 +6,7 @@
 
 	const menus = [
 		{ href: '/', label: 'Backlog' },
+		{ href: '/kanban', label: 'Kanban' },
 		{ href: '/calendar', label: 'Shoot Calendar' },
 		{ href: '/kpi', label: 'KPI Compare' },
 		{ href: '/monitoring', label: 'Content Monitoring' }

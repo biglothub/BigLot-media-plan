@@ -26,8 +26,13 @@
 	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
-	let scheduledCalendarMap = $state<Map<string, { id: string; shoot_date: string }>>(new Map());
+	let scheduledCalendarMap = $state<Map<string, { id: string; shoot_date: string; status: string }>>(new Map());
 	const scheduledBacklogIds = $derived(new Set(scheduledCalendarMap.keys()));
+	const publishedBacklogIds = $derived(
+		new Set([...scheduledCalendarMap.entries()]
+			.filter(([, v]) => v.status === 'published')
+			.map(([k]) => k))
+	);
 	let selectedContentType = $state<BacklogContentType>("video");
 
 	// Context menu state
@@ -88,6 +93,7 @@
 		const grouped = new Map<string, IdeaBacklogRow[]>();
 
 		for (const idea of ideas) {
+			if (publishedBacklogIds.has(idea.id)) continue;
 			const bucket = grouped.get(idea.platform) ?? [];
 			bucket.push(idea);
 			grouped.set(idea.platform, bucket);
@@ -225,7 +231,7 @@
 
 		const { data, error } = await supabase
 			.from("production_calendar")
-			.select("id, backlog_id, shoot_date");
+			.select("id, backlog_id, shoot_date, status");
 		if (error) {
 			errorMessage = `โหลดสถานะ schedule ไม่ได้: ${error.message}`;
 			return;
@@ -234,7 +240,7 @@
 		scheduledCalendarMap = new Map(
 			(data ?? []).map((item) => [
 				item.backlog_id as string,
-				{ id: item.id as string, shoot_date: item.shoot_date as string },
+				{ id: item.id as string, shoot_date: item.shoot_date as string, status: item.status as string },
 			]),
 		);
 	}
