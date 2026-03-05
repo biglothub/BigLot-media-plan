@@ -1,866 +1,646 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { hasSupabaseConfig, supabase } from "$lib/supabase";
+	import { onMount } from 'svelte';
+	import { hasSupabaseConfig, supabase } from '$lib/supabase';
 	import type {
-		EnrichResult,
 		MonitoringContentPlatformRow,
 		MonitoringContentRow,
-		SupportedPlatform,
-	} from "$lib/types";
-	import {
-		formatCount,
-		getInstagramEmbedUrl,
-		getPlatformFromUrl,
-		getTikTokEmbedUrl,
-		isYouTubeShort,
-		normalizeMetricValue,
-		platformLabel,
-		platformOrder,
-	} from "$lib/media-plan";
+		MonitoringMetricSnapshotRow,
+		MonitoringPriority,
+		SupportedPlatform
+	} from '$lib/types';
+	import { formatCount, platformLabel, platformOrder } from '$lib/media-plan';
 
-	type MetricsDraft = {
-		views: number | null;
-		likes: number | null;
-		comments: number | null;
-		shares: number | null;
-		saves: number | null;
-	};
-
-	type PlatformStat = {
-		platform: SupportedPlatform;
-		clipCount: number;
-		totalViews: number | null;
-		totalEngagement: number | null;
-		avgViews: number | null;
-		engagementRate: number | null;
-		hasAnyData: boolean;
+	type ContentListRow = {
+		content: MonitoringContentRow;
+		linkCount: number;
+		dueCount: number;
+		lastCheckedAt: string | null;
 	};
 
 	const availablePlatforms = platformOrder as readonly SupportedPlatform[];
+	const priorityOptions: MonitoringPriority[] = ['low', 'normal', 'high', 'urgent'];
+	const priorityLabel: Record<MonitoringPriority, string> = {
+		low: 'Low',
+		normal: 'Normal',
+		high: 'High',
+		urgent: 'Urgent'
+	};
+	const priorityRank: Record<MonitoringPriority, number> = {
+		low: 0,
+		normal: 1,
+		high: 2,
+		urgent: 3
+	};
 	const platformRank = new Map<SupportedPlatform, number>(
-		availablePlatforms.map((platform, index) => [platform, index]),
+		availablePlatforms.map((platform, index) => [platform, index])
 	);
-	const clipPlaceholderByPlatform: Record<SupportedPlatform, string> = {
-		youtube: "https://www.youtube.com/watch?v=...",
-		facebook: "https://www.facebook.com/.../videos/...",
-		instagram: "https://www.instagram.com/reel/...",
-		tiktok: "https://www.tiktok.com/@username/video/...",
+	const platformPlaceholder: Record<SupportedPlatform, string> = {
+		youtube: 'https://www.youtube.com/@channel',
+		facebook: 'https://www.facebook.com/page',
+		instagram: 'https://www.instagram.com/account',
+		tiktok: 'https://www.tiktok.com/@account'
 	};
 
 	let contents = $state<MonitoringContentRow[]>([]);
-	let clips = $state<MonitoringContentPlatformRow[]>([]);
-	let loadingContents = $state(false);
-	let loadingClips = $state(false);
+	let platformLinks = $state<MonitoringContentPlatformRow[]>([]);
+	let snapshots = $state<MonitoringMetricSnapshotRow[]>([]);
+
+	let loading = $state(false);
+	let message = $state('');
+	let errorMessage = $state('');
 
 	let selectedContentId = $state<string | null>(null);
-	let selectedPlatform = $state<SupportedPlatform>("youtube");
-	let contentTitleInput = $state("");
-	let contentDescriptionInput = $state("");
+	let selectedPlatform = $state<SupportedPlatform>('youtube');
+
+	let contentTitleInput = $state('');
+	let contentDescriptionInput = $state('');
+	let contentOwnerInput = $state('');
+	let contentPriorityInput = $state<MonitoringPriority>('normal');
 	let creatingContent = $state(false);
 	let deletingContent = $state(false);
 
-	let clipLinkInput = $state("");
-	let clipNotes = $state("");
-	let analyzing = $state(false);
-	let savingClip = $state(false);
-	let deletingClip = $state(false);
-	let refreshingAll = $state(false);
-	let refreshProgress = $state("");
-	let refreshingSingle = $state<string | null>(null);
-	let message = $state("");
-	let errorMessage = $state("");
-	let draft = $state<EnrichResult | null>(null);
-	let metrics = $state<MetricsDraft>({
-		views: null,
-		likes: null,
-		comments: null,
-		shares: null,
-		saves: null,
+	let searchInput = $state('');
+	let ownerFilter = $state('all');
+	let priorityFilter = $state<'all' | MonitoringPriority>('all');
+	let dueOnly = $state(false);
+
+	let linkInput = $state('');
+	let linkIsChannel = $state(true);
+	let savingLink = $state(false);
+	let removingLink = $state(false);
+	let markingChecked = $state(false);
+
+	let snapshotDate = $state(todayIso());
+	let snapshotFollowers = $state<number | null>(null);
+	let snapshotViews = $state<number | null>(null);
+	let snapshotPosts = $state<number | null>(null);
+	let snapshotLikes = $state<number | null>(null);
+	let snapshotComments = $state<number | null>(null);
+	let snapshotShares = $state<number | null>(null);
+	let snapshotSaves = $state<number | null>(null);
+	let snapshotNotes = $state('');
+	let savingSnapshot = $state(false);
+
+	const contentMap = $derived.by(() => new Map(contents.map((item) => [item.id, item])));
+
+	const linksByContentId = $derived.by(() => {
+		const map = new Map<string, MonitoringContentPlatformRow[]>();
+		for (const row of platformLinks) {
+			const bucket = map.get(row.content_id) ?? [];
+			bucket.push(row);
+			map.set(row.content_id, bucket);
+		}
+		for (const bucket of map.values()) {
+			bucket.sort((a, b) => (platformRank.get(a.platform) ?? 99) - (platformRank.get(b.platform) ?? 99));
+		}
+		return map;
 	});
 
-	const contentMap = $derived.by(
-		() => new Map(contents.map((item) => [item.id, item])),
-	);
-
-	const clipsByContentId = $derived.by(() => {
-		const grouped = new Map<string, MonitoringContentPlatformRow[]>();
-		for (const clip of clips) {
-			const bucket = grouped.get(clip.content_id) ?? [];
-			bucket.push(clip);
-			grouped.set(clip.content_id, bucket);
+	const snapshotsByPlatformId = $derived.by(() => {
+		const map = new Map<string, MonitoringMetricSnapshotRow[]>();
+		for (const row of snapshots) {
+			const bucket = map.get(row.platform_id) ?? [];
+			bucket.push(row);
+			map.set(row.platform_id, bucket);
 		}
-
-		for (const bucket of grouped.values()) {
-			bucket.sort(
-				(a, b) =>
-					(platformRank.get(a.platform) ?? 99) -
-					(platformRank.get(b.platform) ?? 99),
-			);
+		for (const bucket of map.values()) {
+			bucket.sort((a, b) => {
+				if (a.snapshot_date !== b.snapshot_date) {
+					return b.snapshot_date.localeCompare(a.snapshot_date);
+				}
+				return b.created_at.localeCompare(a.created_at);
+			});
 		}
-
-		return grouped;
+		return map;
 	});
 
-	const monitoredRows = $derived.by(() => {
+	const owners = $derived.by(() => {
+		const unique = Array.from(new Set(contents.map((item) => item.owner?.trim()).filter(Boolean) as string[]));
+		return unique.sort((a, b) => a.localeCompare(b));
+	});
+
+	const selectedContent = $derived.by(() => {
+		if (!selectedContentId) return null;
+		return contentMap.get(selectedContentId) ?? null;
+	});
+
+	const selectedContentLinks = $derived.by(() => {
+		if (!selectedContentId) return [];
+		return linksByContentId.get(selectedContentId) ?? [];
+	});
+
+	const selectedLinkByPlatform = $derived.by(() => {
+		const map = new Map<SupportedPlatform, MonitoringContentPlatformRow>();
+		for (const row of selectedContentLinks) map.set(row.platform, row);
+		return map;
+	});
+
+	const selectedPlatformLink = $derived.by(() => selectedLinkByPlatform.get(selectedPlatform) ?? null);
+	const selectedPlatformSnapshots = $derived.by(() => {
+		if (!selectedPlatformLink) return [];
+		return snapshotsByPlatformId.get(selectedPlatformLink.id) ?? [];
+	});
+	const latestSnapshot = $derived.by(() => selectedPlatformSnapshots[0] ?? null);
+	const previousSnapshot = $derived.by(() => selectedPlatformSnapshots[1] ?? null);
+
+	const contentRows = $derived.by((): ContentListRow[] => {
 		return contents
 			.map((content) => {
-				const contentClips = clipsByContentId.get(content.id) ?? [];
-				const totalViews = contentClips.reduce(
-					(sum, item) => sum + (item.view_count ?? 0),
-					0,
-				);
+				const links = linksByContentId.get(content.id) ?? [];
+				const dueCount = links.filter((row) => isDue(row.last_checked_at)).length;
+				const lastCheckedAt =
+					links
+						.filter((row) => row.last_checked_at)
+						.map((row) => row.last_checked_at as string)
+						.sort((a, b) => b.localeCompare(a))[0] ?? null;
 				return {
 					content,
-					clips: contentClips,
-					clipCount: contentClips.length,
-					totalViews,
-					updatedAt:
-						contentClips[0]?.created_at ?? content.created_at,
+					linkCount: links.length,
+					dueCount,
+					lastCheckedAt
 				};
 			})
 			.sort((a, b) => {
-				if (b.clipCount !== a.clipCount)
-					return b.clipCount - a.clipCount;
-				return b.updatedAt.localeCompare(a.updatedAt);
+				if (b.dueCount !== a.dueCount) return b.dueCount - a.dueCount;
+				const priorityDiff = priorityRank[b.content.priority] - priorityRank[a.content.priority];
+				if (priorityDiff !== 0) return priorityDiff;
+				return b.content.created_at.localeCompare(a.content.created_at);
 			});
 	});
 
-	const selectedContent = $derived.by(() =>
-		selectedContentId ? (contentMap.get(selectedContentId) ?? null) : null,
-	);
-	const selectedContentClips = $derived.by(() =>
-		selectedContentId
-			? (clipsByContentId.get(selectedContentId) ?? [])
-			: [],
-	);
-	const selectedClipByPlatform = $derived.by(() => {
-		const map = new Map<SupportedPlatform, MonitoringContentPlatformRow>();
-		for (const clip of selectedContentClips) map.set(clip.platform, clip);
-		return map;
+	const filteredRows = $derived.by(() => {
+		const q = searchInput.trim().toLowerCase();
+		return contentRows.filter((row) => {
+			if (ownerFilter !== 'all' && (row.content.owner ?? '') !== ownerFilter) return false;
+			if (priorityFilter !== 'all' && row.content.priority !== priorityFilter) return false;
+			if (dueOnly && row.dueCount === 0) return false;
+			if (!q) return true;
+			const code = contentCode(row.content).toLowerCase();
+			const title = row.content.title.toLowerCase();
+			const owner = (row.content.owner ?? '').toLowerCase();
+			return code.includes(q) || title.includes(q) || owner.includes(q);
+		});
 	});
-	const selectedPlatformClip = $derived.by(
-		() => selectedClipByPlatform.get(selectedPlatform) ?? null,
-	);
-	const selectedPlatformSet = $derived.by(
-		() => new Set(selectedContentClips.map((clip) => clip.platform)),
-	);
-	const clipPlaceholder = $derived.by(
-		() => clipPlaceholderByPlatform[selectedPlatform],
-	);
 
-	const currentPreview = $derived.by(() => {
-		if (draft && draft.platform === selectedPlatform) {
-			return {
-				platform: draft.platform,
-				url: draft.url,
-				title: draft.title,
-				thumbnailUrl: draft.thumbnailUrl,
-			};
+	const queueRows = $derived.by(() => {
+		const rows: Array<{
+			content: MonitoringContentRow;
+			link: MonitoringContentPlatformRow;
+			days: number;
+		}> = [];
+		for (const link of platformLinks) {
+			if (!isDue(link.last_checked_at)) continue;
+			const content = contentMap.get(link.content_id);
+			if (!content) continue;
+			rows.push({
+				content,
+				link,
+				days: daysSince(link.last_checked_at)
+			});
 		}
-		if (!selectedPlatformClip) return null;
+		return rows.sort((a, b) => {
+			const p = priorityRank[b.content.priority] - priorityRank[a.content.priority];
+			if (p !== 0) return p;
+			return b.days - a.days;
+		});
+	});
+
+	const dashboard = $derived.by(() => {
+		const dueLinks = platformLinks.filter((row) => isDue(row.last_checked_at)).length;
+		const checkedToday = platformLinks.filter((row) => sameDate(row.last_checked_at, todayIso())).length;
+		const highPriorityDue = queueRows.filter((row) => row.content.priority === 'high' || row.content.priority === 'urgent').length;
 		return {
-			platform: selectedPlatformClip.platform,
-			url: selectedPlatformClip.url,
-			title: selectedPlatformClip.title,
-			thumbnailUrl: selectedPlatformClip.thumbnail_url,
+			totalContents: contents.length,
+			totalLinks: platformLinks.length,
+			dueLinks,
+			checkedToday,
+			highPriorityDue
 		};
 	});
 
-	const currentTikTokEmbed = $derived(
-		currentPreview && currentPreview.platform === "tiktok"
-			? getTikTokEmbedUrl(currentPreview.url)
-			: null,
-	);
-	const currentInstagramEmbed = $derived(
-		currentPreview && currentPreview.platform === "instagram"
-			? getInstagramEmbedUrl(currentPreview.url)
-			: null,
-	);
-
-	const contentsWithClips = $derived.by(
-		() => monitoredRows.filter((row) => row.clipCount > 0).length,
-	);
-
-	const biTotals = $derived.by(() => {
-		let totalViews = 0;
-		let totalEngagement = 0;
-		for (const clip of clips) {
-			totalViews += clip.view_count ?? 0;
-			totalEngagement += engagementValue(clip);
-		}
-		const engagementRate =
-			totalViews > 0 ? (totalEngagement / totalViews) * 100 : null;
-		const coveredContents = new Set(clips.map((clip) => clip.content_id))
-			.size;
-
-		return {
-			totalClips: clips.length,
-			totalViews,
-			totalEngagement,
-			engagementRate,
-			coveredContents,
-		};
-	});
-
-	const platformStats = $derived.by(() => {
-		type BiStatRow = {
-			key: string;
-			label: string;
-			platformClass: string;
-			clipCount: number;
-			totalViews: number | null;
-			totalEngagement: number | null;
-			avgViews: number | null;
-			engagementRate: number | null;
-			hasAnyData: boolean;
-		};
-
-		const biKeys = [
-			"youtube_short",
-			"youtube_long",
-			"facebook",
-			"instagram",
-			"tiktok",
-		] as const;
-		const statsMap = new Map<string, BiStatRow>();
-
-		statsMap.set("youtube_short", {
-			key: "youtube_short",
-			label: "YT Short",
-			platformClass: "platform-frame--youtube",
-			clipCount: 0,
-			totalViews: null,
-			totalEngagement: null,
-			avgViews: null,
-			engagementRate: null,
-			hasAnyData: false,
-		});
-		statsMap.set("youtube_long", {
-			key: "youtube_long",
-			label: "YT Long",
-			platformClass: "platform-frame--youtube",
-			clipCount: 0,
-			totalViews: null,
-			totalEngagement: null,
-			avgViews: null,
-			engagementRate: null,
-			hasAnyData: false,
-		});
-		statsMap.set("facebook", {
-			key: "facebook",
-			label: "Facebook",
-			platformClass: "platform-frame--facebook",
-			clipCount: 0,
-			totalViews: null,
-			totalEngagement: null,
-			avgViews: null,
-			engagementRate: null,
-			hasAnyData: false,
-		});
-		statsMap.set("instagram", {
-			key: "instagram",
-			label: "Instagram",
-			platformClass: "platform-frame--instagram",
-			clipCount: 0,
-			totalViews: null,
-			totalEngagement: null,
-			avgViews: null,
-			engagementRate: null,
-			hasAnyData: false,
-		});
-		statsMap.set("tiktok", {
-			key: "tiktok",
-			label: "TikTok",
-			platformClass: "platform-frame--tiktok",
-			clipCount: 0,
-			totalViews: null,
-			totalEngagement: null,
-			avgViews: null,
-			engagementRate: null,
-			hasAnyData: false,
-		});
-
-		for (const clip of clips) {
-			let statKey: string = clip.platform;
-			if (clip.platform === "youtube") {
-				statKey = isYouTubeShort(clip.url)
-					? "youtube_short"
-					: "youtube_long";
-			}
-			const stat = statsMap.get(statKey);
-			if (!stat) continue;
-			stat.clipCount += 1;
-			const hasViews =
-				clip.view_count !== null && clip.view_count !== undefined;
-			const eng = engagementValue(clip);
-			const hasEng = eng > 0;
-			if (hasViews || hasEng) {
-				stat.hasAnyData = true;
-				stat.totalViews =
-					(stat.totalViews ?? 0) + (clip.view_count ?? 0);
-				stat.totalEngagement = (stat.totalEngagement ?? 0) + eng;
-			}
-		}
-
-		for (const stat of statsMap.values()) {
-			stat.avgViews =
-				stat.clipCount > 0 && stat.totalViews !== null
-					? stat.totalViews / stat.clipCount
-					: null;
-			stat.engagementRate =
-				stat.totalViews !== null && stat.totalViews > 0
-					? ((stat.totalEngagement ?? 0) / stat.totalViews) * 100
-					: null;
-		}
-
-		return biKeys
-			.map((k) => statsMap.get(k)!)
-			.filter(
-				(s) =>
-					s.clipCount > 0 ||
-					s.key === "youtube_short" ||
-					s.key === "youtube_long",
-			);
-	});
-
-	const topClipRows = $derived.by(() => {
-		return clips
-			.map((clip) => ({
-				clip,
-				content: contentMap.get(clip.content_id) ?? null,
-				engagement: engagementValue(clip),
-			}))
-			.sort((a, b) => {
-				const viewsDiff =
-					(b.clip.view_count ?? -1) - (a.clip.view_count ?? -1);
-				if (viewsDiff !== 0) return viewsDiff;
-				return b.engagement - a.engagement;
-			})
-			.slice(0, 8);
-	});
-
-	function scrollToTop() {
-		window.scrollTo({ top: 0, behavior: "smooth" });
+	function todayIso() {
+		return new Date().toISOString().slice(0, 10);
 	}
 
-	function contentCode(
-		content: Pick<MonitoringContentRow, "id" | "content_code">,
-	): string {
+	function toNullableInt(value: unknown): number | null {
+		if (value === null || value === undefined || value === '') return null;
+		const n = Number(value);
+		return Number.isFinite(n) ? Math.round(n) : null;
+	}
+
+	function sameDate(input: string | null | undefined, dateIso: string): boolean {
+		if (!input) return false;
+		return input.slice(0, 10) === dateIso;
+	}
+
+	function isDue(lastCheckedAt: string | null | undefined): boolean {
+		if (!lastCheckedAt) return true;
+		return lastCheckedAt.slice(0, 10) !== todayIso();
+	}
+
+	function daysSince(lastCheckedAt: string | null | undefined): number {
+		if (!lastCheckedAt) return 999;
+		const last = new Date(lastCheckedAt);
+		const now = new Date();
+		const diff = now.getTime() - last.getTime();
+		return Math.max(0, Math.floor(diff / 86400000));
+	}
+
+	function contentCode(content: Pick<MonitoringContentRow, 'id' | 'content_code'>): string {
 		const code = content.content_code?.trim();
 		return code ? code : `MC-${content.id.slice(0, 8).toUpperCase()}`;
 	}
 
-	function platformFrameClass(
-		platform: SupportedPlatform | null | undefined,
-	): string {
-		if (platform === "instagram") return "platform-frame--instagram";
-		if (platform === "tiktok") return "platform-frame--tiktok";
-		if (platform === "youtube") return "platform-frame--youtube";
-		if (platform === "facebook") return "platform-frame--facebook";
-		return "";
+	function formatDate(dateIso: string): string {
+		const parsed = new Date(`${dateIso}T00:00:00`);
+		return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 	}
 
-	function engagementValue(
-		clip: Pick<
-			MonitoringContentPlatformRow,
-			"like_count" | "comment_count" | "share_count" | "save_count"
-		>,
-	): number {
-		return (
-			(clip.like_count ?? 0) +
-			(clip.comment_count ?? 0) +
-			(clip.share_count ?? 0) +
-			(clip.save_count ?? 0)
-		);
+	function formatDateTime(value: string | null | undefined): string {
+		if (!value) return 'Never';
+		const parsed = new Date(value);
+		return parsed.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
 
-	function formatRate(value: number | null): string {
-		if (value === null || !Number.isFinite(value)) return "-";
-		return `${value.toFixed(2)}%`;
+	function priorityClass(priority: MonitoringPriority): string {
+		return `priority--${priority}`;
 	}
 
-	function formatAvg(value: number | null): string {
-		if (value === null || !Number.isFinite(value)) return "-";
-		return formatCount(Math.round(value));
+	function snapshotDelta(
+		latest: MonitoringMetricSnapshotRow | null,
+		prev: MonitoringMetricSnapshotRow | null,
+		key: keyof Pick<MonitoringMetricSnapshotRow, 'followers_count' | 'view_count' | 'post_count' | 'like_count' | 'comment_count' | 'share_count' | 'save_count'>
+	): number | null {
+		if (!latest || !prev) return null;
+		const a = latest[key];
+		const b = prev[key];
+		if (a === null || a === undefined || b === null || b === undefined) return null;
+		return a - b;
 	}
 
-	function hasAnyMetricValue(input: MetricsDraft): boolean {
-		return Object.values(input).some(
-			(value) => typeof value === "number" && Number.isFinite(value),
-		);
+	function formatDelta(value: number | null): string {
+		if (value === null) return '-';
+		if (value === 0) return '0';
+		if (value > 0) return `+${formatCount(value)}`;
+		return formatCount(value);
 	}
 
-	function resetClipForm() {
-		clipLinkInput = "";
-		clipNotes = "";
-		draft = null;
-		metrics = {
-			views: null,
-			likes: null,
-			comments: null,
-			shares: null,
-			saves: null,
-		};
-	}
+	function hydrateSelectedForms() {
+		const selected = selectedLinkByPlatform.get(selectedPlatform) ?? null;
+		linkInput = selected?.url ?? '';
+		linkIsChannel = selected?.is_channel ?? true;
 
-	function hydrateClipForm(
-		contentId: string,
-		platform: SupportedPlatform = selectedPlatform,
-	) {
-		const existing =
-			(clipsByContentId.get(contentId) ?? []).find(
-				(clip) => clip.platform === platform,
-			) ?? null;
-		if (!existing) {
-			resetClipForm();
-			return;
-		}
-		clipLinkInput = existing.url;
-		clipNotes = existing.notes ?? "";
-		draft = null;
-		metrics = {
-			views: existing.view_count,
-			likes: existing.like_count,
-			comments: existing.comment_count,
-			shares: existing.share_count,
-			saves: existing.save_count,
-		};
+		snapshotDate = todayIso();
+		const latest = selected ? (snapshotsByPlatformId.get(selected.id) ?? [])[0] : null;
+		snapshotFollowers = latest?.followers_count ?? null;
+		snapshotViews = latest?.view_count ?? null;
+		snapshotPosts = latest?.post_count ?? null;
+		snapshotLikes = latest?.like_count ?? null;
+		snapshotComments = latest?.comment_count ?? null;
+		snapshotShares = latest?.share_count ?? null;
+		snapshotSaves = latest?.save_count ?? null;
+		snapshotNotes = '';
 	}
 
 	function selectContent(contentId: string) {
 		selectedContentId = contentId;
-		const existing = clipsByContentId.get(contentId) ?? [];
-		const nextPlatform = existing[0]?.platform ?? "youtube";
-		selectPlatform(nextPlatform);
+		const links = linksByContentId.get(contentId) ?? [];
+		selectedPlatform = links[0]?.platform ?? 'youtube';
+		hydrateSelectedForms();
 	}
 
 	function selectPlatform(platform: SupportedPlatform) {
 		selectedPlatform = platform;
-		if (!selectedContentId) {
-			resetClipForm();
-			return;
-		}
-		hydrateClipForm(selectedContentId, platform);
+		hydrateSelectedForms();
 	}
 
-	async function fetchEnrichResult(targetUrl: string): Promise<EnrichResult> {
-		const response = await fetch(
-			`/api/enrich?url=${encodeURIComponent(targetUrl)}`,
-		);
-		const body = await response.json();
-		if (!response.ok) {
-			throw new Error(body.error ?? "Analyze link ไม่สำเร็จ");
-		}
-		return body as EnrichResult;
+	function dismissMessageSoon() {
+		setTimeout(() => {
+			message = '';
+		}, 4000);
 	}
 
 	async function loadContents() {
 		if (!supabase) return;
-		loadingContents = true;
-		const { data, error } = await supabase
-			.from("monitoring_content")
-			.select("*")
-			.order("created_at", { ascending: false });
-		loadingContents = false;
-
+		const { data, error } = await supabase.from('monitoring_content').select('*').order('created_at', { ascending: false });
 		if (error) {
-			errorMessage = `โหลด monitoring content ไม่ได้: ${error.message}`;
+			errorMessage = `โหลด content ไม่สำเร็จ: ${error.message}`;
 			return;
 		}
-
 		contents = (data ?? []) as MonitoringContentRow[];
 	}
 
-	async function loadClips() {
+	async function loadPlatformLinks() {
 		if (!supabase) return;
-		loadingClips = true;
-		const { data, error } = await supabase
-			.from("monitoring_content_platform")
-			.select("*")
-			.order("created_at", { ascending: false });
-		loadingClips = false;
-
+		const { data, error } = await supabase.from('monitoring_content_platform').select('*').order('created_at', { ascending: false });
 		if (error) {
-			errorMessage = `โหลด monitored clips ไม่ได้: ${error.message}`;
+			errorMessage = `โหลด platform links ไม่สำเร็จ: ${error.message}`;
 			return;
 		}
+		platformLinks = (data ?? []) as MonitoringContentPlatformRow[];
+	}
 
-		clips = (data ?? []) as MonitoringContentPlatformRow[];
+	async function loadSnapshots() {
+		if (!supabase) return;
+		const { data, error } = await supabase
+			.from('monitoring_metric_snapshots')
+			.select('*')
+			.order('snapshot_date', { ascending: false })
+			.order('created_at', { ascending: false });
+		if (error) {
+			errorMessage = `โหลด snapshots ไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+		snapshots = (data ?? []) as MonitoringMetricSnapshotRow[];
+	}
+
+	async function loadAll() {
+		if (!supabase) return;
+		loading = true;
+		errorMessage = '';
+		await Promise.all([loadContents(), loadPlatformLinks(), loadSnapshots()]);
+		loading = false;
+
+		if (!selectedContentId && contents.length > 0) {
+			selectContent(contents[0].id);
+		} else if (selectedContentId) {
+			hydrateSelectedForms();
+		}
 	}
 
 	async function createContent() {
-		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
-			return;
-		}
-
+		if (!supabase) return;
 		if (!contentTitleInput.trim()) {
-			errorMessage = "กรุณาใส่ชื่อ content ที่ทำจริง";
+			errorMessage = 'กรุณาใส่ชื่อ content';
 			return;
 		}
 
 		creatingContent = true;
-		errorMessage = "";
-		message = "";
-
+		errorMessage = '';
+		message = '';
 		const payload = {
 			title: contentTitleInput.trim(),
 			description: contentDescriptionInput.trim() || null,
+			owner: contentOwnerInput.trim() || null,
+			priority: contentPriorityInput,
 			notes: null,
-			status: "active",
+			status: 'active'
 		};
 
-		const { data, error } = await supabase
-			.from("monitoring_content")
-			.insert(payload)
-			.select("*")
-			.single();
+		const { data, error } = await supabase.from('monitoring_content').insert(payload).select('*').single();
 		creatingContent = false;
 
 		if (error || !data) {
-			errorMessage = `สร้าง content ไม่สำเร็จ: ${error?.message ?? "unknown error"}`;
-			scrollToTop();
+			errorMessage = `สร้าง content ไม่สำเร็จ: ${error?.message ?? 'unknown error'}`;
 			return;
 		}
 
-		contents = [data as MonitoringContentRow, ...contents];
-		contentTitleInput = "";
-		contentDescriptionInput = "";
+		contentTitleInput = '';
+		contentDescriptionInput = '';
+		contentOwnerInput = '';
+		contentPriorityInput = 'normal';
+		await loadContents();
 		selectContent((data as MonitoringContentRow).id);
-		message = "เพิ่ม content สำหรับ monitoring แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
-		scrollToTop();
+		message = 'เพิ่ม monitoring content แล้ว';
+		dismissMessageSoon();
 	}
 
 	async function deleteSelectedContent() {
-		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
-			return;
-		}
-		if (!selectedContent) {
-			errorMessage = "ยังไม่ได้เลือก content";
-			return;
-		}
+		if (!supabase || !selectedContent) return;
 
-		const confirmed = window.confirm(
-			`ลบ content นี้ทั้งหมดใช่ไหม?\n${contentCode(selectedContent)} • ${selectedContent.title}`,
-		);
+		const confirmed = window.confirm(`ลบ content นี้ใช่ไหม?\n${contentCode(selectedContent)} • ${selectedContent.title}`);
 		if (!confirmed) return;
 
 		deletingContent = true;
-		errorMessage = "";
-		message = "";
+		errorMessage = '';
+		message = '';
 
-		const { data, error } = await supabase
-			.from("monitoring_content")
-			.delete()
-			.eq("id", selectedContent.id)
-			.select("id");
+		const { data, error } = await supabase.from('monitoring_content').delete().eq('id', selectedContent.id).select('id');
 		deletingContent = false;
 
 		if (error) {
 			errorMessage = `ลบ content ไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
 			return;
 		}
-
 		if (!data || data.length === 0) {
-			errorMessage = `ลบ content ไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
-			scrollToTop();
-			await Promise.all([loadContents(), loadClips()]);
+			errorMessage = 'ลบ content ไม่สำเร็จ: ไม่มีสิทธิ์หรือไม่พบข้อมูล';
 			return;
 		}
 
 		selectedContentId = null;
-		resetClipForm();
-		await Promise.all([loadContents(), loadClips()]);
-		if (contents.length > 0) {
-			selectContent(contents[0].id);
-		}
-		message = "ลบ content และคลิปใน content นี้แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
-		scrollToTop();
+		await loadAll();
+		message = 'ลบ content แล้ว';
+		dismissMessageSoon();
 	}
 
-	async function analyzeClipLink() {
-		message = "";
-		errorMessage = "";
-
-		if (!selectedContentId) {
-			errorMessage = "เลือก content ที่ต้องการ monitor ก่อน";
-			return;
-		}
-		if (!clipLinkInput.trim()) {
-			errorMessage = "กรุณาวางลิงก์คลิปก่อน";
+	async function savePlatformLink() {
+		if (!supabase || !selectedContentId) return;
+		if (!linkInput.trim()) {
+			errorMessage = 'กรุณาใส่ลิงก์ช่อง/โปรไฟล์';
 			return;
 		}
 
-		analyzing = true;
-		try {
-			const result = await fetchEnrichResult(clipLinkInput.trim());
-			draft = result;
-			selectedPlatform = result.platform;
-			clipLinkInput = result.url;
-			metrics = {
-				views: result.metrics.views,
-				likes: result.metrics.likes,
-				comments: result.metrics.comments,
-				shares: result.metrics.shares,
-				saves: result.metrics.saves,
-			};
-			if (hasAnyMetricValue(metrics)) {
-				message = `Analyze สำเร็จแล้ว (${platformLabel[result.platform]})`;
-			setTimeout(() => { message = ''; }, 4000);
-			} else {
-				message = `อ่าน metadata ได้แล้ว (${platformLabel[result.platform]}) แต่ยังไม่เจอ metrics อัตโนมัติ`;
-			setTimeout(() => { message = ''; }, 4000);
-			}
-		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "เกิดข้อผิดพลาดระหว่าง analyze";
-		} finally {
-			analyzing = false;
-			scrollToTop();
-		}
-	}
-
-	function mergeMetrics(
-		current: MetricsDraft,
-		fallback: MetricsDraft,
-	): MetricsDraft {
-		return {
-			views: current.views ?? fallback.views,
-			likes: current.likes ?? fallback.likes,
-			comments: current.comments ?? fallback.comments,
-			shares: current.shares ?? fallback.shares,
-			saves: current.saves ?? fallback.saves,
-		};
-	}
-
-	async function saveClip() {
-		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
-			return;
-		}
-		if (!selectedContentId) {
-			errorMessage = "เลือก content ก่อนบันทึกคลิป";
-			return;
-		}
-
-		const finalUrl = clipLinkInput.trim() || draft?.url?.trim() || "";
-		if (!finalUrl) {
-			errorMessage = "กรุณาใส่ลิงก์คลิป";
-			return;
-		}
-
-		errorMessage = "";
-		message = "";
-		savingClip = true;
-
-		let effectiveDraft = draft;
-		let autoAnalyzeFailed = false;
-		if (!effectiveDraft || effectiveDraft.url !== finalUrl) {
-			try {
-				effectiveDraft = await fetchEnrichResult(finalUrl);
-			} catch {
-				autoAnalyzeFailed = true;
-			}
-		}
-
-		const mergedMetrics = mergeMetrics(metrics, {
-			views: effectiveDraft?.metrics.views ?? null,
-			likes: effectiveDraft?.metrics.likes ?? null,
-			comments: effectiveDraft?.metrics.comments ?? null,
-			shares: effectiveDraft?.metrics.shares ?? null,
-			saves: effectiveDraft?.metrics.saves ?? null,
-		});
-
-		const sourcePlatform =
-			effectiveDraft?.platform ??
-			getPlatformFromUrl(finalUrl) ??
-			selectedPlatform ??
-			"youtube";
+		savingLink = true;
+		errorMessage = '';
+		message = '';
 
 		const payload = {
 			content_id: selectedContentId,
-			url: effectiveDraft?.url ?? finalUrl,
-			platform: sourcePlatform,
-			title: effectiveDraft?.title ?? selectedPlatformClip?.title ?? null,
-			thumbnail_url:
-				effectiveDraft?.thumbnailUrl ??
-				selectedPlatformClip?.thumbnail_url ??
-				null,
-			published_at:
-				effectiveDraft?.publishedAt ??
-				selectedPlatformClip?.published_at ??
-				null,
-			view_count: normalizeMetricValue(mergedMetrics.views),
-			like_count: normalizeMetricValue(mergedMetrics.likes),
-			comment_count: normalizeMetricValue(mergedMetrics.comments),
-			share_count: normalizeMetricValue(mergedMetrics.shares),
-			save_count: normalizeMetricValue(mergedMetrics.saves),
-			notes: clipNotes.trim() || null,
+			platform: selectedPlatform,
+			url: linkInput.trim(),
+			is_channel: linkIsChannel,
+			last_checked_at: selectedPlatformLink?.last_checked_at ?? null
 		};
 
 		const { error } = await supabase
-			.from("monitoring_content_platform")
-			.upsert(payload, { onConflict: "content_id,platform" });
-		savingClip = false;
+			.from('monitoring_content_platform')
+			.upsert(payload, { onConflict: 'content_id,platform' });
+
+		savingLink = false;
 
 		if (error) {
-			errorMessage = `บันทึกคลิปไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
+			errorMessage = `บันทึกลิงก์ไม่สำเร็จ: ${error.message}`;
 			return;
 		}
 
-		selectedPlatform = sourcePlatform;
-		draft = effectiveDraft ?? draft;
-		metrics = mergedMetrics;
-		await loadClips();
-		hydrateClipForm(selectedContentId, sourcePlatform);
-		message = autoAnalyzeFailed
-			? `บันทึกคลิปแล้ว (${platformLabel[sourcePlatform]}) โดยใช้ค่าที่กรอกเอง`
-			: `บันทึกคลิปแล้ว (${platformLabel[sourcePlatform]})`;
-		scrollToTop();
+		await loadPlatformLinks();
+		hydrateSelectedForms();
+		message = `บันทึกลิงก์ ${platformLabel[selectedPlatform]} แล้ว`;
+		dismissMessageSoon();
 	}
 
-	async function deleteSelectedClip() {
-		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
-			return;
-		}
-		if (!selectedPlatformClip || !selectedContentId) {
-			errorMessage = "ยังไม่มีคลิปของแพลตฟอร์มนี้ให้ลบ";
-			return;
-		}
-
-		const confirmed = window.confirm(
-			`ลบคลิป ${platformLabel[selectedPlatform]} นี้ใช่ไหม?`,
-		);
+	async function removePlatformLink() {
+		if (!supabase || !selectedPlatformLink) return;
+		const confirmed = window.confirm(`ลบลิงก์ ${platformLabel[selectedPlatform]} ใช่ไหม?`);
 		if (!confirmed) return;
 
-		deletingClip = true;
-		errorMessage = "";
-		message = "";
+		removingLink = true;
+		errorMessage = '';
+		message = '';
 
-		const { data, error } = await supabase
-			.from("monitoring_content_platform")
-			.delete()
-			.eq("id", selectedPlatformClip.id)
-			.select("id");
-		deletingClip = false;
+		const { error } = await supabase.from('monitoring_content_platform').delete().eq('id', selectedPlatformLink.id);
+		removingLink = false;
 
 		if (error) {
-			errorMessage = `ลบคลิปไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
+			errorMessage = `ลบลิงก์ไม่สำเร็จ: ${error.message}`;
 			return;
 		}
 
-		if (!data || data.length === 0) {
-			errorMessage = `ลบคลิปไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
-			scrollToTop();
-			await loadClips();
-			return;
-		}
-
-		await loadClips();
-		hydrateClipForm(selectedContentId, selectedPlatform);
-		message = `ลบคลิป ${platformLabel[selectedPlatform]} แล้ว`;
-	setTimeout(() => { message = ''; }, 4000);
-		scrollToTop();
+		await Promise.all([loadPlatformLinks(), loadSnapshots()]);
+		hydrateSelectedForms();
+		message = `ลบลิงก์ ${platformLabel[selectedPlatform]} แล้ว`;
+		dismissMessageSoon();
 	}
 
-	async function refreshSingleClip(clip: MonitoringContentPlatformRow) {
-		if (!supabase) return;
-		refreshingSingle = clip.id;
-		errorMessage = "";
-		message = "";
+	async function markCheckedNow() {
+		if (!supabase || !selectedPlatformLink) return;
+		markingChecked = true;
+		errorMessage = '';
+		message = '';
 
-		try {
-			const result = await fetchEnrichResult(clip.url);
-			const updatedMetrics = {
-				view_count: result.metrics.views ?? clip.view_count,
-				like_count: result.metrics.likes ?? clip.like_count,
-				comment_count: result.metrics.comments ?? clip.comment_count,
-				share_count: result.metrics.shares ?? clip.share_count,
-				save_count: result.metrics.saves ?? clip.save_count,
-				title: result.title ?? clip.title,
-				thumbnail_url: result.thumbnailUrl ?? clip.thumbnail_url,
-			};
+		const { error } = await supabase
+			.from('monitoring_content_platform')
+			.update({ last_checked_at: new Date().toISOString() })
+			.eq('id', selectedPlatformLink.id);
 
+		markingChecked = false;
+
+		if (error) {
+			errorMessage = `อัปเดตเวลาเช็กไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		await loadPlatformLinks();
+		hydrateSelectedForms();
+		message = `อัปเดตสถานะเช็ก ${platformLabel[selectedPlatform]} แล้ว`;
+		dismissMessageSoon();
+	}
+
+	async function saveSnapshot() {
+		if (!supabase || !selectedContentId || !selectedPlatformLink) {
+			errorMessage = 'ต้องบันทึกลิงก์แพลตฟอร์มก่อน';
+			return;
+		}
+		if (!snapshotDate) {
+			errorMessage = 'กรุณาเลือกวันที่ snapshot';
+			return;
+		}
+
+		savingSnapshot = true;
+		errorMessage = '';
+		message = '';
+
+		const payload = {
+			content_id: selectedContentId,
+			platform_id: selectedPlatformLink.id,
+			snapshot_date: snapshotDate,
+			followers_count: toNullableInt(snapshotFollowers),
+			view_count: toNullableInt(snapshotViews),
+			post_count: toNullableInt(snapshotPosts),
+			like_count: toNullableInt(snapshotLikes),
+			comment_count: toNullableInt(snapshotComments),
+			share_count: toNullableInt(snapshotShares),
+			save_count: toNullableInt(snapshotSaves),
+			notes: snapshotNotes.trim() || null
+		};
+
+		const { error } = await supabase
+			.from('monitoring_metric_snapshots')
+			.upsert(payload, { onConflict: 'platform_id,snapshot_date' });
+
+		if (!error) {
 			await supabase
-				.from("monitoring_content_platform")
-				.update(updatedMetrics)
-				.eq("id", clip.id);
-
-			await loadClips();
-			if (selectedContentId)
-				hydrateClipForm(selectedContentId, selectedPlatform);
-			message = `Refresh ${platformLabel[clip.platform]} สำเร็จ`;
-			setTimeout(() => { message = ''; }, 4000);
-		} catch (err) {
-			errorMessage = `Refresh ไม่สำเร็จ: ${err instanceof Error ? err.message : "unknown"}`;
-		} finally {
-			refreshingSingle = null;
+				.from('monitoring_content_platform')
+				.update({ last_checked_at: new Date().toISOString() })
+				.eq('id', selectedPlatformLink.id);
 		}
+
+		savingSnapshot = false;
+
+		if (error) {
+			errorMessage = `บันทึก snapshot ไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		await Promise.all([loadSnapshots(), loadPlatformLinks()]);
+		hydrateSelectedForms();
+		message = `บันทึก snapshot ${platformLabel[selectedPlatform]} วันที่ ${snapshotDate} แล้ว`;
+		dismissMessageSoon();
 	}
 
-	async function refreshAllClips() {
-		if (!supabase || clips.length === 0) return;
-		refreshingAll = true;
-		errorMessage = "";
-		message = "";
+	function exportCSV() {
+		const headers = [
+			'Content Code',
+			'Title',
+			'Owner',
+			'Priority',
+			'Platform',
+			'URL',
+			'Is Channel',
+			'Last Checked At',
+			'Latest Date',
+			'Followers',
+			'Views',
+			'Posts',
+			'Likes',
+			'Comments',
+			'Shares',
+			'Saves',
+			'Delta Followers',
+			'Delta Views',
+			'Due'
+		];
 
-		let successCount = 0;
-		let failCount = 0;
+		const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
-		for (let i = 0; i < clips.length; i++) {
-			const clip = clips[i];
-			refreshProgress = `${i + 1}/${clips.length}`;
+		const rows = platformLinks.map((link) => {
+			const content = contentMap.get(link.content_id);
+			const bucket = snapshotsByPlatformId.get(link.id) ?? [];
+			const latest = bucket[0] ?? null;
+			const prev = bucket[1] ?? null;
+			const deltaFollowers = latest && prev && latest.followers_count !== null && prev.followers_count !== null
+				? latest.followers_count - prev.followers_count
+				: null;
+			const deltaViews = latest && prev && latest.view_count !== null && prev.view_count !== null
+				? latest.view_count - prev.view_count
+				: null;
+			return [
+				content ? contentCode(content) : 'Unknown',
+				content?.title ?? '',
+				content?.owner ?? '',
+				content ? priorityLabel[content.priority] : '',
+				platformLabel[link.platform],
+				link.url,
+				link.is_channel ? 'yes' : 'no',
+				link.last_checked_at ?? '',
+				latest?.snapshot_date ?? '',
+				latest?.followers_count ?? '',
+				latest?.view_count ?? '',
+				latest?.post_count ?? '',
+				latest?.like_count ?? '',
+				latest?.comment_count ?? '',
+				latest?.share_count ?? '',
+				latest?.save_count ?? '',
+				deltaFollowers ?? '',
+				deltaViews ?? '',
+				isDue(link.last_checked_at) ? 'yes' : 'no'
+			]
+				.map(escape)
+				.join(',');
+		});
 
-			try {
-				const result = await fetchEnrichResult(clip.url);
-				const updatedMetrics = {
-					view_count: result.metrics.views ?? clip.view_count,
-					like_count: result.metrics.likes ?? clip.like_count,
-					comment_count:
-						result.metrics.comments ?? clip.comment_count,
-					share_count: result.metrics.shares ?? clip.share_count,
-					save_count: result.metrics.saves ?? clip.save_count,
-					title: result.title ?? clip.title,
-					thumbnail_url: result.thumbnailUrl ?? clip.thumbnail_url,
-				};
-
-				await supabase
-					.from("monitoring_content_platform")
-					.update(updatedMetrics)
-					.eq("id", clip.id);
-
-				successCount++;
-			} catch {
-				failCount++;
-			}
-		}
-
-		await loadClips();
-		if (selectedContentId)
-			hydrateClipForm(selectedContentId, selectedPlatform);
-		refreshingAll = false;
-		refreshProgress = "";
-		message = `Refresh เสร็จแล้ว: ${successCount} สำเร็จ${failCount > 0 ? `, ${failCount} ไม่สำเร็จ` : ""}`;
-	setTimeout(() => { message = ""; }, 4000);
+		const csv = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `monitoring-${todayIso()}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	onMount(async () => {
-		await Promise.all([loadContents(), loadClips()]);
-		if (contents.length > 0) {
-			const target =
-				monitoredRows.find((row) => row.clipCount > 0)?.content.id ??
-				contents[0].id;
-			selectContent(target);
-		}
+		await loadAll();
 	});
 </script>
 
@@ -868,94 +648,134 @@
 	<section class="hero">
 		<p class="kicker">Monitoring</p>
 		<h1>BigLot Content Monitoring</h1>
-		<p>
-			หน้านี้ใช้เฉพาะ content ที่ทีม BigLot ผลิตจริง ไม่อิง backlog ideas
-		</p>
+		<p>เก็บลิงก์ช่องทุก platform และบันทึกตัวเลขรายวันแบบ manual</p>
 	</section>
 
 	{#if !hasSupabaseConfig}
-		<p class="alert">
-			ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ
-			<code>PUBLIC_SUPABASE_ANON_KEY</code>
-		</p>
+		<p class="alert">ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ <code>PUBLIC_SUPABASE_ANON_KEY</code></p>
 	{/if}
 
 	{#if message}
 		<p class="notice success">{message}</p>
 	{/if}
-
 	{#if errorMessage}
 		<p class="notice error">{errorMessage}</p>
 	{/if}
+
+	<section class="panel dashboard-panel">
+		<div class="summary-grid">
+			<article class="summary-card">
+				<p>Total Contents</p>
+				<strong>{dashboard.totalContents}</strong>
+			</article>
+			<article class="summary-card">
+				<p>Platform Links</p>
+				<strong>{dashboard.totalLinks}</strong>
+			</article>
+			<article class="summary-card">
+				<p>Due Today</p>
+				<strong>{dashboard.dueLinks}</strong>
+			</article>
+			<article class="summary-card">
+				<p>Checked Today</p>
+				<strong>{dashboard.checkedToday}</strong>
+			</article>
+			<article class="summary-card warning">
+				<p>High Priority Due</p>
+				<strong>{dashboard.highPriorityDue}</strong>
+			</article>
+		</div>
+	</section>
 
 	<section class="panel">
 		<div class="monitor-layout">
 			<div class="monitor-left">
 				<div class="create-content-box">
-					<h2>Add New Content</h2>
-					<div class="row small-gap">
-						<label for="content-title">Content Title</label>
-						<input
-							id="content-title"
-							bind:value={contentTitleInput}
-							placeholder="เช่น BigLot โปรเปิดบ้านเดือนมีนาคม"
-						/>
+					<h2>Add Monitoring Content</h2>
+					<div class="row">
+						<label for="mc-title">Title</label>
+						<input id="mc-title" bind:value={contentTitleInput} placeholder="เช่น คู่แข่ง A - โปรเจกต์เดือนนี้" />
 					</div>
-					<div class="row small-gap">
-						<label for="content-description"
-							>Description (optional)</label
-						>
-						<textarea
-							id="content-description"
-							rows={2}
-							bind:value={contentDescriptionInput}
-							placeholder="บริบท content นี้ เช่น campaign, objective"
-						></textarea>
+					<div class="row two-col">
+						<div>
+							<label for="mc-owner">Owner</label>
+							<input id="mc-owner" bind:value={contentOwnerInput} placeholder="ชื่อผู้รับผิดชอบ" />
+						</div>
+						<div>
+							<label for="mc-priority">Priority</label>
+							<select id="mc-priority" bind:value={contentPriorityInput}>
+								{#each priorityOptions as p}
+									<option value={p}>{priorityLabel[p]}</option>
+								{/each}
+							</select>
+						</div>
 					</div>
-					<button
-						class="primary full"
-						onclick={createContent}
-						disabled={creatingContent}
-					>
-						{creatingContent
-							? "Creating..."
-							: "Create Monitoring Content"}
+					<div class="row">
+						<label for="mc-description">Description</label>
+						<textarea id="mc-description" rows={2} bind:value={contentDescriptionInput} placeholder="บริบทที่ต้อง monitor"></textarea>
+					</div>
+					<button class="primary full" onclick={createContent} disabled={creatingContent}>
+						{creatingContent ? 'Creating...' : 'Create Content'}
 					</button>
 				</div>
 
-				<div class="list-head">
-					<h2>My Contents</h2>
-					<span>{contentsWithClips}/{contents.length}</span>
+				<div class="filters-box">
+					<div class="row">
+						<label for="filter-search">Search</label>
+						<input id="filter-search" bind:value={searchInput} placeholder="ค้นหา code / title / owner" />
+					</div>
+					<div class="row two-col">
+						<div>
+							<label for="filter-owner">Owner</label>
+							<select id="filter-owner" bind:value={ownerFilter}>
+								<option value="all">All</option>
+								{#each owners as owner}
+									<option value={owner}>{owner}</option>
+								{/each}
+							</select>
+						</div>
+						<div>
+							<label for="filter-priority">Priority</label>
+							<select id="filter-priority" bind:value={priorityFilter}>
+								<option value="all">All</option>
+								{#each priorityOptions as p}
+									<option value={p}>{priorityLabel[p]}</option>
+								{/each}
+							</select>
+						</div>
+					</div>
+					<label class="check-row">
+						<input type="checkbox" bind:checked={dueOnly} />
+						<span>Show only due items</span>
+					</label>
 				</div>
 
-				{#if loadingContents || loadingClips}
-					<p class="empty">Loading monitoring data...</p>
-				{:else if monitoredRows.length === 0}
-					<p class="empty">ยังไม่มี content ที่สร้างไว้</p>
+				<div class="list-head">
+					<h2>Contents ({filteredRows.length})</h2>
+					<button class="ghost small" onclick={exportCSV} disabled={platformLinks.length === 0}>Export CSV</button>
+				</div>
+
+				{#if loading}
+					<p class="empty">Loading...</p>
+				{:else if filteredRows.length === 0}
+					<p class="empty">ไม่พบรายการ</p>
 				{:else}
 					<div class="content-list">
-						{#each monitoredRows as row}
+						{#each filteredRows as row}
 							<button
 								type="button"
-								class={`content-btn ${selectedContentId === row.content.id ? "active" : ""}`}
+								class={`content-btn ${selectedContentId === row.content.id ? 'active' : ''}`}
 								onclick={() => selectContent(row.content.id)}
 							>
 								<div>
 									<strong>{contentCode(row.content)}</strong>
-									<p class="content-title">
-										{row.content.title}
-									</p>
+									<p class="content-title">{row.content.title}</p>
+									<p class="muted">{row.content.owner ?? 'No owner'}</p>
 								</div>
 								<div class="content-meta">
-									<span class="chip"
-										>{row.clipCount} Platform{row.clipCount ===
-										1
-											? ""
-											: "s"}</span
-									>
-									<span
-										>{formatCount(row.totalViews)} views</span
-									>
+									<span class={`badge ${priorityClass(row.content.priority)}`}>{priorityLabel[row.content.priority]}</span>
+									<span class="chip">{row.linkCount} links</span>
+									<span class={`chip ${row.dueCount > 0 ? 'chip-due' : ''}`}>{row.dueCount} due</span>
 								</div>
 							</button>
 						{/each}
@@ -965,389 +785,191 @@
 
 			<div class="monitor-right">
 				{#if !selectedContent}
-					<p class="empty">
-						เลือก content จากฝั่งซ้ายเพื่อเริ่ม monitor
-					</p>
+					<p class="empty">เลือก content จากฝั่งซ้ายเพื่อเริ่ม monitor</p>
 				{:else}
 					<div class="source-head">
-						<p class="kicker small">Monitored Content</p>
+						<p class="kicker small">Selected Content</p>
 						<h3>{contentCode(selectedContent)}</h3>
-						<p class="meta">{selectedContent.title}</p>
+						<p class="meta"><strong>{selectedContent.title}</strong></p>
+						<p class="meta">Owner: {selectedContent.owner ?? 'No owner'} · Priority: {priorityLabel[selectedContent.priority]}</p>
 						{#if selectedContent.description}
 							<p class="meta">{selectedContent.description}</p>
 						{/if}
 						<div class="head-actions">
-							<button
-								class="danger"
-								onclick={deleteSelectedContent}
-								disabled={deletingContent}
-							>
-								{deletingContent
-									? "Deleting..."
-									: "Delete Content"}
+							<button class="danger" onclick={deleteSelectedContent} disabled={deletingContent}>
+								{deletingContent ? 'Deleting...' : 'Delete Content'}
 							</button>
 						</div>
 					</div>
 
 					<div class="platform-switcher">
 						{#each availablePlatforms as platform}
-							<button
-								type="button"
-								class={`platform-btn ${selectedPlatform === platform ? "active" : ""}`}
-								onclick={() => selectPlatform(platform)}
-							>
+							{@const link = selectedLinkByPlatform.get(platform) ?? null}
+							<button type="button" class={`platform-btn ${selectedPlatform === platform ? 'active' : ''}`} onclick={() => selectPlatform(platform)}>
 								<span>{platformLabel[platform]}</span>
-								{#if selectedPlatformSet.has(platform)}
-									<span class="dot" aria-hidden="true"></span>
+								{#if link}
+									<span class={`dot ${isDue(link.last_checked_at) ? 'due' : ''}`} title={isDue(link.last_checked_at) ? 'Due' : 'Checked'}></span>
 								{/if}
 							</button>
 						{/each}
 					</div>
 
-					<div class="row">
-						<label for="clip-link"
-							>Clip Link ({platformLabel[
-								selectedPlatform
-							]})</label
-						>
-						<input
-							id="clip-link"
-							bind:value={clipLinkInput}
-							placeholder={clipPlaceholder}
-						/>
-					</div>
-
-					<div class="action-row">
-						<button
-							class="ghost"
-							onclick={analyzeClipLink}
-							disabled={analyzing}
-						>
-							{analyzing ? "Analyzing..." : "Analyze Link"}
-						</button>
-						<button
-							class="primary"
-							onclick={saveClip}
-							disabled={savingClip}
-						>
-							{savingClip ? "Saving..." : "Save Clip"}
-						</button>
-						<button
-							class="danger"
-							onclick={deleteSelectedClip}
-							disabled={!selectedPlatformClip || deletingClip}
-						>
-							{deletingClip
-								? "Deleting..."
-								: "Delete Platform Clip"}
-						</button>
-					</div>
-
-					<div class="metrics">
-						<div class="metric-item">
-							<label for="m-views">Views</label>
-							<input
-								id="m-views"
-								type="number"
-								min="0"
-								bind:value={metrics.views}
-							/>
+					<div class="editor-block">
+						<h4>Platform Link ({platformLabel[selectedPlatform]})</h4>
+						<div class="row">
+							<label for="platform-link">Channel / Profile URL</label>
+							<input id="platform-link" bind:value={linkInput} placeholder={platformPlaceholder[selectedPlatform]} />
 						</div>
-						<div class="metric-item">
-							<label for="m-likes">Likes</label>
-							<input
-								id="m-likes"
-								type="number"
-								min="0"
-								bind:value={metrics.likes}
-							/>
-						</div>
-						<div class="metric-item">
-							<label for="m-comments">Comments</label>
-							<input
-								id="m-comments"
-								type="number"
-								min="0"
-								bind:value={metrics.comments}
-							/>
-						</div>
-						<div class="metric-item">
-							<label for="m-shares">Shares</label>
-							<input
-								id="m-shares"
-								type="number"
-								min="0"
-								bind:value={metrics.shares}
-							/>
-						</div>
-						<div class="metric-item">
-							<label for="m-saves">Saves</label>
-							<input
-								id="m-saves"
-								type="number"
-								min="0"
-								bind:value={metrics.saves}
-							/>
+						<label class="check-row">
+							<input type="checkbox" bind:checked={linkIsChannel} />
+							<span>Link นี้เป็นหน้า Channel/Profile</span>
+						</label>
+						<p class="meta">Last checked: {formatDateTime(selectedPlatformLink?.last_checked_at)}</p>
+						<div class="action-row">
+							<button class="primary" onclick={savePlatformLink} disabled={savingLink}>{savingLink ? 'Saving...' : 'Save Link'}</button>
+							<button class="ghost" onclick={markCheckedNow} disabled={!selectedPlatformLink || markingChecked}>{markingChecked ? 'Updating...' : 'Mark Checked Now'}</button>
+							<button class="danger" onclick={removePlatformLink} disabled={!selectedPlatformLink || removingLink}>{removingLink ? 'Removing...' : 'Remove Link'}</button>
 						</div>
 					</div>
 
-					<div class="row">
-						<label for="clip-notes">Monitoring Notes</label>
-						<textarea
-							id="clip-notes"
-							rows={3}
-							bind:value={clipNotes}
-							placeholder="Insight จาก performance ของคลิปนี้"
-						></textarea>
-					</div>
-
-					{#if currentPreview}
-						<div class="preview-card">
-							{#if currentTikTokEmbed}
-								<iframe
-									class="preview-media tiktok-frame"
-									src={currentTikTokEmbed}
-									title="TikTok preview"
-									loading="lazy"
-									allow="encrypted-media; picture-in-picture"
-									allowfullscreen
-								></iframe>
-							{:else if currentInstagramEmbed}
-								<iframe
-									class="preview-media instagram-frame"
-									src={currentInstagramEmbed}
-									title="Instagram preview"
-									loading="lazy"
-									allow="encrypted-media; picture-in-picture"
-									allowfullscreen
-								></iframe>
-							{:else if currentPreview.thumbnailUrl}
-								<img
-									class="preview-media"
-									src={currentPreview.thumbnailUrl}
-									alt={currentPreview.title ?? "thumbnail"}
-								/>
-							{/if}
+					<div class="editor-block">
+						<h4>Daily Snapshot ({platformLabel[selectedPlatform]})</h4>
+						<div class="row two-col">
 							<div>
-								<span class="platform"
-									>{currentPreview.platform.toUpperCase()}</span
-								>
-								<h4>
-									{currentPreview.title ?? "Untitled clip"}
-								</h4>
-								<p class="meta">{currentPreview.url}</p>
+								<label for="snap-date">Date</label>
+								<input id="snap-date" type="date" bind:value={snapshotDate} />
 							</div>
 						</div>
-					{/if}
+						<div class="metrics-grid">
+							<div class="metric-item">
+								<label for="snap-followers">Followers/Subscribers</label>
+								<input id="snap-followers" type="number" min="0" bind:value={snapshotFollowers} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-views">Views</label>
+								<input id="snap-views" type="number" min="0" bind:value={snapshotViews} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-posts">Posts</label>
+								<input id="snap-posts" type="number" min="0" bind:value={snapshotPosts} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-likes">Likes</label>
+								<input id="snap-likes" type="number" min="0" bind:value={snapshotLikes} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-comments">Comments</label>
+								<input id="snap-comments" type="number" min="0" bind:value={snapshotComments} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-shares">Shares</label>
+								<input id="snap-shares" type="number" min="0" bind:value={snapshotShares} />
+							</div>
+							<div class="metric-item">
+								<label for="snap-saves">Saves</label>
+								<input id="snap-saves" type="number" min="0" bind:value={snapshotSaves} />
+							</div>
+						</div>
+						<div class="row">
+							<label for="snap-notes">Notes</label>
+							<textarea id="snap-notes" rows={2} bind:value={snapshotNotes} placeholder="ข้อสังเกตของวันนี้"></textarea>
+						</div>
+						<button class="primary" onclick={saveSnapshot} disabled={savingSnapshot || !selectedPlatformLink}>
+							{savingSnapshot ? 'Saving...' : 'Save Snapshot'}
+						</button>
+					</div>
 
-					<div class="platform-grid">
-						{#each availablePlatforms as platform}
-							{@const clip =
-								selectedClipByPlatform.get(platform) ?? null}
-							{@const clipTikTokEmbed =
-								clip && clip.platform === "tiktok"
-									? getTikTokEmbedUrl(clip.url)
-									: null}
-							{@const clipInstagramEmbed =
-								clip && clip.platform === "instagram"
-									? getInstagramEmbedUrl(clip.url)
-									: null}
-							<button
-								type="button"
-								class={`platform-card ${selectedPlatform === platform ? "active" : ""} ${platformFrameClass(platform)}`}
-								onclick={() => selectPlatform(platform)}
-							>
-								<div class="platform-card-head">
-									<strong>{platformLabel[platform]}</strong>
-									<span
-										class={`status ${clip ? "ok" : "missing"}`}
-										>{clip ? "Monitored" : "Missing"}</span
-									>
+					<div class="editor-block">
+						<h4>Latest Trend</h4>
+						{#if latestSnapshot}
+							<div class="trend-grid">
+								<div class="trend-item">
+									<p>Followers</p>
+									<strong>{formatCount(latestSnapshot.followers_count)}</strong>
+									<small>{formatDelta(snapshotDelta(latestSnapshot, previousSnapshot, 'followers_count'))}</small>
 								</div>
+								<div class="trend-item">
+									<p>Views</p>
+									<strong>{formatCount(latestSnapshot.view_count)}</strong>
+									<small>{formatDelta(snapshotDelta(latestSnapshot, previousSnapshot, 'view_count'))}</small>
+								</div>
+								<div class="trend-item">
+									<p>Posts</p>
+									<strong>{formatCount(latestSnapshot.post_count)}</strong>
+									<small>{formatDelta(snapshotDelta(latestSnapshot, previousSnapshot, 'post_count'))}</small>
+								</div>
+							</div>
+						{:else}
+							<p class="empty">ยังไม่มี snapshot ของแพลตฟอร์มนี้</p>
+						{/if}
+					</div>
 
-								{#if clipTikTokEmbed}
-									<iframe
-										class="card-media tiktok-frame"
-										src={clipTikTokEmbed}
-										title="TikTok card preview"
-										loading="lazy"
-										allow="encrypted-media; picture-in-picture"
-										allowfullscreen
-									></iframe>
-								{:else if clipInstagramEmbed}
-									<iframe
-										class="card-media instagram-frame"
-										src={clipInstagramEmbed}
-										title="Instagram card preview"
-										loading="lazy"
-										allow="encrypted-media; picture-in-picture"
-										allowfullscreen
-									></iframe>
-								{:else if clip?.thumbnail_url}
-									<img
-										class="card-media"
-										src={clip.thumbnail_url}
-										alt={clip.title ?? "thumbnail"}
-									/>
-								{:else}
-									<div class="card-empty">No preview</div>
-								{/if}
-
-								{#if clip}
-									<p class="card-title">
-										{clip.title ?? "Untitled clip"}
-									</p>
-									<div class="card-bottom">
-										<p class="card-metric">
-											Views: {formatCount(
-												clip.view_count,
-											)}
-										</p>
-										<!-- svelte-ignore a11y_no_static_element_interactions -->
-										<span
-											class="refresh-icon"
-											role="button"
-											tabindex="0"
-											title="Refresh metrics"
-											onclick={(e: MouseEvent) => {
-												e.stopPropagation();
-												refreshSingleClip(clip);
-											}}
-											onkeydown={(e: KeyboardEvent) => {
-												if (e.key === "Enter") {
-													e.stopPropagation();
-													refreshSingleClip(clip);
-												}
-											}}
-										>
-											{refreshingSingle === clip.id
-												? "⏳"
-												: "🔄"}
-										</span>
-									</div>
-								{:else}
-									<p class="card-title muted">
-										ยังไม่มีคลิปในแพลตฟอร์มนี้
-									</p>
-								{/if}
-							</button>
-						{/each}
+					<div class="editor-block">
+						<h4>Snapshot History ({selectedPlatformSnapshots.length})</h4>
+						{#if selectedPlatformSnapshots.length === 0}
+							<p class="empty">ยังไม่มีประวัติ</p>
+						{:else}
+							<div class="table-wrap">
+								<table class="history-table">
+									<thead>
+										<tr>
+											<th>Date</th>
+											<th>Followers</th>
+											<th>Views</th>
+											<th>Posts</th>
+											<th>Likes</th>
+											<th>Comments</th>
+											<th>Shares</th>
+											<th>Saves</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each selectedPlatformSnapshots as row}
+											<tr>
+												<td>{formatDate(row.snapshot_date)}</td>
+												<td>{formatCount(row.followers_count)}</td>
+												<td>{formatCount(row.view_count)}</td>
+												<td>{formatCount(row.post_count)}</td>
+												<td>{formatCount(row.like_count)}</td>
+												<td>{formatCount(row.comment_count)}</td>
+												<td>{formatCount(row.share_count)}</td>
+												<td>{formatCount(row.save_count)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
 					</div>
 				{/if}
 			</div>
 		</div>
 	</section>
 
-	<section class="panel bi-panel">
+	<section class="panel">
 		<div class="list-head">
-			<h2>BI: Creator Analysis</h2>
-			<div class="bi-head-actions">
-				<span>{biTotals.totalClips} clips tracked</span>
-				<button
-					class="ghost refresh-btn"
-					onclick={refreshAllClips}
-					disabled={refreshingAll || clips.length === 0}
-				>
-					{#if refreshingAll}
-						🔄 Refreshing {refreshProgress}...
-					{:else}
-						🔄 Refresh All Metrics
-					{/if}
-				</button>
-			</div>
+			<h2>Monitoring Queue (Due)</h2>
+			<span>{queueRows.length} items</span>
 		</div>
-
-		<div class="summary-grid">
-			<article class="summary-card">
-				<p>Total Clips</p>
-				<strong>{biTotals.totalClips}</strong>
-			</article>
-			<article class="summary-card">
-				<p>Contents Covered</p>
-				<strong>{biTotals.coveredContents}</strong>
-			</article>
-			<article class="summary-card">
-				<p>Total Views</p>
-				<strong>{formatCount(biTotals.totalViews)}</strong>
-			</article>
-			<article class="summary-card">
-				<p>Engagement Rate</p>
-				<strong>{formatRate(biTotals.engagementRate)}</strong>
-			</article>
-		</div>
-
-		<div class="bi-grid">
-			<div class="bi-table-wrap">
-				<h3>Platform Breakdown</h3>
-				<table class="bi-table">
-					<thead>
-						<tr>
-							<th>Platform</th>
-							<th>Clips</th>
-							<th>Views</th>
-							<th>Engagement</th>
-							<th>Avg Views</th>
-							<th>ER</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each platformStats as stat}
-							<tr>
-								<td
-									><span
-										class={`platform ${stat.platformClass}`}
-										>{stat.label}</span
-									></td
-								>
-								<td>{stat.clipCount}</td>
-								<td>{formatCount(stat.totalViews)}</td>
-								<td>{formatCount(stat.totalEngagement)}</td>
-								<td>{formatAvg(stat.avgViews)}</td>
-								<td>{formatRate(stat.engagementRate)}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+		{#if queueRows.length === 0}
+			<p class="empty">ทุกลิงก์ถูกเช็กวันนี้แล้ว</p>
+		{:else}
+			<div class="queue-list">
+				{#each queueRows as row}
+					<article class="queue-item">
+						<div>
+							<p class="kicker tiny">{contentCode(row.content)}</p>
+							<strong>{row.content.title}</strong>
+							<p class="meta">{platformLabel[row.link.platform]} · {row.link.url}</p>
+						</div>
+						<div class="queue-meta">
+							<span class={`badge ${priorityClass(row.content.priority)}`}>{priorityLabel[row.content.priority]}</span>
+							<span class="chip chip-due">{row.days === 999 ? 'never checked' : `${row.days} day(s)`}</span>
+						</div>
+					</article>
+				{/each}
 			</div>
-
-			<div class="leaderboard">
-				<h3>Top Performing Clips</h3>
-				{#if topClipRows.length === 0}
-					<p class="empty">ยังไม่มีคลิปที่ monitor แล้ว</p>
-				{:else}
-					<div class="leader-list">
-						{#each topClipRows as row, index}
-							<article class="leader-item">
-								<div>
-									<p class="rank">#{index + 1}</p>
-									<strong
-										>{row.content
-											? contentCode(row.content)
-											: "Unknown content"}</strong
-									>
-									<p class="muted">
-										{row.clip.title ??
-											row.content?.title ??
-											"Untitled clip"}
-									</p>
-									<p class="muted">
-										{platformLabel[row.clip.platform]}
-									</p>
-								</div>
-								<div class="leader-metrics">
-									<p>
-										{formatCount(row.clip.view_count)} views
-									</p>
-									<p>
-										{formatCount(row.engagement)} engagement
-									</p>
-								</div>
-							</article>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		</div>
+		{/if}
 	</section>
 </main>
 
@@ -1357,21 +979,18 @@
 		gap: 1rem;
 	}
 
-	h1,
-	h2,
-	h3,
-	h4 {
-		font-family: "Space Grotesk", "Noto Sans Thai", sans-serif;
+	h1, h2, h3, h4 {
+		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
 	}
 
 	.hero {
 		text-align: center;
-		padding: 1.2rem 0 0.2rem;
+		padding: 1.1rem 0 0.2rem;
 	}
 
 	.hero h1 {
-		margin: 0.4rem 0;
-		font-size: clamp(1.8rem, 4.5vw, 2.8rem);
+		margin: 0.35rem 0;
+		font-size: clamp(1.8rem, 4.4vw, 2.7rem);
 	}
 
 	.hero p {
@@ -1393,15 +1012,428 @@
 		color: #2563eb;
 	}
 
+	.kicker.tiny {
+		font-size: 0.62rem;
+		color: #64748b;
+	}
+
 	.panel {
 		padding: 1rem;
 		border-radius: 1rem;
 		border: 1px solid rgba(15, 23, 42, 0.08);
-		background: rgba(255, 255, 255, 0.88);
+		background: rgba(255, 255, 255, 0.9);
 	}
 
-	.alert,
-	.notice {
+	.dashboard-panel {
+		padding-top: 0.85rem;
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		gap: 0.55rem;
+	}
+
+	.summary-card {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.78rem;
+		background: #fff;
+		padding: 0.7rem;
+	}
+
+	.summary-card p {
+		margin: 0;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #64748b;
+	}
+
+	.summary-card strong {
+		display: block;
+		margin-top: 0.2rem;
+		font-size: 1.25rem;
+	}
+
+	.summary-card.warning {
+		background: rgba(220, 38, 38, 0.04);
+		border-color: rgba(220, 38, 38, 0.2);
+	}
+
+	.monitor-layout {
+		display: grid;
+		grid-template-columns: 340px 1fr;
+		gap: 0.9rem;
+	}
+
+	.monitor-left,
+	.monitor-right {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.86rem;
+		background: #fff;
+		padding: 0.82rem;
+	}
+
+	.create-content-box,
+	.filters-box,
+	.editor-block {
+		display: grid;
+		gap: 0.52rem;
+		padding: 0.72rem;
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		border-radius: 0.75rem;
+		background: rgba(248, 250, 252, 0.65);
+	}
+
+	.create-content-box {
+		border-color: rgba(37, 99, 235, 0.2);
+		background: rgba(37, 99, 235, 0.03);
+		margin-bottom: 0.7rem;
+	}
+
+	.filters-box {
+		margin-bottom: 0.7rem;
+	}
+
+	.editor-block + .editor-block {
+		margin-top: 0.7rem;
+	}
+
+	.list-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		margin-bottom: 0.65rem;
+	}
+
+	.list-head h2 {
+		margin: 0;
+		font-size: 1.05rem;
+	}
+
+	.row {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.row.two-col {
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+
+	label {
+		font-size: 0.79rem;
+		color: #475569;
+	}
+
+	input,
+	textarea,
+	select {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		padding: 0.64rem 0.74rem;
+		border-radius: 0.68rem;
+		border: 1px solid rgba(15, 23, 42, 0.15);
+		background: #fff;
+	}
+
+	textarea {
+		resize: vertical;
+	}
+
+	.check-row {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		font-size: 0.78rem;
+		color: #475569;
+	}
+
+	.check-row input {
+		width: auto;
+		padding: 0;
+	}
+
+	.content-list {
+		display: grid;
+		gap: 0.42rem;
+		max-height: 620px;
+		overflow: auto;
+	}
+
+	.content-btn {
+		text-align: left;
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		border-radius: 0.74rem;
+		padding: 0.62rem;
+		background: #fff;
+		display: flex;
+		justify-content: space-between;
+		gap: 0.45rem;
+		cursor: pointer;
+	}
+
+	.content-btn.active {
+		background: rgba(248, 250, 252, 0.98);
+		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.22);
+	}
+
+	.content-btn strong {
+		display: block;
+		font-size: 0.84rem;
+	}
+
+	.content-title {
+		margin: 0.18rem 0 0;
+		font-size: 0.8rem;
+		color: #334155;
+	}
+
+	.content-meta {
+		display: grid;
+		justify-items: end;
+		gap: 0.16rem;
+	}
+
+	.muted,
+	.meta {
+		margin: 0.12rem 0 0;
+		font-size: 0.74rem;
+		color: #64748b;
+	}
+
+	.badge {
+		display: inline-block;
+		padding: 0.1rem 0.44rem;
+		border-radius: 999px;
+		font-size: 0.64rem;
+		font-weight: 700;
+	}
+
+	.priority--low {
+		background: rgba(100, 116, 139, 0.14);
+		color: #475569;
+	}
+
+	.priority--normal {
+		background: rgba(37, 99, 235, 0.14);
+		color: #1d4ed8;
+	}
+
+	.priority--high {
+		background: rgba(217, 119, 6, 0.14);
+		color: #b45309;
+	}
+
+	.priority--urgent {
+		background: rgba(220, 38, 38, 0.14);
+		color: #b91c1c;
+	}
+
+	.chip {
+		display: inline-block;
+		padding: 0.1rem 0.44rem;
+		border-radius: 999px;
+		font-size: 0.66rem;
+		font-weight: 700;
+		background: rgba(15, 23, 42, 0.08);
+		color: #334155;
+	}
+
+	.chip-due {
+		background: rgba(220, 38, 38, 0.12);
+		color: #b91c1c;
+	}
+
+	.source-head h3 {
+		margin: 0.2rem 0;
+	}
+
+	.head-actions {
+		margin-top: 0.5rem;
+	}
+
+	.platform-switcher {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.42rem;
+		margin: 0.7rem 0;
+	}
+
+	.platform-btn {
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: #fff;
+		border-radius: 999px;
+		padding: 0.34rem 0.6rem;
+		font-size: 0.75rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.32rem;
+		cursor: pointer;
+	}
+
+	.platform-btn.active {
+		border-color: rgba(37, 99, 235, 0.5);
+		background: rgba(37, 99, 235, 0.08);
+		color: #1d4ed8;
+	}
+
+	.dot {
+		width: 0.42rem;
+		height: 0.42rem;
+		border-radius: 50%;
+		background: #16a34a;
+	}
+
+	.dot.due {
+		background: #dc2626;
+	}
+
+	.action-row {
+		display: flex;
+		gap: 0.48rem;
+		flex-wrap: wrap;
+	}
+
+	.primary,
+	.ghost,
+	.danger {
+		border-radius: 0.68rem;
+		font-weight: 700;
+		padding: 0.56rem 0.8rem;
+		cursor: pointer;
+	}
+
+	.primary {
+		border: 0;
+		background: #2563eb;
+		color: #fff;
+	}
+
+	.ghost {
+		border: 1px solid rgba(37, 99, 235, 0.25);
+		background: rgba(37, 99, 235, 0.08);
+		color: #1d4ed8;
+	}
+
+	.ghost.small {
+		font-size: 0.76rem;
+		padding: 0.4rem 0.6rem;
+	}
+
+	.danger {
+		border: 1px solid rgba(220, 38, 38, 0.2);
+		background: rgba(220, 38, 38, 0.08);
+		color: #b91c1c;
+	}
+
+	.primary:disabled,
+	.ghost:disabled,
+	.danger:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.full {
+		width: 100%;
+	}
+
+	.metrics-grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.45rem;
+	}
+
+	.metric-item {
+		padding: 0.48rem;
+		border-radius: 0.68rem;
+		background: rgba(15, 23, 42, 0.04);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+	}
+
+	.metric-item input {
+		margin-top: 0.2rem;
+	}
+
+	.trend-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.45rem;
+	}
+
+	.trend-item {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.7rem;
+		padding: 0.56rem;
+		background: #fff;
+	}
+
+	.trend-item p {
+		margin: 0;
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.trend-item strong {
+		display: block;
+		margin-top: 0.16rem;
+		font-size: 1rem;
+	}
+
+	.trend-item small {
+		font-size: 0.7rem;
+		color: #2563eb;
+	}
+
+	.table-wrap {
+		overflow-x: auto;
+	}
+
+	.history-table {
+		width: 100%;
+		min-width: 720px;
+		border-collapse: collapse;
+		font-size: 0.8rem;
+	}
+
+	.history-table th,
+	.history-table td {
+		padding: 0.42rem 0.36rem;
+		border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+		text-align: left;
+	}
+
+	.history-table th {
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		color: #64748b;
+	}
+
+	.queue-list {
+		display: grid;
+		gap: 0.45rem;
+	}
+
+	.queue-item {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.58rem;
+		border-radius: 0.72rem;
+		border: 1px solid rgba(15, 23, 42, 0.09);
+		background: #fff;
+	}
+
+	.queue-meta {
+		display: grid;
+		justify-items: end;
+		gap: 0.2rem;
+	}
+
+	.notice,
+	.alert {
 		padding: 0.8rem 0.95rem;
 		border-radius: 0.8rem;
 		font-size: 0.9rem;
@@ -1420,563 +1452,46 @@
 		border: 1px solid rgba(220, 38, 38, 0.2);
 	}
 
-	.monitor-layout {
-		display: grid;
-		grid-template-columns: 320px 1fr;
-		gap: 0.85rem;
-	}
-
-	.monitor-left,
-	.monitor-right {
-		border: 1px solid rgba(15, 23, 42, 0.08);
-		border-radius: 0.85rem;
-		background: #fff;
-		padding: 0.8rem;
-	}
-
-	.create-content-box {
-		display: grid;
-		gap: 0.55rem;
-		padding: 0.7rem;
-		margin-bottom: 0.7rem;
-		border: 1px solid rgba(37, 99, 235, 0.18);
-		border-radius: 0.75rem;
-		background: rgba(37, 99, 235, 0.03);
-	}
-
-	.create-content-box h2 {
-		margin: 0;
-		font-size: 0.96rem;
-	}
-
-	.list-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.6rem;
-	}
-
-	.list-head h2 {
-		margin: 0;
-		font-size: 1.08rem;
-	}
-
-	.content-list {
-		display: grid;
-		gap: 0.45rem;
-		max-height: 640px;
-		overflow: auto;
-	}
-
-	.content-btn {
-		text-align: left;
-		border: 1px solid rgba(15, 23, 42, 0.1);
-		border-radius: 0.75rem;
-		padding: 0.62rem;
-		background: #fff;
-		display: flex;
-		justify-content: space-between;
-		gap: 0.4rem;
-		cursor: pointer;
-	}
-
-	.content-btn.active {
-		background: rgba(248, 250, 252, 0.95);
-		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
-	}
-
-	.content-btn strong {
-		display: block;
-		font-size: 0.86rem;
-	}
-
-	.content-title {
-		margin: 0.18rem 0 0;
-		font-size: 0.8rem;
-		color: #475569;
-	}
-
-	.content-meta {
-		display: grid;
-		justify-items: end;
-		font-size: 0.72rem;
-		color: #64748b;
-	}
-
-	.source-head h3 {
-		margin: 0.2rem 0;
-	}
-
-	.meta {
-		margin: 0;
-		font-size: 0.83rem;
-		color: #64748b;
-	}
-
-	.head-actions {
-		margin-top: 0.5rem;
-	}
-
-	.platform-switcher {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-		margin: 0.75rem 0;
-	}
-
-	.platform-btn {
-		border: 1px solid rgba(15, 23, 42, 0.14);
-		background: #fff;
-		border-radius: 999px;
-		padding: 0.35rem 0.6rem;
-		font-size: 0.75rem;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.33rem;
-		cursor: pointer;
-	}
-
-	.platform-btn.active {
-		border-color: rgba(37, 99, 235, 0.5);
-		background: rgba(37, 99, 235, 0.08);
-		color: #1d4ed8;
-	}
-
-	.dot {
-		width: 0.42rem;
-		height: 0.42rem;
-		border-radius: 50%;
-		background: #16a34a;
-	}
-
-	.row {
-		display: grid;
-		gap: 0.45rem;
-		margin: 0.7rem 0;
-	}
-
-	.row.small-gap {
-		margin: 0;
-	}
-
-	label {
-		font-size: 0.82rem;
-		color: #475569;
-	}
-
-	input,
-	textarea {
-		width: 100%;
-		box-sizing: border-box;
-		font: inherit;
-		padding: 0.68rem 0.8rem;
-		border-radius: 0.7rem;
-		border: 1px solid rgba(15, 23, 42, 0.15);
-		background: #fff;
-	}
-
-	.full {
-		width: 100%;
-	}
-
-	.metrics {
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 0.5rem;
-	}
-
-	.metric-item {
-		padding: 0.55rem;
-		border-radius: 0.7rem;
-		background: rgba(15, 23, 42, 0.04);
-		border: 1px solid rgba(15, 23, 42, 0.08);
-	}
-
-	.metric-item input {
-		border: 0;
-		background: transparent;
-		padding: 0;
-		font-weight: 700;
-	}
-
-	.metric-item label {
-		font-size: 0.73rem;
-	}
-
-	.action-row {
-		display: flex;
-		gap: 0.55rem;
-		flex-wrap: wrap;
-		margin: 0.6rem 0;
-	}
-
-	.primary,
-	.ghost,
-	.danger {
-		border-radius: 0.68rem;
-		font-weight: 700;
-		padding: 0.58rem 0.8rem;
-		cursor: pointer;
-	}
-
-	.primary {
-		border: 0;
-		background: #2563eb;
-		color: #fff;
-	}
-
-	.ghost {
-		border: 1px solid rgba(37, 99, 235, 0.25);
-		background: rgba(37, 99, 235, 0.08);
-		color: #1d4ed8;
-	}
-
-	.danger {
-		border: 1px solid rgba(220, 38, 38, 0.2);
-		background: rgba(220, 38, 38, 0.08);
-		color: #b91c1c;
-	}
-
-	.primary:disabled,
-	.ghost:disabled,
-	.danger:disabled {
-		opacity: 0.55;
-		cursor: not-allowed;
-	}
-
-	.preview-card {
-		display: grid;
-		grid-template-columns: 180px 1fr;
-		gap: 0.8rem;
-		align-items: center;
-		margin-bottom: 0.75rem;
-	}
-
-	.preview-media,
-	.card-media {
-		width: 100%;
-		aspect-ratio: 16 / 9;
-		object-fit: cover;
-		border-radius: 0.72rem;
-		border: 1px solid rgba(15, 23, 42, 0.1);
-	}
-
-	.tiktok-frame {
-		border: 0;
-		background: #000;
-		aspect-ratio: 9 / 16;
-	}
-
-	.instagram-frame {
-		border: 0;
-		background: #fff;
-		aspect-ratio: 4 / 5;
-	}
-
-	.platform-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.55rem;
-	}
-
-	.platform-card {
-		--platform-frame-color: rgba(15, 23, 42, 0.1);
-		border: 1px solid var(--platform-frame-color);
-		background: #fff;
-		border-radius: 0.75rem;
-		padding: 0.55rem;
-		display: grid;
-		gap: 0.4rem;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.platform-card.active {
-		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
-		background: rgba(248, 250, 252, 0.95);
-	}
-
-	.platform-card-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.platform-card-head strong {
-		font-size: 0.74rem;
-	}
-
-	.status {
-		font-size: 0.64rem;
-		font-weight: 700;
-		border-radius: 999px;
-		padding: 0.1rem 0.42rem;
-	}
-
-	.status.ok {
-		background: rgba(22, 163, 74, 0.12);
-		color: #166534;
-	}
-
-	.status.missing {
-		background: rgba(100, 116, 139, 0.14);
-		color: #475569;
-	}
-
-	.card-title {
-		margin: 0;
-		font-size: 0.75rem;
-		line-height: 1.3;
-		color: #334155;
-	}
-
-	.card-metric {
-		margin: 0;
-		font-size: 0.72rem;
-		color: #64748b;
-	}
-
-	.card-empty {
-		display: grid;
-		place-items: center;
-		aspect-ratio: 16 / 9;
-		border-radius: 0.7rem;
-		border: 1px dashed rgba(148, 163, 184, 0.6);
-		color: #64748b;
-		font-size: 0.72rem;
-	}
-
-	.chip {
-		display: inline-block;
-		padding: 0.12rem 0.48rem;
-		border-radius: 999px;
-		font-size: 0.68rem;
-		font-weight: 700;
-		background: rgba(22, 163, 74, 0.12);
-		color: #166534;
-	}
-
-	.platform {
-		display: inline-block;
-		padding: 0.14rem 0.5rem;
-		border-radius: 999px;
-		font-size: 0.67rem;
-		font-weight: 700;
-		background: rgba(180, 83, 9, 0.14);
-		color: #92400e;
-	}
-
-	.platform-frame--instagram {
-		--platform-frame-color: #ec4899;
-	}
-
-	.platform-frame--tiktok {
-		--platform-frame-color: #111111;
-	}
-
-	.platform-frame--youtube {
-		--platform-frame-color: #dc2626;
-	}
-
-	.platform-frame--facebook {
-		--platform-frame-color: #1877f2;
-	}
-
-	.bi-panel {
-		display: grid;
-		gap: 0.75rem;
-	}
-
-	.summary-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.6rem;
-	}
-
-	.summary-card {
-		border: 1px solid rgba(15, 23, 42, 0.08);
-		border-radius: 0.8rem;
-		background: #fff;
-		padding: 0.8rem;
-	}
-
-	.summary-card p {
-		margin: 0;
-		font-size: 0.75rem;
-		color: #64748b;
-	}
-
-	.summary-card strong {
-		display: block;
-		margin-top: 0.2rem;
-		font-size: 1.35rem;
-	}
-
-	.bi-grid {
-		display: grid;
-		grid-template-columns: 1.1fr 0.9fr;
-		gap: 0.7rem;
-	}
-
-	.bi-table-wrap,
-	.leaderboard {
-		border: 1px solid rgba(15, 23, 42, 0.08);
-		border-radius: 0.8rem;
-		background: #fff;
-		padding: 0.75rem;
-	}
-
-	.bi-table-wrap h3,
-	.leaderboard h3 {
-		margin: 0 0 0.5rem;
-		font-size: 1rem;
-	}
-
-	.bi-table-wrap {
-		overflow-x: auto;
-	}
-
-	.bi-table {
-		width: 100%;
-		min-width: 560px;
-		border-collapse: collapse;
-		font-size: 0.82rem;
-	}
-
-	.bi-table th,
-	.bi-table td {
-		padding: 0.45rem 0.4rem;
-		border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-		text-align: left;
-	}
-
-	.bi-table th {
-		font-size: 0.73rem;
-		text-transform: uppercase;
-		color: #64748b;
-	}
-
-	.leader-list {
-		display: grid;
-		gap: 0.48rem;
-	}
-
-	.leader-item {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.5rem;
-		padding: 0.55rem;
-		border-radius: 0.68rem;
-		background: rgba(15, 23, 42, 0.03);
-		border: 1px solid rgba(15, 23, 42, 0.06);
-	}
-
-	.rank {
-		margin: 0;
-		font-size: 0.72rem;
-		color: #64748b;
-	}
-
-	.muted {
-		margin: 0.15rem 0 0;
-		font-size: 0.74rem;
-		color: #64748b;
-	}
-
-	.leader-metrics {
-		text-align: right;
-		font-size: 0.74rem;
-		color: #475569;
-	}
-
-	.leader-metrics p {
-		margin: 0.18rem 0 0;
-	}
-
 	.empty {
 		margin: 0;
 		color: #64748b;
-		font-size: 0.88rem;
+		font-size: 0.86rem;
 	}
 
-	@media (max-width: 1120px) {
+	@media (max-width: 1220px) {
+		.summary-grid {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
 		.monitor-layout {
 			grid-template-columns: 1fr;
 		}
+	}
 
-		.platform-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
+	@media (max-width: 860px) {
 		.summary-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
-
-		.bi-grid {
+		.row.two-col,
+		.metrics-grid,
+		.trend-grid {
 			grid-template-columns: 1fr;
 		}
-	}
-
-	@media (max-width: 780px) {
-		.preview-card {
+		.action-row {
+			display: grid;
 			grid-template-columns: 1fr;
 		}
-
-		.metrics {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	.card-bottom {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.3rem;
-	}
-
-	.refresh-icon {
-		background: none;
-		border: none;
-		cursor: pointer;
-		font-size: 0.82rem;
-		padding: 0.15rem;
-		border-radius: 0.4rem;
-		line-height: 1;
-		opacity: 0.6;
-		transition: opacity 0.15s;
-	}
-
-	.refresh-icon:hover:not(:disabled) {
-		opacity: 1;
-		background: rgba(37, 99, 235, 0.08);
-	}
-
-	.refresh-icon:disabled {
-		cursor: not-allowed;
-		opacity: 0.35;
-	}
-
-	.bi-head-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.7rem;
-	}
-
-	.refresh-btn {
-		font-size: 0.78rem;
-		padding: 0.4rem 0.65rem;
-		white-space: nowrap;
 	}
 
 	@media (max-width: 560px) {
-		.platform-grid {
-			grid-template-columns: 1fr;
-		}
-
 		.summary-grid {
 			grid-template-columns: 1fr;
+		}
+		.queue-item {
+			grid-template-columns: 1fr;
+			display: grid;
+		}
+		.queue-meta {
+			justify-items: start;
 		}
 	}
 </style>
