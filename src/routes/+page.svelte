@@ -54,6 +54,9 @@
 	let showPublished = $state(false);
 
 	// Context menu state
+	const CONTEXT_MENU_WIDTH = 260;
+	const CONTEXT_MENU_ESTIMATED_HEIGHT = 240;
+	const CONTEXT_MENU_VIEWPORT_PADDING = 12;
 	let contextMenuIdea = $state<IdeaBacklogRow | null>(null);
 	let contextMenuX = $state(0);
 	let contextMenuY = $state(0);
@@ -489,8 +492,23 @@
 	function openContextMenu(event: MouseEvent, idea: IdeaBacklogRow) {
 		event.preventDefault();
 		contextMenuIdea = idea;
-		contextMenuX = event.clientX;
-		contextMenuY = event.clientY;
+
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
+		const shouldOpenLeft = event.clientX + CONTEXT_MENU_WIDTH + CONTEXT_MENU_VIEWPORT_PADDING > viewportWidth;
+		const nextX = shouldOpenLeft
+			? event.clientX - CONTEXT_MENU_WIDTH - CONTEXT_MENU_VIEWPORT_PADDING
+			: event.clientX + CONTEXT_MENU_VIEWPORT_PADDING;
+		const nextY = Math.min(
+			event.clientY,
+			viewportHeight - CONTEXT_MENU_ESTIMATED_HEIGHT - CONTEXT_MENU_VIEWPORT_PADDING
+		);
+
+		contextMenuX = Math.max(
+			CONTEXT_MENU_VIEWPORT_PADDING,
+			Math.min(nextX, viewportWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_VIEWPORT_PADDING)
+		);
+		contextMenuY = Math.max(CONTEXT_MENU_VIEWPORT_PADDING, nextY);
 		contextMenuVisible = true;
 		scheduleDate = new Date().toISOString().slice(0, 10);
 	}
