@@ -1109,7 +1109,10 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 			<div class="modal-header">
-				<h3>Edit — {backlogCode(editingIdea)}</h3>
+				<div class="modal-title">
+					<p class="modal-code">{backlogCode(editingIdea)}</p>
+					<h3>{editingIdea.title ?? 'Untitled idea'}</h3>
+				</div>
 				<button class="modal-close" onclick={closeEditModal}>✕</button>
 			</div>
 
@@ -1510,6 +1513,29 @@
 		flex-wrap: wrap;
 	}
 
+	.head-row-right {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.dot-menu-btn {
+		background: none;
+		border: none;
+		padding: 0.15rem 0.4rem;
+		border-radius: 0.4rem;
+		font-size: 1.1rem;
+		line-height: 1;
+		cursor: pointer;
+		color: #94a3b8;
+		transition: background 0.15s, color 0.15s;
+	}
+
+	.dot-menu-btn:hover {
+		background: rgba(15, 23, 42, 0.07);
+		color: #334155;
+	}
+
 	.chip {
 		padding: 0.12rem 0.48rem;
 		border-radius: 999px;
@@ -1718,10 +1744,28 @@
 		gap: 0.5rem;
 	}
 
+	.modal-title {
+		display: grid;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.modal-code {
+		margin: 0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: #b45309;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
 	.modal-header h3 {
 		margin: 0;
 		font-size: 1.05rem;
 		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.modal-close {
