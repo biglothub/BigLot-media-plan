@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
-	import type { IdeaBacklogRow, ProductionCalendarRow, CalendarAssignmentRow, TeamMember, ProductionStage } from "$lib/types";
+	import type { IdeaBacklogRow, ProductionCalendarRow, CalendarAssignmentRow, TeamMember, ProductionStage, SupportedPlatform, BacklogContentType } from "$lib/types";
 	import {
 		addMonthsIso,
 		buildMonthCells,
@@ -15,6 +15,7 @@
 		platformLabel,
 		PRODUCTION_STAGES,
 		stageLabel,
+		contentTypeLabel,
 	} from "$lib/media-plan";
 
 	let ideas = $state<IdeaBacklogRow[]>([]);
@@ -35,6 +36,21 @@
 	});
 	let savingAssignments = $state(false);
 	let detailNotes = $state("");
+	let detailPlatform = $state<SupportedPlatform>('youtube');
+	let detailContentType = $state<BacklogContentType>('video');
+	let detailTitle = $state('');
+	let detailUrl = $state('');
+	let detailAuthorName = $state('');
+	let detailDescription = $state('');
+	let detailThumbnailUrl = $state('');
+	let detailPublishedAt = $state('');
+	let detailShootDate = $state('');
+	let detailStatus = $state<ProductionStage>('planned');
+	let detailViews = $state<number | null>(null);
+	let detailLikes = $state<number | null>(null);
+	let detailComments = $state<number | null>(null);
+	let detailShares = $state<number | null>(null);
+	let detailSaves = $state<number | null>(null);
 	let ideaSearch = $state("");
 	const TEAM_MEMBERS: TeamMember[] = ['โฟน', 'ฟิวส์', 'อิก', 'ต้า'];
 
@@ -222,6 +238,24 @@
 	function openDetail(item: ProductionCalendarRow) {
 		detailItem = item;
 		detailNotes = item.notes ?? '';
+		detailShootDate = item.shoot_date ?? '';
+		detailStatus = (item.status as ProductionStage) ?? 'planned';
+
+		const bl = item.idea_backlog;
+		detailPlatform = (bl?.platform as SupportedPlatform) ?? 'youtube';
+		detailContentType = (bl?.content_type as BacklogContentType) ?? 'video';
+		detailTitle = bl?.title ?? '';
+		detailUrl = bl?.url ?? '';
+		detailAuthorName = bl?.author_name ?? '';
+		detailDescription = bl?.description ?? '';
+		detailThumbnailUrl = bl?.thumbnail_url ?? '';
+		detailPublishedAt = bl?.published_at ? new Date(bl.published_at).toISOString().slice(0, 16) : '';
+		detailViews = bl?.view_count ?? null;
+		detailLikes = bl?.like_count ?? null;
+		detailComments = bl?.comment_count ?? null;
+		detailShares = bl?.share_count ?? null;
+		detailSaves = bl?.save_count ?? null;
+
 		const existing = item.calendar_assignments ?? [];
 		assignmentDraft = {
 			'โฟน': { enabled: false, role_detail: '' },
@@ -244,23 +278,53 @@
 		errorMessage = "";
 
 		const calendarId = detailItem.id;
+		const backlogId = detailItem.backlog_id;
 
-		// Save notes to production_calendar
-		const { error: notesError } = await supabase
-			.from("production_calendar")
-			.update({ notes: detailNotes.trim() || null })
-			.eq("id", calendarId);
+		// 1. Update idea_backlog
+		const { error: backlogError } = await supabase
+			.from('idea_backlog')
+			.update({
+				platform: detailPlatform,
+				content_type: detailContentType,
+				title: detailTitle.trim() || null,
+				url: detailUrl.trim() || null,
+				author_name: detailAuthorName.trim() || null,
+				description: detailDescription.trim() || null,
+				thumbnail_url: detailThumbnailUrl.trim() || null,
+				published_at: detailPublishedAt ? new Date(detailPublishedAt).toISOString() : null,
+				view_count: detailViews,
+				like_count: detailLikes,
+				comment_count: detailComments,
+				share_count: detailShares,
+				save_count: detailSaves,
+			})
+			.eq('id', backlogId);
 
-		if (notesError) {
-			errorMessage = `บันทึกโน้ตไม่สำเร็จ: ${notesError.message}`;
+		if (backlogError) {
+			errorMessage = `บันทึก content info ไม่สำเร็จ: ${backlogError.message}`;
 			savingAssignments = false;
 			return;
 		}
 
-		// Delete existing assignments for this calendar item
-		await supabase.from("calendar_assignments").delete().eq("calendar_id", calendarId);
+		// 2. Update production_calendar (shoot_date, status, notes)
+		const { error: calError } = await supabase
+			.from('production_calendar')
+			.update({
+				shoot_date: detailShootDate,
+				status: detailStatus,
+				notes: detailNotes.trim() || null,
+			})
+			.eq('id', calendarId);
 
-		// Insert enabled ones
+		if (calError) {
+			errorMessage = `บันทึก calendar ไม่สำเร็จ: ${calError.message}`;
+			savingAssignments = false;
+			return;
+		}
+
+		// 3. Update assignments
+		await supabase.from('calendar_assignments').delete().eq('calendar_id', calendarId);
+
 		const toInsert = TEAM_MEMBERS
 			.filter((m) => assignmentDraft[m].enabled)
 			.map((m) => ({
@@ -270,7 +334,7 @@
 			}));
 
 		if (toInsert.length > 0) {
-			const { error } = await supabase.from("calendar_assignments").insert(toInsert);
+			const { error } = await supabase.from('calendar_assignments').insert(toInsert);
 			if (error) {
 				errorMessage = `บันทึกหน้าที่ไม่สำเร็จ: ${error.message}`;
 				savingAssignments = false;
@@ -279,9 +343,9 @@
 		}
 
 		savingAssignments = false;
-		message = "บันทึกหน้าที่เรียบร้อยแล้ว";
+		message = 'บันทึกเรียบร้อยแล้ว';
 		closeDetail();
-		await loadCalendar();
+		await Promise.all([loadIdeas(), loadCalendar()]);
 	}
 
 	async function updateStatus(calendarId: string, newStatus: ProductionStage) {
@@ -551,47 +615,142 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 				<div class="modal-header">
-					<h3>
-						{detailItem.idea_backlog ? backlogCode(detailItem.idea_backlog) : 'Unknown'} —
-						{detailItem.idea_backlog?.title ?? 'Untitled'}
-					</h3>
-					<button class="ghost" onclick={closeDetail}>X</button>
+					<div>
+						<p class="modal-code">{detailItem.idea_backlog ? backlogCode(detailItem.idea_backlog) : 'Unknown'}</p>
+						<h3>{detailTitle || 'Untitled'}</h3>
+					</div>
+					<button class="ghost" onclick={closeDetail}>✕</button>
 				</div>
 
-				<p class="modal-subtitle">Shoot Date: {detailItem.shoot_date}</p>
-
-				<div class="assignment-list">
-					<h4>Team Assignments</h4>
-					{#each TEAM_MEMBERS as member}
-						<div class="assignment-row">
-							<label class="member-toggle">
-								<input
-									type="checkbox"
-									bind:checked={assignmentDraft[member].enabled}
-								/>
-								<span class="member-name">{member}</span>
-							</label>
-							{#if assignmentDraft[member].enabled}
-								<input
-									type="text"
-									class="role-input"
-									placeholder="รายละเอียดหน้าที่..."
-									bind:value={assignmentDraft[member].role_detail}
-								/>
-							{/if}
+				<!-- Section 1: Content Info -->
+				<section class="modal-section">
+					<h4 class="section-title">Content Info</h4>
+					<div class="form-row">
+						<div class="form-field">
+							<label>Platform</label>
+							<select bind:value={detailPlatform}>
+								<option value="youtube">YouTube</option>
+								<option value="facebook">Facebook</option>
+								<option value="instagram">Instagram</option>
+								<option value="tiktok">TikTok</option>
+							</select>
 						</div>
-					{/each}
-				</div>
+						<div class="form-field">
+							<label>Content Type</label>
+							<select bind:value={detailContentType}>
+								<option value="video">Video</option>
+								<option value="post">Post</option>
+								<option value="image">Image</option>
+							</select>
+						</div>
+					</div>
+					<div class="form-field">
+						<label>Title</label>
+						<input type="text" bind:value={detailTitle} placeholder="ชื่อคอนเทนต์..." />
+					</div>
+					<div class="form-field">
+						<label>Content Link</label>
+						<input type="url" bind:value={detailUrl} placeholder="https://..." />
+					</div>
+					<div class="form-row">
+						<div class="form-field">
+							<label>Creator / Account</label>
+							<input type="text" bind:value={detailAuthorName} placeholder="ชื่อครีเอเตอร์..." />
+						</div>
+						<div class="form-field">
+							<label>Thumbnail URL</label>
+							<input type="url" bind:value={detailThumbnailUrl} placeholder="https://..." />
+						</div>
+					</div>
+					<div class="form-field">
+						<label>Description</label>
+						<textarea rows="3" bind:value={detailDescription} placeholder="รายละเอียด..."></textarea>
+					</div>
+				</section>
 
-				<div class="detail-notes">
-					<h4>Notes</h4>
+				<!-- Section 2: Dates & Status -->
+				<section class="modal-section">
+					<h4 class="section-title">Schedule & Status</h4>
+					<div class="form-row">
+						<div class="form-field">
+							<label>Shoot Date</label>
+							<input type="date" bind:value={detailShootDate} />
+						</div>
+						<div class="form-field">
+							<label>Published At</label>
+							<input type="datetime-local" bind:value={detailPublishedAt} />
+						</div>
+					</div>
+					<div class="form-field">
+						<label>Production Stage</label>
+						<select bind:value={detailStatus}>
+							{#each PRODUCTION_STAGES as stage}
+								<option value={stage}>{stageLabel[stage]}</option>
+							{/each}
+						</select>
+					</div>
+				</section>
+
+				<!-- Section 3: Metrics -->
+				<section class="modal-section">
+					<h4 class="section-title">Metrics</h4>
+					<div class="metrics-grid">
+						<div class="form-field">
+							<label>Views</label>
+							<input type="number" min="0" bind:value={detailViews} placeholder="0" />
+						</div>
+						<div class="form-field">
+							<label>Likes</label>
+							<input type="number" min="0" bind:value={detailLikes} placeholder="0" />
+						</div>
+						<div class="form-field">
+							<label>Comments</label>
+							<input type="number" min="0" bind:value={detailComments} placeholder="0" />
+						</div>
+						<div class="form-field">
+							<label>Shares</label>
+							<input type="number" min="0" bind:value={detailShares} placeholder="0" />
+						</div>
+						<div class="form-field">
+							<label>Saves</label>
+							<input type="number" min="0" bind:value={detailSaves} placeholder="0" />
+						</div>
+					</div>
+				</section>
+
+				<!-- Section 4: Team Assignments -->
+				<section class="modal-section">
+					<h4 class="section-title">Team Assignments</h4>
+					<div class="assignment-list">
+						{#each TEAM_MEMBERS as member}
+							<div class="assignment-row">
+								<label class="member-toggle">
+									<input type="checkbox" bind:checked={assignmentDraft[member].enabled} />
+									<span class="member-name">{member}</span>
+								</label>
+								{#if assignmentDraft[member].enabled}
+									<input
+										type="text"
+										class="role-input"
+										placeholder="รายละเอียดหน้าที่..."
+										bind:value={assignmentDraft[member].role_detail}
+									/>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</section>
+
+				<!-- Section 5: Notes -->
+				<section class="modal-section">
+					<h4 class="section-title">Notes</h4>
 					<textarea
 						class="notes-input"
 						placeholder="รายละเอียดเพิ่มเติม / โน้ตอื่นๆ..."
-						rows="4"
+						rows="3"
 						bind:value={detailNotes}
 					></textarea>
-				</div>
+				</section>
 
 				<div class="modal-footer">
 					<button class="btn-save" onclick={saveAssignments} disabled={savingAssignments}>
@@ -1071,20 +1230,87 @@
 		font-size: 1.05rem;
 	}
 
-	.modal-subtitle {
+	.modal-code {
+		margin: 0 0 0.2rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: #1d4ed8;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.modal-section {
+		display: grid;
+		gap: 0.65rem;
+		padding-bottom: 0.8rem;
+		border-bottom: 1px solid rgba(15, 23, 42, 0.07);
+	}
+
+	.modal-section:last-of-type {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+
+	.section-title {
 		margin: 0;
-		font-size: 0.85rem;
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
 		color: #64748b;
+	}
+
+	.form-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
+	}
+
+	.form-field {
+		display: grid;
+		gap: 0.3rem;
+	}
+
+	.form-field label {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #475569;
+	}
+
+	.form-field input,
+	.form-field select,
+	.form-field textarea {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.42rem 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.15);
+		border-radius: 0.55rem;
+		background: #fff;
+	}
+
+	.form-field input:focus,
+	.form-field select:focus,
+	.form-field textarea:focus {
+		outline: none;
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+	}
+
+	.form-field textarea {
+		resize: vertical;
+	}
+
+	.metrics-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.6rem;
 	}
 
 	.assignment-list {
 		display: grid;
 		gap: 0.65rem;
-	}
-
-	.assignment-list h4 {
-		margin: 0;
-		font-size: 0.95rem;
 	}
 
 	.assignment-row {

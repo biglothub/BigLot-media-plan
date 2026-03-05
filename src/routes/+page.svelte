@@ -26,7 +26,8 @@
 	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
-	let scheduledBacklogIds = $state<Set<string>>(new Set());
+	let scheduledCalendarMap = $state<Map<string, { id: string; shoot_date: string }>>(new Map());
+	const scheduledBacklogIds = $derived(new Set(scheduledCalendarMap.keys()));
 	let selectedContentType = $state<BacklogContentType>("video");
 
 	// Context menu state
@@ -74,6 +75,7 @@
 		thumbnail_url: '',
 		published_at: '',
 		notes: '',
+		shoot_date: '',
 		views: null as number | null,
 		likes: null as number | null,
 		comments: null as number | null,
@@ -223,14 +225,17 @@
 
 		const { data, error } = await supabase
 			.from("production_calendar")
-			.select("backlog_id");
+			.select("id, backlog_id, shoot_date");
 		if (error) {
 			errorMessage = `โหลดสถานะ schedule ไม่ได้: ${error.message}`;
 			return;
 		}
 
-		scheduledBacklogIds = new Set(
-			(data ?? []).map((item) => item.backlog_id as string),
+		scheduledCalendarMap = new Map(
+			(data ?? []).map((item) => [
+				item.backlog_id as string,
+				{ id: item.id as string, shoot_date: item.shoot_date as string },
+			]),
 		);
 	}
 
@@ -498,6 +503,7 @@
 
 	function openEditModal(idea: IdeaBacklogRow) {
 		editingIdea = idea;
+		const calEntry = scheduledCalendarMap.get(idea.id);
 		editForm = {
 			url: idea.url ?? '',
 			platform: idea.platform,
@@ -510,6 +516,7 @@
 				? new Date(idea.published_at).toISOString().slice(0, 16)
 				: '',
 			notes: idea.notes ?? '',
+			shoot_date: calEntry?.shoot_date ?? '',
 			views: idea.view_count,
 			likes: idea.like_count,
 			comments: idea.comment_count,
@@ -568,16 +575,30 @@
 			.update(payload)
 			.eq('id', editingIdea.id);
 
-		savingEdit = false;
-
 		if (error) {
+			savingEdit = false;
 			errorMessage = `แก้ไขไม่สำเร็จ: ${error.message}`;
 			return;
 		}
 
+		if (editForm.shoot_date) {
+			const { error: calError } = await supabase
+				.from('production_calendar')
+				.upsert(
+					{ backlog_id: editingIdea.id, shoot_date: editForm.shoot_date, status: 'planned' },
+					{ onConflict: 'backlog_id' },
+				);
+			if (calError) {
+				savingEdit = false;
+				errorMessage = `แก้ไข backlog สำเร็จ แต่บันทึก shoot date ไม่ได้: ${calError.message}`;
+				return;
+			}
+		}
+
+		savingEdit = false;
 		message = 'แก้ไข backlog เรียบร้อยแล้ว';
 		closeEditModal();
-		await loadIdeas();
+		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
 
 	onMount(async () => {
@@ -1147,13 +1168,18 @@
 
 			<div class="edit-row-inline">
 				<div class="edit-row">
-					<label for="edit-author">Creator / Account</label>
-					<input id="edit-author" bind:value={editForm.author_name} placeholder="@username" />
+					<label for="edit-shoot-date">Shoot Date</label>
+					<input id="edit-shoot-date" type="date" bind:value={editForm.shoot_date} />
 				</div>
 				<div class="edit-row">
 					<label for="edit-published">Published At</label>
 					<input id="edit-published" type="datetime-local" bind:value={editForm.published_at} />
 				</div>
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-author">Creator / Account</label>
+				<input id="edit-author" bind:value={editForm.author_name} placeholder="@username" />
 			</div>
 
 			<div class="edit-row">
