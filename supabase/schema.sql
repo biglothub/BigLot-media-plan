@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS public.idea_backlog (
   platform      text NOT NULL
     CHECK (platform IN ('youtube', 'facebook', 'instagram', 'tiktok')),
   content_type  text NOT NULL DEFAULT 'video'
-    CHECK (content_type IN ('video', 'post', 'image')),
+    CHECK (content_type IN ('video', 'post', 'image', 'live')),
+  content_category text
+    CHECK (content_category IS NULL OR content_category IN ('hero', 'help', 'hub')),
   title         text,
   description   text,
   author_name   text,

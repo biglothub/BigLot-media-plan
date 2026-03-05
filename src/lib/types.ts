@@ -1,5 +1,6 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
-export type BacklogContentType = 'video' | 'post' | 'image';
+export type BacklogContentType = 'video' | 'post' | 'image' | 'live';
+export type BacklogContentCategory = 'hero' | 'help' | 'hub';
 
 import type { TeamMember } from '$lib/team';
 export type { TeamMember } from '$lib/team';
@@ -31,6 +32,7 @@ export interface IdeaBacklogRow {
 	url: string | null;
 	platform: SupportedPlatform;
 	content_type: BacklogContentType;
+	content_category: BacklogContentCategory | null;
 	title: string | null;
 	description: string | null;
 	author_name: string | null;

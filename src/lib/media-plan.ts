@@ -1,4 +1,4 @@
-import type { BacklogContentType, ProductionStage, SupportedPlatform } from '$lib/types';
+import type { BacklogContentCategory, BacklogContentType, ProductionStage, SupportedPlatform } from '$lib/types';
 
 export const numberFormatter = new Intl.NumberFormat('en-US');
 
@@ -14,7 +14,14 @@ export const platformLabel: Record<SupportedPlatform, string> = {
 export const contentTypeLabel: Record<BacklogContentType, string> = {
 	video: 'Video',
 	post: 'Post',
-	image: 'Image'
+	image: 'Image',
+	live: 'Live'
+};
+
+export const contentCategoryLabel: Record<BacklogContentCategory, string> = {
+	hero: 'Hero',
+	help: 'Help',
+	hub: 'Hub'
 };
 
 export const PRODUCTION_STAGES: ProductionStage[] = [
@@ -101,6 +108,38 @@ export function buildMonthCells(monthStartIso: string): Array<{
 			inCurrentMonth: current.getMonth() === monthStart.getMonth()
 		};
 	});
+}
+
+export function getYouTubeEmbedUrl(videoUrl: string): string | null {
+	try {
+		const parsed = new URL(videoUrl);
+		const host = parsed.hostname.toLowerCase();
+		if (!host.includes('youtube.com') && !host.includes('youtu.be')) return null;
+
+		if (host.includes('youtu.be')) {
+			const id = parsed.pathname.slice(1).split('/')[0];
+			return id ? `https://www.youtube.com/embed/${id}` : null;
+		}
+
+		const shortsMatch = parsed.pathname.match(/\/shorts\/([^/?#]+)/);
+		if (shortsMatch) return `https://www.youtube.com/embed/${shortsMatch[1]}`;
+
+		const videoId = parsed.searchParams.get('v');
+		return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+	} catch {
+		return null;
+	}
+}
+
+export function getFacebookEmbedUrl(videoUrl: string): string | null {
+	try {
+		const parsed = new URL(videoUrl);
+		const host = parsed.hostname.toLowerCase();
+		if (!host.includes('facebook.com') && !host.includes('fb.watch')) return null;
+		return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(videoUrl)}&show_text=false`;
+	} catch {
+		return null;
+	}
 }
 
 export function getTikTokEmbedUrl(videoUrl: string): string | null {
