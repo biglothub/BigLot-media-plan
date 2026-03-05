@@ -344,6 +344,7 @@
 
 		savingAssignments = false;
 		message = 'บันทึกเรียบร้อยแล้ว';
+		setTimeout(() => { message = ''; }, 4000);
 		closeDetail();
 		await Promise.all([loadIdeas(), loadCalendar()]);
 	}

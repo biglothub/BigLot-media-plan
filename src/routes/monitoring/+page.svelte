@@ -608,8 +608,10 @@
 			};
 			if (hasAnyMetricValue(metrics)) {
 				message = `Analyze สำเร็จแล้ว (${platformLabel[result.platform]})`;
+			setTimeout(() => { message = ''; }, 4000);
 			} else {
 				message = `อ่าน metadata ได้แล้ว (${platformLabel[result.platform]}) แต่ยังไม่เจอ metrics อัตโนมัติ`;
+			setTimeout(() => { message = ''; }, 4000);
 			}
 		} catch (error) {
 			errorMessage =
@@ -764,6 +766,7 @@
 		await loadClips();
 		hydrateClipForm(selectedContentId, selectedPlatform);
 		message = `ลบคลิป ${platformLabel[selectedPlatform]} แล้ว`;
+	setTimeout(() => { message = ''; }, 4000);
 		scrollToTop();
 	}
 
@@ -794,6 +797,7 @@
 			if (selectedContentId)
 				hydrateClipForm(selectedContentId, selectedPlatform);
 			message = `Refresh ${platformLabel[clip.platform]} สำเร็จ`;
+			setTimeout(() => { message = ''; }, 4000);
 		} catch (err) {
 			errorMessage = `Refresh ไม่สำเร็จ: ${err instanceof Error ? err.message : "unknown"}`;
 		} finally {
@@ -844,6 +848,7 @@
 		refreshingAll = false;
 		refreshProgress = "";
 		message = `Refresh เสร็จแล้ว: ${successCount} สำเร็จ${failCount > 0 ? `, ${failCount} ไม่สำเร็จ` : ""}`;
+	setTimeout(() => { message = ""; }, 4000);
 	}
 
 	onMount(async () => {
