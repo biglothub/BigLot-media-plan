@@ -395,8 +395,8 @@
 				<h4 class="section-title">Content Info</h4>
 				<div class="form-row">
 					<div class="form-field">
-						<label>Platform</label>
-						<select bind:value={detailPlatform}>
+						<label for="k-platform">Platform</label>
+						<select id="k-platform" bind:value={detailPlatform}>
 							<option value="youtube">YouTube</option>
 							<option value="facebook">Facebook</option>
 							<option value="instagram">Instagram</option>
@@ -404,8 +404,8 @@
 						</select>
 					</div>
 					<div class="form-field">
-						<label>Content Type</label>
-						<select bind:value={detailContentType}>
+						<label for="k-content-type">Content Type</label>
+						<select id="k-content-type" bind:value={detailContentType}>
 							<option value="video">Video</option>
 							<option value="post">Post</option>
 							<option value="image">Image</option>
@@ -413,21 +413,21 @@
 					</div>
 				</div>
 				<div class="form-field">
-					<label>Title</label>
-					<input type="text" bind:value={detailTitle} placeholder="ชื่อคอนเทนต์..." />
+					<label for="k-title">Title</label>
+					<input type="text" id="k-title" bind:value={detailTitle} placeholder="ชื่อคอนเทนต์..." />
 				</div>
 				<div class="form-field">
-					<label>Content Link</label>
-					<input type="url" bind:value={detailUrl} placeholder="https://..." />
+					<label for="k-url">Content Link</label>
+					<input id="k-url" type="url" bind:value={detailUrl} placeholder="https://..." />
 				</div>
 				<div class="form-row">
 					<div class="form-field">
-						<label>Creator / Account</label>
-						<input type="text" bind:value={detailAuthorName} placeholder="ชื่อครีเอเตอร์..." />
+						<label for="k-author">Creator / Account</label>
+						<input id="k-author" type="text" bind:value={detailAuthorName} placeholder="ชื่อครีเอเตอร์..." />
 					</div>
 					<div class="form-field">
-						<label>Thumbnail URL</label>
-						<input type="url" bind:value={detailThumbnailUrl} placeholder="https://..." />
+						<label for="k-thumbnail">Thumbnail URL</label>
+						<input id="k-thumbnail" type="url" bind:value={detailThumbnailUrl} placeholder="https://..." />
 					</div>
 				</div>
 			</section>
@@ -436,23 +436,23 @@
 				<h4 class="section-title">Schedule & Status</h4>
 				<div class="form-row">
 					<div class="form-field">
-						<label>Shoot Date</label>
-						<input type="date" bind:value={detailShootDate} />
+						<label for="k-shoot-date">Shoot Date</label>
+						<input id="k-shoot-date" type="date" bind:value={detailShootDate} />
 					</div>
 					<div class="form-field">
-						<label>Publish Deadline</label>
-						<input type="date" bind:value={detailPublishDeadline} />
+						<label for="k-deadline">Publish Deadline</label>
+						<input id="k-deadline" type="date" bind:value={detailPublishDeadline} />
 					</div>
 				</div>
 				<div class="form-row">
 					<div class="form-field">
-						<label>Published At</label>
-						<input type="datetime-local" bind:value={detailPublishedAt} />
+						<label for="k-published-at">Published At</label>
+						<input id="k-published-at" type="datetime-local" bind:value={detailPublishedAt} />
 					</div>
 				</div>
 				<div class="form-field">
-					<label>Production Stage</label>
-					<select bind:value={detailStatus}>
+					<label for="k-status">Production Stage</label>
+					<select id="k-status" bind:value={detailStatus}>
 						{#each PRODUCTION_STAGES as stage}
 							<option value={stage}>{stageLabel[stage]}</option>
 						{/each}
@@ -463,11 +463,11 @@
 			<section class="modal-section">
 				<h4 class="section-title">Metrics</h4>
 				<div class="metrics-grid">
-					<div class="form-field"><label>Views</label><input type="number" min="0" bind:value={detailViews} placeholder="0" /></div>
-					<div class="form-field"><label>Likes</label><input type="number" min="0" bind:value={detailLikes} placeholder="0" /></div>
-					<div class="form-field"><label>Comments</label><input type="number" min="0" bind:value={detailComments} placeholder="0" /></div>
-					<div class="form-field"><label>Shares</label><input type="number" min="0" bind:value={detailShares} placeholder="0" /></div>
-					<div class="form-field"><label>Saves</label><input type="number" min="0" bind:value={detailSaves} placeholder="0" /></div>
+					<div class="form-field"><label for="k-views">Views</label><input id="k-views" type="number" min="0" bind:value={detailViews} placeholder="0" /></div>
+					<div class="form-field"><label for="k-likes">Likes</label><input id="k-likes" type="number" min="0" bind:value={detailLikes} placeholder="0" /></div>
+					<div class="form-field"><label for="k-comments">Comments</label><input id="k-comments" type="number" min="0" bind:value={detailComments} placeholder="0" /></div>
+					<div class="form-field"><label for="k-shares">Shares</label><input id="k-shares" type="number" min="0" bind:value={detailShares} placeholder="0" /></div>
+					<div class="form-field"><label for="k-saves">Saves</label><input id="k-saves" type="number" min="0" bind:value={detailSaves} placeholder="0" /></div>
 				</div>
 			</section>
 
@@ -509,7 +509,7 @@
 {/if}
 
 <style>
-	h1, h2, h3, h4 {
+	h1, h3, h4 {
 		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
 	}
 
@@ -722,6 +722,7 @@
 		line-height: 1.35;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
+		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 	}
@@ -858,8 +859,7 @@
 	}
 
 	.form-field input,
-	.form-field select,
-	.form-field textarea {
+	.form-field select {
 		width: 100%;
 		box-sizing: border-box;
 		font: inherit;
@@ -871,8 +871,7 @@
 	}
 
 	.form-field input:focus,
-	.form-field select:focus,
-	.form-field textarea:focus {
+	.form-field select:focus {
 		outline: none;
 		border-color: #2563eb;
 		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);

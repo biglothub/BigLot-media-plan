@@ -522,92 +522,108 @@
 									<p class="drop-hint">Drop idea here</p>
 								{/if}
 
-								{#each calendarByDate.get(cell.dateIso) ?? [] as item}
-									<article
-										class={`calendar-item stage--${item.status || 'planned'} ${platformFrameClass(item.idea_backlog?.platform)}`}
-										draggable="true"
-										ondragstart={(event) =>
-											handleDragStart(
-												event,
-												item.backlog_id,
-											)}
-									>
-										<a
-											class="calendar-link"
-											href={item.idea_backlog?.url ?? "#"}
-											target="_blank"
-											rel="noopener noreferrer"
-											onclick={(event) => {
-												if (
-													!item.idea_backlog?.url?.trim()
-												) {
-													event.preventDefault();
-													errorMessage =
-														"ไม่พบลิงก์คลิปของไอเดียนี้";
-												}
-											}}
-										>
-											<span class="platform"
-												>{item.idea_backlog?.platform?.toUpperCase() ??
-													"IDEA"}</span
-											>
-											<strong
-												>{item.idea_backlog
-													? backlogCode(
-															item.idea_backlog,
-														)
-													: "Unknown code"}</strong
-											>
-											<p>
-												{item.idea_backlog?.title ??
-													"Untitled idea"}
-											</p>
-										</a>
-										<select
-											class="stage-select stage-select--{item.status || 'planned'}"
-											value={item.status || 'planned'}
-											onclick={(e) => e.stopPropagation()}
-											onchange={(e) => {
-												e.stopPropagation();
-												const target = e.target as HTMLSelectElement;
-												void updateStatus(item.id, target.value as ProductionStage);
-											}}
-										>
-											{#each PRODUCTION_STAGES as stage}
-												<option value={stage}>{stageLabel[stage]}</option>
-											{/each}
-										</select>
-										{#if (item.calendar_assignments ?? []).length > 0}
-										<div class="assignment-badges">
-											{#each item.calendar_assignments ?? [] as a}
-												<span class="badge-member">{a.member_name}</span>
-											{/each}
-										</div>
-									{/if}
-									<div class="calendar-item-actions">
-										<button
-											class="tiny-detail"
-											onclick={(event) => {
-												event.stopPropagation();
-												openDetail(item);
-											}}
-										>
-											Detail
-										</button>
-										<button
-											class="tiny-danger"
-											onclick={(event) => {
-												event.stopPropagation();
-												void unscheduleIdea(
+									{#each calendarByDate.get(cell.dateIso) ?? [] as item}
+										<article
+											class={`calendar-item stage--${item.status || 'planned'} ${platformFrameClass(item.idea_backlog?.platform)}`}
+											draggable="true"
+											ondragstart={(event) =>
+												handleDragStart(
+													event,
 													item.backlog_id,
-												);
-											}}
+												)}
 										>
-											Unschedule
-										</button>
-									</div>
-									</article>
-								{/each}
+											<div class="calendar-item-head">
+												<span class="platform"
+													>{item.idea_backlog?.platform?.toUpperCase() ??
+														"IDEA"}</span
+												>
+												<strong class="calendar-code"
+													>{item.idea_backlog
+														? backlogCode(
+																item.idea_backlog,
+															)
+														: "Unknown code"}</strong
+												>
+											</div>
+											<a
+												class="calendar-link"
+												href={item.idea_backlog?.url ?? "#"}
+												target="_blank"
+												rel="noopener noreferrer"
+												onclick={(event) => {
+													if (
+														!item.idea_backlog?.url?.trim()
+													) {
+														event.preventDefault();
+														errorMessage =
+															"ไม่พบลิงก์คลิปของไอเดียนี้";
+													}
+												}}
+												>
+													<p class="calendar-title">
+														{item.idea_backlog?.title ??
+															"Untitled idea"}
+													</p>
+												</a>
+											<div class="calendar-item-meta">
+												{#if item.publish_deadline}
+													<span
+														class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}
+													>
+														Deadline {formatCalendarDayMeta(item.publish_deadline)}
+													</span>
+												{/if}
+												{#if (item.calendar_assignments ?? []).length > 0}
+													<span class="meta-chip member-chip">
+														ทีม {(item.calendar_assignments ?? []).length} คน
+													</span>
+												{/if}
+											</div>
+												<select
+													class="stage-select stage-select--{item.status || 'planned'}"
+													value={item.status || 'planned'}
+													onclick={(e) => e.stopPropagation()}
+													onchange={(e) => {
+														e.stopPropagation();
+														const target = e.target as HTMLSelectElement;
+														void updateStatus(item.id, target.value as ProductionStage);
+													}}
+												>
+													{#each PRODUCTION_STAGES as stage}
+														<option value={stage}>{stageLabel[stage]}</option>
+													{/each}
+												</select>
+												{#if (item.calendar_assignments ?? []).length > 0}
+													<div class="assignment-badges">
+														{#each item.calendar_assignments ?? [] as a}
+															<span class="badge-member">{a.member_name}</span>
+														{/each}
+													</div>
+												{/if}
+												<div class="calendar-item-actions">
+													<button
+														class="tiny-detail"
+														onclick={(event) => {
+															event.stopPropagation();
+															openDetail(item);
+														}}
+													>
+														Detail
+													</button>
+													<button
+														class="tiny-danger"
+														onclick={(event) => {
+															event.stopPropagation();
+															void unscheduleIdea(
+																item.backlog_id,
+															);
+														}}
+													>
+														Unschedule
+													</button>
+												</div>
+										</article>
+									{/each}
 							</div>
 						{/each}
 					</div>
@@ -633,8 +649,8 @@
 					<h4 class="section-title">Content Info</h4>
 					<div class="form-row">
 						<div class="form-field">
-							<label>Platform</label>
-							<select bind:value={detailPlatform}>
+							<label for="c-platform">Platform</label>
+							<select id="c-platform" bind:value={detailPlatform}>
 								<option value="youtube">YouTube</option>
 								<option value="facebook">Facebook</option>
 								<option value="instagram">Instagram</option>
@@ -642,8 +658,8 @@
 							</select>
 						</div>
 						<div class="form-field">
-							<label>Content Type</label>
-							<select bind:value={detailContentType}>
+							<label for="c-content-type">Content Type</label>
+							<select id="c-content-type" bind:value={detailContentType}>
 								<option value="video">Video</option>
 								<option value="post">Post</option>
 								<option value="image">Image</option>
@@ -651,26 +667,26 @@
 						</div>
 					</div>
 					<div class="form-field">
-						<label>Title</label>
-						<input type="text" bind:value={detailTitle} placeholder="ชื่อคอนเทนต์..." />
+						<label for="c-title">Title</label>
+						<input id="c-title" type="text" bind:value={detailTitle} placeholder="ชื่อคอนเทนต์..." />
 					</div>
 					<div class="form-field">
-						<label>Content Link</label>
-						<input type="url" bind:value={detailUrl} placeholder="https://..." />
+						<label for="c-url">Content Link</label>
+						<input id="c-url" type="url" bind:value={detailUrl} placeholder="https://..." />
 					</div>
 					<div class="form-row">
 						<div class="form-field">
-							<label>Creator / Account</label>
-							<input type="text" bind:value={detailAuthorName} placeholder="ชื่อครีเอเตอร์..." />
+							<label for="c-author">Creator / Account</label>
+							<input id="c-author" type="text" bind:value={detailAuthorName} placeholder="ชื่อครีเอเตอร์..." />
 						</div>
 						<div class="form-field">
-							<label>Thumbnail URL</label>
-							<input type="url" bind:value={detailThumbnailUrl} placeholder="https://..." />
+							<label for="c-thumbnail">Thumbnail URL</label>
+							<input id="c-thumbnail" type="url" bind:value={detailThumbnailUrl} placeholder="https://..." />
 						</div>
 					</div>
 					<div class="form-field">
-						<label>Description</label>
-						<textarea rows="3" bind:value={detailDescription} placeholder="รายละเอียด..."></textarea>
+						<label for="c-description">Description</label>
+						<textarea id="c-description" rows="3" bind:value={detailDescription} placeholder="รายละเอียด..."></textarea>
 					</div>
 				</section>
 
@@ -679,23 +695,23 @@
 					<h4 class="section-title">Schedule & Status</h4>
 					<div class="form-row">
 						<div class="form-field">
-							<label>Shoot Date</label>
-							<input type="date" bind:value={detailShootDate} />
+							<label for="c-shoot-date">Shoot Date</label>
+							<input id="c-shoot-date" type="date" bind:value={detailShootDate} />
 						</div>
 						<div class="form-field">
-							<label>Publish Deadline</label>
-							<input type="date" bind:value={detailPublishDeadline} />
+							<label for="c-deadline">Publish Deadline</label>
+							<input id="c-deadline" type="date" bind:value={detailPublishDeadline} />
 						</div>
 					</div>
 					<div class="form-row">
 						<div class="form-field">
-							<label>Published At</label>
-							<input type="datetime-local" bind:value={detailPublishedAt} />
+							<label for="c-published-at">Published At</label>
+							<input id="c-published-at" type="datetime-local" bind:value={detailPublishedAt} />
 						</div>
 					</div>
 					<div class="form-field">
-						<label>Production Stage</label>
-						<select bind:value={detailStatus}>
+						<label for="c-status">Production Stage</label>
+						<select id="c-status" bind:value={detailStatus}>
 							{#each PRODUCTION_STAGES as stage}
 								<option value={stage}>{stageLabel[stage]}</option>
 							{/each}
@@ -708,24 +724,24 @@
 					<h4 class="section-title">Metrics</h4>
 					<div class="metrics-grid">
 						<div class="form-field">
-							<label>Views</label>
-							<input type="number" min="0" bind:value={detailViews} placeholder="0" />
+							<label for="c-views">Views</label>
+							<input id="c-views" type="number" min="0" bind:value={detailViews} placeholder="0" />
 						</div>
 						<div class="form-field">
-							<label>Likes</label>
-							<input type="number" min="0" bind:value={detailLikes} placeholder="0" />
+							<label for="c-likes">Likes</label>
+							<input id="c-likes" type="number" min="0" bind:value={detailLikes} placeholder="0" />
 						</div>
 						<div class="form-field">
-							<label>Comments</label>
-							<input type="number" min="0" bind:value={detailComments} placeholder="0" />
+							<label for="c-comments">Comments</label>
+							<input id="c-comments" type="number" min="0" bind:value={detailComments} placeholder="0" />
 						</div>
 						<div class="form-field">
-							<label>Shares</label>
-							<input type="number" min="0" bind:value={detailShares} placeholder="0" />
+							<label for="c-shares">Shares</label>
+							<input id="c-shares" type="number" min="0" bind:value={detailShares} placeholder="0" />
 						</div>
 						<div class="form-field">
-							<label>Saves</label>
-							<input type="number" min="0" bind:value={detailSaves} placeholder="0" />
+							<label for="c-saves">Saves</label>
+							<input id="c-saves" type="number" min="0" bind:value={detailSaves} placeholder="0" />
 						</div>
 					</div>
 				</section>
@@ -1060,12 +1076,31 @@
 	.calendar-item {
 		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		display: grid;
-		gap: 0.28rem;
-		padding: 0.45rem;
+		gap: 0.38rem;
+		padding: 0.5rem;
 		border-radius: 0.65rem;
 		border: 1px solid var(--platform-frame-color);
 		background: #fff;
 		cursor: grab;
+	}
+
+	.calendar-item-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.35rem;
+	}
+
+	.calendar-item-head .platform {
+		font-size: 0.62rem;
+		padding: 0.1rem 0.42rem;
+	}
+
+	.calendar-code {
+		font-size: 0.67rem;
+		letter-spacing: 0.02em;
+		color: #334155;
+		line-height: 1.2;
 	}
 
 	.platform-frame--instagram {
@@ -1085,16 +1120,51 @@
 	}
 
 	.calendar-link {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
+		display: block;
 		color: inherit;
 		text-decoration: none;
 	}
 
-	.calendar-link strong {
-		font-size: 0.76rem;
-		line-height: 1.2;
+	.calendar-title {
+		margin: 0;
+		font-size: 0.77rem;
+		line-height: 1.35;
+		color: #334155;
+		display: -webkit-box;
+		line-clamp: 2;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.calendar-item-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.meta-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.1rem 0.4rem;
+		border-radius: 999px;
+		font-size: 0.62rem;
+		font-weight: 700;
+	}
+
+	.deadline-chip {
+		background: rgba(180, 83, 9, 0.12);
+		color: #b45309;
+	}
+
+	.deadline-chip.overdue {
+		background: rgba(220, 38, 38, 0.12);
+		color: #b91c1c;
+	}
+
+	.member-chip {
+		background: rgba(37, 99, 235, 0.12);
+		color: #1d4ed8;
 	}
 
 	.calendar-item p {
@@ -1133,9 +1203,9 @@
 	}
 
 	.calendar-item-actions {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
 		gap: 0.3rem;
-		justify-content: flex-end;
 	}
 
 	.tiny-detail {
@@ -1147,6 +1217,12 @@
 		font-weight: 700;
 		padding: 0.2rem 0.35rem;
 		cursor: pointer;
+		width: 100%;
+	}
+
+	.tiny-danger {
+		width: 100%;
+		justify-self: auto;
 	}
 
 	/* ── Production Stage Styles ── */
