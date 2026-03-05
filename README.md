@@ -1,4 +1,4 @@
-# BigLot Idea Backlog (Svelte + Supabase + Drizzle)
+# BigLot Media Plan (SvelteKit + Supabase)
 
 MVP สำหรับเก็บ `idea backlog` จากลิงก์คอนเทนต์ YouTube / Facebook / Instagram / TikTok
 รองรับการระบุประเภทคอนเทนต์เป็น `Video` / `Post` / `Image`
@@ -17,7 +17,7 @@ Workflow:
 ## Tech Stack
 - SvelteKit
 - Supabase (`@supabase/supabase-js`)
-- Drizzle ORM + Drizzle Kit (schema/migrations)
+- PostgreSQL migration scripts (`scripts/db-migrate.mjs` + `supabase/migrations/*.sql`)
 - API route ภายใน SvelteKit: `GET /api/enrich` สำหรับดึง metadata + engagement แบบ best-effort
 
 ## Setup
@@ -35,36 +35,34 @@ cp .env.example .env
 - `PUBLIC_SUPABASE_ANON_KEY`
 - `DATABASE_URL` (Supabase Postgres connection string)
 
-3. สร้าง/อัปเดตฐานข้อมูลด้วย Drizzle
+3. สร้าง/อัปเดตฐานข้อมูล
 ```bash
-npm run db:generate
 npm run db:migrate
 ```
-
-ถ้าต้องการ sync แบบเร็ว (ไม่สร้าง migration file):
-```bash
-npm run db:push
-```
-
-โหมดอัตโนมัติสำหรับ local:
-```bash
-npm run dev:auto
-```
-คำสั่งนี้จะ `db:push:auto` ก่อนเปิด dev server (ถ้ามี `DATABASE_URL`)
 
 4. รันโปรเจกต์
 ```bash
 npm run dev
 ```
 
-## วิธีใช้งาน Drizzle (ปรับ DB ตามโค้ด)
-1. แก้ schema ที่ [`src/lib/server/db/schema.ts`](./src/lib/server/db/schema.ts)
-2. สร้าง migration ใหม่ด้วย `npm run db:generate`
-3. Apply migration ด้วย `npm run db:migrate`
+ถ้าต้องการให้ apply migration อัตโนมัติก่อนรัน dev server:
+```bash
+npm run dev:auto
+```
+คำสั่งนี้จะเรียก `db:push:auto` (alias ของ `db:migrate`) ก่อนเปิด dev server ถ้ามี `DATABASE_URL`
+
+## Scripts ที่มีจริง
+- `npm run dev`: เปิด local dev server
+- `npm run dev:auto`: migrate DB อัตโนมัติก่อนเปิด dev
+- `npm run check`: `svelte-check` + type check
+- `npm run build`: build production
+- `npm run db:migrate`: apply SQL migrations จาก `supabase/migrations`
+- `npm run db:push:auto`: alias ของ `db:migrate` (ใช้ใน `dev:auto`)
+- `npm run db:check`: ตรวจรูปแบบ/ลำดับ migration files
 
 ## Automation ที่ตั้งไว้แล้ว
-- `npm run dev:auto`: auto sync schema ด้วย `db:push:auto` แล้วค่อยเปิด dev server
-- `npm run db:push:auto`: `drizzle-kit push --strict=false --force` (เหมาะกับ local dev)
+- `npm run dev:auto`: migrate อัตโนมัติแล้วค่อยเปิด dev server
+- `npm run db:push:auto`: alias สำหรับงาน local auto-migrate
 - `npm run db:check`: ตรวจ consistency ของ migrations ใน CI
 - GitHub Actions: [`.github/workflows/ci-db.yml`](./.github/workflows/ci-db.yml)
   - PR: รัน `check`, `build`, `db:check`
@@ -73,20 +71,26 @@ npm run dev
 
 หมายเหตุ: `dev:auto` โหลดค่า `.env` อัตโนมัติแล้ว ไม่ต้อง export ตัวแปรใน shell เพิ่ม
 
+## Database Notes
+- Source of truth ของโครงสร้าง DB คือไฟล์ migration ใน `supabase/migrations/*.sql`
+- ไฟล์ [`supabase/schema.sql`](./supabase/schema.sql) เป็น full schema สำหรับ bootstrap database ใหม่ด้วย SQL ก้อนเดียว
+- ถ้าเพิ่มคอลัมน์/ตารางใหม่ ให้เพิ่มไฟล์ migration ใหม่ก่อน แล้วค่อยรัน `npm run db:migrate`
+
 ## โครงสร้างสำคัญ
 - หน้า UI: [`src/routes/+page.svelte`](./src/routes/+page.svelte)
+- Calendar: [`src/routes/calendar/+page.svelte`](./src/routes/calendar/+page.svelte)
+- Kanban: [`src/routes/kanban/+page.svelte`](./src/routes/kanban/+page.svelte)
+- KPI Compare: [`src/routes/kpi/+page.svelte`](./src/routes/kpi/+page.svelte)
 - Content Monitoring: [`src/routes/monitoring/+page.svelte`](./src/routes/monitoring/+page.svelte)
 - Supabase client: [`src/lib/supabase.ts`](./src/lib/supabase.ts)
 - Type definitions: [`src/lib/types.ts`](./src/lib/types.ts)
 - Enrichment API: [`src/routes/api/enrich/+server.ts`](./src/routes/api/enrich/+server.ts)
-- Drizzle config: [`drizzle.config.ts`](./drizzle.config.ts)
-- Drizzle schema: [`src/lib/server/db/schema.ts`](./src/lib/server/db/schema.ts)
-- Legacy SQL schema: [`supabase/schema.sql`](./supabase/schema.sql)
+- OpenClaw API: [`src/routes/api/openclaw`](./src/routes/api/openclaw)
+- Migration scripts: [`scripts/db-migrate.mjs`](./scripts/db-migrate.mjs), [`scripts/db-check.mjs`](./scripts/db-check.mjs)
+- Full SQL schema: [`supabase/schema.sql`](./supabase/schema.sql)
 
 ## หมายเหตุ
 - การดึง engagement จากบางแพลตฟอร์มอาจถูกจำกัด (private post, geo-block, anti-bot)
 - endpoint ตอนนี้เป็น `best-effort` จาก JSON-LD/meta tags/regex fallback
 - ถ้าต้องการความแม่นยำระดับ production ควรเชื่อม official API ของแต่ละแพลตฟอร์ม
-- ถ้าเพิ่งอัปเดตฟีเจอร์ calendar ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `production_calendar`
-- ถ้าเพิ่งอัปเดตฟีเจอร์ KPI compare ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `produced_videos`
-- ถ้าเพิ่งอัปเดตฟีเจอร์ Content Monitoring ใหม่ ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `monitoring_content` และ `monitoring_content_platform`
+- ก่อน deploy production ควรทบทวน RLS policies ให้เหมาะกับ auth model ที่ใช้งานจริง
