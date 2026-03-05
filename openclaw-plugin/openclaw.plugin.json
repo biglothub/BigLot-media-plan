@@ -1,0 +1,7 @@
+{
+  "id": "biglot-tools",
+  "name": "BigLot Media Plan Tools",
+  "version": "1.0.0",
+  "description": "Tools for managing BigLot content ideas, schedules, and daily summaries",
+  "main": "index.mjs"
+}
