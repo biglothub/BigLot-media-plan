@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
-
-const TEAM_MEMBERS = ['โฟน', 'ฟิวส์', 'อิก', 'ต้า'];
+import { TEAM_MEMBERS } from '$lib/team';
 
 export const GET: RequestHandler = async ({ params }) => {
 	if (!supabase) return json({ error: 'Supabase not configured' }, { status: 500 });

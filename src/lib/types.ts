@@ -1,6 +1,8 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
 export type BacklogContentType = 'video' | 'post' | 'image';
 
+export type { TeamMember } from '$lib/team';
+
 export interface EnrichMetrics {
 	views: number | null;
 	likes: number | null;
@@ -46,8 +48,6 @@ export interface IdeaBacklogRow {
 
 export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'published';
 
-export type TeamMember = 'โฟน' | 'ฟิวส์' | 'อิก' | 'ต้า';
-
 export interface CalendarAssignmentRow {
 	id: string;
 	calendar_id: string;
@@ -60,6 +60,7 @@ export interface ProductionCalendarRow {
 	id: string;
 	backlog_id: string;
 	shoot_date: string;
+	publish_deadline: string | null;
 	status: string;
 	notes: string | null;
 	created_at: string;

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
+	import { TEAM_MEMBERS } from '$lib/team';
 	import type {
 		IdeaBacklogRow,
 		ProductionCalendarRow,
@@ -41,6 +42,7 @@
 	let detailDescription = $state('');
 	let detailThumbnailUrl = $state('');
 	let detailPublishedAt = $state('');
+	let detailPublishDeadline = $state('');
 	let detailViews = $state<number | null>(null);
 	let detailLikes = $state<number | null>(null);
 	let detailComments = $state<number | null>(null);
@@ -53,8 +55,6 @@
 		อิก: { enabled: false, role_detail: '' },
 		ต้า: { enabled: false, role_detail: '' }
 	});
-
-	const TEAM_MEMBERS: TeamMember[] = ['โฟน', 'ฟิวส์', 'อิก', 'ต้า'];
 
 	const STAGE_META: Record<ProductionStage, { color: string; bg: string; headerBg: string; count?: number }> = {
 		planned:    { color: '#475569', bg: '#f1f5f9', headerBg: '#e2e8f0' },
@@ -166,6 +166,7 @@
 		detailDescription = bl?.description ?? '';
 		detailThumbnailUrl = bl?.thumbnail_url ?? '';
 		detailPublishedAt = bl?.published_at ? new Date(bl.published_at).toISOString().slice(0, 16) : '';
+	detailPublishDeadline = item.publish_deadline ?? '';
 		detailViews = bl?.view_count ?? null;
 		detailLikes = bl?.like_count ?? null;
 		detailComments = bl?.comment_count ?? null;
@@ -220,7 +221,7 @@
 
 		const { error: calErr } = await supabase
 			.from('production_calendar')
-			.update({ shoot_date: detailShootDate, status: detailStatus, notes: detailNotes.trim() || null })
+			.update({ shoot_date: detailShootDate, publish_deadline: detailPublishDeadline || null, status: detailStatus, notes: detailNotes.trim() || null })
 			.eq('id', calendarId);
 
 		if (calErr) {
@@ -246,12 +247,29 @@
 
 		savingDetail = false;
 		message = 'บันทึกเรียบร้อยแล้ว';
+		setTimeout(() => { message = ''; }, 4000);
 		closeDetail();
 		await loadCalendar();
 	}
 
 	onMount(() => {
 		loadCalendar();
+
+		if (!supabase) return;
+
+		const channel = supabase
+			.channel('kanban-realtime')
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'production_calendar' }, () => {
+				loadCalendar();
+			})
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_assignments' }, () => {
+				loadCalendar();
+			})
+			.subscribe();
+
+		return () => {
+			supabase.removeChannel(channel);
+		};
 	});
 </script>
 
@@ -328,6 +346,11 @@
 
 									{#if item.shoot_date}
 										<p class="card-date">{formatCalendarDate(item.shoot_date)}</p>
+									{/if}
+									{#if item.publish_deadline}
+										<p class="card-deadline {item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? 'overdue' : ''}">
+											Deadline: {formatCalendarDate(item.publish_deadline)}
+										</p>
 									{/if}
 
 									{#if (item.calendar_assignments ?? []).length > 0}
@@ -415,6 +438,12 @@
 						<label>Shoot Date</label>
 						<input type="date" bind:value={detailShootDate} />
 					</div>
+					<div class="form-field">
+						<label>Publish Deadline</label>
+						<input type="date" bind:value={detailPublishDeadline} />
+					</div>
+				</div>
+				<div class="form-row">
 					<div class="form-field">
 						<label>Published At</label>
 						<input type="datetime-local" bind:value={detailPublishedAt} />
@@ -700,6 +729,20 @@
 		margin: 0;
 		font-size: 0.72rem;
 		color: #64748b;
+	}
+
+	.card-deadline {
+		margin: 0;
+		font-size: 0.72rem;
+		color: #b45309;
+	}
+
+	.card-deadline.overdue {
+		color: #b91c1c;
+		font-weight: 700;
+		background: rgba(220, 38, 38, 0.08);
+		padding: 0.12rem 0.4rem;
+		border-radius: 0.35rem;
 	}
 
 	.card-members {
