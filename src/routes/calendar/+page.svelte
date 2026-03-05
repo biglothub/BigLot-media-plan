@@ -1048,7 +1048,7 @@
 	.calendar-item {
 		--platform-frame-color: rgba(15, 23, 42, 0.1);
 		display: grid;
-		gap: 0.35rem;
+		gap: 0.28rem;
 		padding: 0.45rem;
 		border-radius: 0.65rem;
 		border: 1px solid var(--platform-frame-color);
@@ -1073,19 +1073,23 @@
 	}
 
 	.calendar-link {
-		display: grid;
-		gap: 0.35rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
 		color: inherit;
 		text-decoration: none;
 	}
 
 	.calendar-link strong {
 		font-size: 0.76rem;
+		line-height: 1.2;
 	}
 
 	.calendar-item p {
 		margin: 0;
-		font-size: 0.78rem;
+		font-size: 0.76rem;
+		line-height: 1.3;
+		color: #475569;
 	}
 
 	.tiny-danger {
