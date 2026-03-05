@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
 	import type {
+		MonitoringChannelVideoRow,
 		MonitoringContentPlatformRow,
 		MonitoringContentRow,
 		MonitoringMetricSnapshotRow,
@@ -44,8 +45,12 @@
 	let contents = $state<MonitoringContentRow[]>([]);
 	let platformLinks = $state<MonitoringContentPlatformRow[]>([]);
 	let snapshots = $state<MonitoringMetricSnapshotRow[]>([]);
+	let channelVideos = $state<MonitoringChannelVideoRow[]>([]);
 
 	let loading = $state(false);
+	let loadingChannelVideos = $state(false);
+	let syncingChannelVideos = $state(false);
+	let channelVideoLoadToken = 0;
 	let message = $state('');
 	let errorMessage = $state('');
 
@@ -300,6 +305,7 @@
 		snapshotShares = latest?.share_count ?? null;
 		snapshotSaves = latest?.save_count ?? null;
 		snapshotNotes = '';
+		void loadChannelVideosForSelected();
 	}
 
 	function selectContent(contentId: string) {
@@ -318,6 +324,67 @@
 		setTimeout(() => {
 			message = '';
 		}, 4000);
+	}
+
+	async function loadChannelVideosForSelected() {
+		const selected = selectedLinkByPlatform.get(selectedPlatform) ?? null;
+		if (!selected || selected.platform !== 'youtube' || !selected.is_channel) {
+			channelVideos = [];
+			loadingChannelVideos = false;
+			return;
+		}
+
+		const token = ++channelVideoLoadToken;
+		loadingChannelVideos = true;
+		try {
+			const resp = await fetch(`/api/openclaw/monitoring/platforms/${selected.id}/videos?limit=120`);
+			const body = await resp.json();
+			if (token !== channelVideoLoadToken) return;
+			if (!resp.ok) {
+				errorMessage = body.error ?? 'โหลดวิดีโอช่องไม่สำเร็จ';
+				channelVideos = [];
+				return;
+			}
+			channelVideos = (body.videos ?? []) as MonitoringChannelVideoRow[];
+		} catch (error) {
+			if (token !== channelVideoLoadToken) return;
+			errorMessage = error instanceof Error ? error.message : 'โหลดวิดีโอช่องไม่สำเร็จ';
+			channelVideos = [];
+		} finally {
+			if (token === channelVideoLoadToken) loadingChannelVideos = false;
+		}
+	}
+
+	async function syncYoutubeChannelVideos() {
+		const selected = selectedLinkByPlatform.get(selectedPlatform) ?? null;
+		if (!selected || selected.platform !== 'youtube' || !selected.is_channel) {
+			errorMessage = 'ต้องเลือก YouTube channel link ก่อน';
+			return;
+		}
+
+		syncingChannelVideos = true;
+		errorMessage = '';
+		message = '';
+		try {
+			const resp = await fetch(`/api/openclaw/monitoring/platforms/${selected.id}/videos`, {
+				method: 'POST'
+			});
+			const body = await resp.json();
+			if (!resp.ok) {
+				errorMessage = body.error ?? 'Sync วิดีโอช่องไม่สำเร็จ';
+				return;
+			}
+
+			channelVideos = (body.videos ?? []) as MonitoringChannelVideoRow[];
+			await loadPlatformLinks();
+			message = `Sync YouTube สำเร็จ (${body.video_count ?? channelVideos.length} videos)`;
+			dismissMessageSoon();
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Sync วิดีโอช่องไม่สำเร็จ';
+		} finally {
+			syncingChannelVideos = false;
+			hydrateSelectedForms();
+		}
 	}
 
 	async function loadContents() {
@@ -832,6 +899,47 @@
 						</div>
 					</div>
 
+					{#if selectedPlatform === 'youtube' && selectedPlatformLink?.is_channel}
+						<div class="editor-block">
+							<div class="editor-head">
+								<h4>YouTube Channel Videos</h4>
+								<button class="ghost small" onclick={syncYoutubeChannelVideos} disabled={syncingChannelVideos}>
+									{syncingChannelVideos ? 'Syncing...' : 'Sync Channel'}
+								</button>
+							</div>
+							<p class="meta">อ่านรายการวิดีโอจากหน้า <code>/videos</code> ของช่อง และเก็บไว้ในระบบ monitoring</p>
+							{#if loadingChannelVideos}
+								<p class="empty">กำลังโหลดวิดีโอ...</p>
+							{:else if channelVideos.length === 0}
+								<p class="empty">ยังไม่มีข้อมูลวิดีโอ กด <strong>Sync Channel</strong> เพื่อดึงล่าสุด</p>
+							{:else}
+								<p class="meta">พบ {channelVideos.length} videos</p>
+								<div class="video-list">
+									{#each channelVideos.slice(0, 40) as video}
+										<a class="video-row" href={video.video_url} target="_blank" rel="noopener noreferrer">
+											{#if video.thumbnail_url}
+												<img src={video.thumbnail_url} alt={video.title} />
+											{:else}
+												<div class="video-thumb-empty">No thumb</div>
+											{/if}
+											<div class="video-main">
+												<p class="video-title">{video.title}</p>
+												<p class="video-meta">
+													{video.published_label ?? 'Published n/a'}
+													·
+													{video.view_label ?? (video.view_count !== null ? `${formatCount(video.view_count)} views` : 'views n/a')}
+												</p>
+											</div>
+											{#if video.duration_label}
+												<span class="video-duration">{video.duration_label}</span>
+											{/if}
+										</a>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+
 					<div class="editor-block">
 						<h4>Daily Snapshot ({platformLabel[selectedPlatform]})</h4>
 						<div class="row two-col">
@@ -1099,6 +1207,17 @@
 		margin-top: 0.7rem;
 	}
 
+	.editor-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.editor-head h4 {
+		margin: 0;
+	}
+
 	.list-head {
 		display: flex;
 		align-items: center;
@@ -1346,6 +1465,74 @@
 		gap: 0.45rem;
 	}
 
+	.video-list {
+		display: grid;
+		gap: 0.45rem;
+		max-height: 520px;
+		overflow: auto;
+	}
+
+	.video-row {
+		display: grid;
+		grid-template-columns: 96px 1fr auto;
+		gap: 0.5rem;
+		align-items: center;
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		border-radius: 0.7rem;
+		padding: 0.38rem;
+		background: #fff;
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.video-row img,
+	.video-thumb-empty {
+		width: 96px;
+		height: 54px;
+		border-radius: 0.5rem;
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		object-fit: cover;
+	}
+
+	.video-thumb-empty {
+		display: grid;
+		place-items: center;
+		font-size: 0.65rem;
+		color: #64748b;
+		background: rgba(148, 163, 184, 0.15);
+	}
+
+	.video-main {
+		min-width: 0;
+	}
+
+	.video-title {
+		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #334155;
+		display: -webkit-box;
+		line-clamp: 2;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.video-meta {
+		margin: 0.18rem 0 0;
+		font-size: 0.7rem;
+		color: #64748b;
+	}
+
+	.video-duration {
+		font-size: 0.68rem;
+		font-weight: 700;
+		padding: 0.14rem 0.44rem;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.1);
+		color: #334155;
+	}
+
 	.metric-item {
 		padding: 0.48rem;
 		border-radius: 0.68rem;
@@ -1479,6 +1666,18 @@
 		.action-row {
 			display: grid;
 			grid-template-columns: 1fr;
+		}
+		.video-row {
+			grid-template-columns: 1fr;
+		}
+		.video-row img,
+		.video-thumb-empty {
+			width: 100%;
+			height: auto;
+			aspect-ratio: 16 / 9;
+		}
+		.video-duration {
+			justify-self: start;
 		}
 	}
 
