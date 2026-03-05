@@ -888,6 +888,7 @@
 		display: grid;
 		grid-template-columns: 300px 1fr;
 		gap: 0.8rem;
+		align-items: start;
 	}
 
 	.idea-bank,
@@ -899,6 +900,12 @@
 
 	.idea-bank {
 		padding: 0.75rem;
+		position: sticky;
+		top: 1rem;
+		max-height: calc(100vh - 2rem);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 	}
 
 	.bank-head {
@@ -925,8 +932,8 @@
 	.idea-list {
 		display: grid;
 		gap: 0.5rem;
-		max-height: 680px;
-		overflow: auto;
+		flex: 1;
+		overflow-y: auto;
 	}
 
 	.idea-card {
@@ -1033,14 +1040,16 @@
 	}
 
 	.calendar-day {
-		min-height: 145px;
+		min-height: 170px;
 		border: 1px solid rgba(15, 23, 42, 0.09);
 		border-radius: 0.8rem;
-		padding: 0.55rem;
+		padding: 0.6rem;
 		display: grid;
 		align-content: start;
 		gap: 0.45rem;
 		background: rgba(255, 255, 255, 0.88);
+		min-width: 0;
+		overflow: hidden;
 	}
 
 	.calendar-day.outside-month {
@@ -1078,17 +1087,19 @@
 		display: grid;
 		gap: 0.38rem;
 		padding: 0.5rem;
+		width: 100%;
+		box-sizing: border-box;
 		border-radius: 0.65rem;
 		border: 1px solid var(--platform-frame-color);
 		background: #fff;
 		cursor: grab;
+		min-width: 0;
 	}
 
 	.calendar-item-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.35rem;
+		display: grid;
+		justify-items: start;
+		gap: 0.22rem;
 	}
 
 	.calendar-item-head .platform {
@@ -1101,6 +1112,8 @@
 		letter-spacing: 0.02em;
 		color: #334155;
 		line-height: 1.2;
+		word-break: break-word;
+		overflow-wrap: anywhere;
 	}
 
 	.platform-frame--instagram {
@@ -1123,6 +1136,7 @@
 		display: block;
 		color: inherit;
 		text-decoration: none;
+		min-width: 0;
 	}
 
 	.calendar-title {
@@ -1135,6 +1149,7 @@
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		overflow-wrap: anywhere;
 	}
 
 	.calendar-item-meta {
@@ -1204,8 +1219,8 @@
 
 	.calendar-item-actions {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.3rem;
+		grid-template-columns: 1fr;
+		gap: 0.28rem;
 	}
 
 	.tiny-detail {
@@ -1235,7 +1250,9 @@
 		font-size: 0.65rem;
 		font-weight: 700;
 		cursor: pointer;
-		width: fit-content;
+		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E");
 		background-repeat: no-repeat;
 		background-position: right 0.35rem center;
