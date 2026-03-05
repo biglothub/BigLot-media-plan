@@ -16,6 +16,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			content_id: params.id,
 			url: body.url,
 			platform: body.platform,
+			is_channel: body.is_channel ?? true,
+			last_checked_at: body.last_checked_at ?? null,
 			title: body.title ?? null,
 			thumbnail_url: body.thumbnail_url ?? null,
 			published_at: body.published_at ?? null,

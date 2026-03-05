@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
 
+const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+
 function generateContentCode(): string {
 	const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 	const rand = Math.random().toString(16).slice(2, 10).toUpperCase();
@@ -25,6 +27,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const body = await request.json();
 	if (!body.title) return json({ error: 'title is required' }, { status: 400 });
+	const priority = typeof body.priority === 'string' ? body.priority : 'normal';
+	if (!PRIORITIES.has(priority)) {
+		return json({ error: 'priority must be one of: low, normal, high, urgent' }, { status: 400 });
+	}
 
 	const { data, error } = await supabase
 		.from('monitoring_content')
@@ -32,6 +38,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			content_code: generateContentCode(),
 			title: body.title,
 			description: body.description ?? null,
+			owner: body.owner ?? null,
+			priority,
 			notes: body.notes ?? null,
 			status: 'active'
 		})

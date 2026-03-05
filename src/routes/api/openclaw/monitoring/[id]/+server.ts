@@ -2,6 +2,8 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
 
+const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent']);
+
 export const GET: RequestHandler = async ({ params }) => {
 	if (!supabase) return json({ error: 'Supabase not configured' }, { status: 500 });
 
@@ -19,8 +21,11 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	if (!supabase) return json({ error: 'Supabase not configured' }, { status: 500 });
 
 	const body = await request.json();
+	if (body.priority !== undefined && !PRIORITIES.has(String(body.priority))) {
+		return json({ error: 'priority must be one of: low, normal, high, urgent' }, { status: 400 });
+	}
 	const updates: Record<string, unknown> = {};
-	for (const key of ['title', 'description', 'notes', 'status']) {
+	for (const key of ['title', 'description', 'notes', 'status', 'owner', 'priority']) {
 		if (body[key] !== undefined) updates[key] = body[key];
 	}
 
