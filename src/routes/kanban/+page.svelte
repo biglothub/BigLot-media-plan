@@ -87,7 +87,7 @@
 		loading = true;
 		const { data, error } = await supabase
 			.from('production_calendar')
-			.select('id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*), calendar_assignments(*)')
+			.select('id, backlog_id, shoot_date, publish_deadline, status, notes, created_at, idea_backlog(*), calendar_assignments(*)')
 			.order('shoot_date', { ascending: true })
 			.order('created_at', { ascending: true });
 

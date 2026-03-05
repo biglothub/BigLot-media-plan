@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
+	import { TEAM_MEMBERS } from "$lib/team";
 	import type { IdeaBacklogRow, ProductionCalendarRow, CalendarAssignmentRow, TeamMember, ProductionStage, SupportedPlatform, BacklogContentType } from "$lib/types";
 	import {
 		addMonthsIso,
@@ -51,8 +52,8 @@
 	let detailComments = $state<number | null>(null);
 	let detailShares = $state<number | null>(null);
 	let detailSaves = $state<number | null>(null);
+	let detailPublishDeadline = $state('');
 	let ideaSearch = $state("");
-	const TEAM_MEMBERS: TeamMember[] = ['โฟน', 'ฟิวส์', 'อิก', 'ต้า'];
 
 	const monthLabel = $derived.by(() => formatMonthLabel(currentMonthStart));
 	const monthCells = $derived.by(() => buildMonthCells(currentMonthStart));
@@ -122,7 +123,7 @@
 		const { data, error } = await supabase
 			.from("production_calendar")
 			.select(
-				"id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*), calendar_assignments(*)",
+				"id, backlog_id, shoot_date, publish_deadline, status, notes, created_at, idea_backlog(*), calendar_assignments(*)",
 			)
 			.order("shoot_date", { ascending: true })
 			.order("created_at", { ascending: true });
@@ -241,6 +242,7 @@
 		detailItem = item;
 		detailNotes = item.notes ?? '';
 		detailShootDate = item.shoot_date ?? '';
+		detailPublishDeadline = item.publish_deadline ?? '';
 		detailStatus = (item.status as ProductionStage) ?? 'planned';
 
 		const bl = item.idea_backlog;
@@ -313,6 +315,7 @@
 			.from('production_calendar')
 			.update({
 				shoot_date: detailShootDate,
+				publish_deadline: detailPublishDeadline || null,
 				status: detailStatus,
 				notes: detailNotes.trim() || null,
 			})
@@ -679,6 +682,12 @@
 							<label>Shoot Date</label>
 							<input type="date" bind:value={detailShootDate} />
 						</div>
+						<div class="form-field">
+							<label>Publish Deadline</label>
+							<input type="date" bind:value={detailPublishDeadline} />
+						</div>
+					</div>
+					<div class="form-row">
 						<div class="form-field">
 							<label>Published At</label>
 							<input type="datetime-local" bind:value={detailPublishedAt} />

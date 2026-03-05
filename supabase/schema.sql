@@ -1,6 +1,6 @@
 -- BigLot Media Plan — Full Schema
 -- Run this in Supabase SQL Editor to create all tables
--- Last updated: 2026-03-03
+-- Last updated: 2026-03-05
 
 -- ============================================================
 -- 1. idea_backlog
@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.production_calendar (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   backlog_id  uuid NOT NULL REFERENCES public.idea_backlog (id) ON DELETE CASCADE,
   shoot_date  date NOT NULL,
+  publish_deadline date,
   status      text NOT NULL DEFAULT 'planned'
     CHECK (status IN ('planned', 'scripting', 'shooting', 'editing', 'published')),
   notes       text,
