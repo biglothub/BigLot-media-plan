@@ -1,0 +1,164 @@
+{
+  "name": "BigLot Media Plan",
+  "description": "Manage BigLot content ideas, production schedules, and daily summaries.",
+  "baseUrl": "${BIGLOT_API_URL}",
+  "tools": [
+    {
+      "name": "add_content_idea",
+      "description": "Add a new content idea to the backlog. If a URL is provided, metadata (title, thumbnail, metrics) will be auto-enriched from the platform.",
+      "method": "POST",
+      "path": "/ideas",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL of the content (YouTube, Facebook, Instagram, TikTok)"
+          },
+          "platform": {
+            "type": "string",
+            "enum": ["youtube", "facebook", "instagram", "tiktok"],
+            "description": "Platform of the content"
+          },
+          "content_type": {
+            "type": "string",
+            "enum": ["video", "post", "image"],
+            "default": "video"
+          },
+          "title": {
+            "type": "string",
+            "description": "Title of the content (auto-enriched if URL provided)"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional notes about the idea"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_content_ideas",
+      "description": "List content ideas from the backlog. Can filter by status (new, reviewed, approved, rejected) and platform.",
+      "method": "GET",
+      "path": "/ideas",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by status"
+          },
+          "platform": {
+            "type": "string",
+            "enum": ["youtube", "facebook", "instagram", "tiktok"],
+            "description": "Filter by platform"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10,
+            "description": "Number of results to return"
+          }
+        }
+      }
+    },
+    {
+      "name": "update_content_idea",
+      "description": "Update an existing content idea (title, notes, status, description).",
+      "method": "PATCH",
+      "path": "/ideas/{idea_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "description": "UUID of the idea to update"
+          },
+          "title": { "type": "string" },
+          "notes": { "type": "string" },
+          "status": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["idea_id"]
+      }
+    },
+    {
+      "name": "delete_content_idea",
+      "description": "Delete a content idea from the backlog.",
+      "method": "DELETE",
+      "path": "/ideas/{idea_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idea_id": {
+            "type": "string",
+            "description": "UUID of the idea to delete"
+          }
+        },
+        "required": ["idea_id"]
+      }
+    },
+    {
+      "name": "schedule_shoot",
+      "description": "Schedule a shoot date for a content idea. Moves the idea into the production calendar.",
+      "method": "POST",
+      "path": "/schedule",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "backlog_id": {
+            "type": "string",
+            "description": "UUID of the idea to schedule"
+          },
+          "shoot_date": {
+            "type": "string",
+            "description": "Shoot date in YYYY-MM-DD format"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes for the shoot"
+          }
+        },
+        "required": ["backlog_id", "shoot_date"]
+      }
+    },
+    {
+      "name": "get_today_schedule",
+      "description": "Get the production schedule for today. Shows what content needs to be shot today.",
+      "method": "GET",
+      "path": "/schedule/today"
+    },
+    {
+      "name": "get_week_schedule",
+      "description": "Get the production schedule for the next 7 days.",
+      "method": "GET",
+      "path": "/schedule/week"
+    },
+    {
+      "name": "update_production_status",
+      "description": "Update the production status of a scheduled item. Stages: planned -> scripting -> shooting -> editing -> published",
+      "method": "PATCH",
+      "path": "/schedule/{schedule_id}/status",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": {
+            "type": "string",
+            "description": "UUID of the schedule entry"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["planned", "scripting", "shooting", "editing", "published"],
+            "description": "New production status"
+          }
+        },
+        "required": ["schedule_id", "status"]
+      }
+    },
+    {
+      "name": "get_daily_summary",
+      "description": "Get a daily summary including new ideas, today's shoots, and in-progress items.",
+      "method": "GET",
+      "path": "/daily-summary"
+    }
+  ]
+}
