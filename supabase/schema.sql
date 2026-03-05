@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS public.production_calendar (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   backlog_id  uuid NOT NULL REFERENCES public.idea_backlog (id) ON DELETE CASCADE,
   shoot_date  date NOT NULL,
-  status      text NOT NULL DEFAULT 'planned',
+  status      text NOT NULL DEFAULT 'planned'
+    CHECK (status IN ('planned', 'scripting', 'shooting', 'editing', 'published')),
   notes       text,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -167,3 +168,26 @@ CREATE POLICY public_read_monitoring_content_platform   ON public.monitoring_con
 CREATE POLICY public_insert_monitoring_content_platform ON public.monitoring_content_platform FOR INSERT TO public WITH CHECK (true);
 CREATE POLICY public_update_monitoring_content_platform ON public.monitoring_content_platform FOR UPDATE TO public USING (true) WITH CHECK (true);
 CREATE POLICY public_delete_monitoring_content_platform ON public.monitoring_content_platform FOR DELETE TO public USING (true);
+
+-- ============================================================
+-- 6. calendar_assignments
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.calendar_assignments (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  calendar_id  uuid NOT NULL REFERENCES public.production_calendar (id) ON DELETE CASCADE,
+  member_name  text NOT NULL CHECK (member_name IN ('โฟน','ฟิวส์','อิก','ต้า')),
+  role_detail  text NOT NULL DEFAULT '',
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_calendar_assignments_member
+  ON public.calendar_assignments (calendar_id, member_name);
+CREATE INDEX IF NOT EXISTS idx_calendar_assignments_calendar
+  ON public.calendar_assignments (calendar_id);
+
+ALTER TABLE public.calendar_assignments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY public_read_calendar_assignments   ON public.calendar_assignments FOR SELECT TO public USING (true);
+CREATE POLICY public_insert_calendar_assignments ON public.calendar_assignments FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY public_update_calendar_assignments ON public.calendar_assignments FOR UPDATE TO public USING (true) WITH CHECK (true);
+CREATE POLICY public_delete_calendar_assignments ON public.calendar_assignments FOR DELETE TO public USING (true);
