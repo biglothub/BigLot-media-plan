@@ -28,6 +28,15 @@
 	let ideas = $state<IdeaBacklogRow[]>([]);
 	let scheduledBacklogIds = $state<Set<string>>(new Set());
 	let selectedContentType = $state<BacklogContentType>("video");
+
+	// Context menu state
+	let contextMenuIdea = $state<IdeaBacklogRow | null>(null);
+	let contextMenuX = $state(0);
+	let contextMenuY = $state(0);
+	let contextMenuVisible = $state(false);
+	let scheduleDate = $state("");
+	let scheduling = $state(false);
+
 	let manualExpanded = $state(false);
 	let manualUrl = $state("");
 	let manualPlatform = $state<SupportedPlatform>("youtube");
@@ -52,6 +61,26 @@
 		shares: null as number | null,
 		saves: null as number | null,
 	});
+
+	// Edit modal state
+	let editingIdea = $state<IdeaBacklogRow | null>(null);
+	let editForm = $state({
+		url: '',
+		platform: 'youtube' as SupportedPlatform,
+		content_type: 'video' as BacklogContentType,
+		title: '',
+		description: '',
+		author_name: '',
+		thumbnail_url: '',
+		published_at: '',
+		notes: '',
+		views: null as number | null,
+		likes: null as number | null,
+		comments: null as number | null,
+		shares: null as number | null,
+		saves: null as number | null,
+	});
+	let savingEdit = $state(false);
 
 	const groupedIdeas = $derived.by(() => {
 		const grouped = new Map<string, IdeaBacklogRow[]>();
@@ -424,6 +453,133 @@
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
 
+	function openContextMenu(event: MouseEvent, idea: IdeaBacklogRow) {
+		event.preventDefault();
+		contextMenuIdea = idea;
+		contextMenuX = event.clientX;
+		contextMenuY = event.clientY;
+		contextMenuVisible = true;
+		scheduleDate = new Date().toISOString().slice(0, 10);
+	}
+
+	function closeContextMenu() {
+		contextMenuVisible = false;
+		contextMenuIdea = null;
+		scheduleDate = "";
+	}
+
+	async function scheduleToCalendar() {
+		if (!supabase || !contextMenuIdea || !scheduleDate) return;
+		scheduling = true;
+		errorMessage = "";
+
+		const { error } = await supabase.from("production_calendar").upsert(
+			{
+				backlog_id: contextMenuIdea.id,
+				shoot_date: scheduleDate,
+				status: "planned",
+			},
+			{ onConflict: "backlog_id" },
+		);
+
+		scheduling = false;
+		closeContextMenu();
+
+		if (error) {
+			errorMessage = `วางแผนใน calendar ไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
+			return;
+		}
+
+		message = `${backlogCode(contextMenuIdea)} ถูกจัดลงตาราง ${scheduleDate} แล้ว`;
+		scrollToTop();
+		await loadScheduledBacklogIds();
+	}
+
+	function openEditModal(idea: IdeaBacklogRow) {
+		editingIdea = idea;
+		editForm = {
+			url: idea.url ?? '',
+			platform: idea.platform,
+			content_type: idea.content_type ?? 'video',
+			title: idea.title ?? '',
+			description: idea.description ?? '',
+			author_name: idea.author_name ?? '',
+			thumbnail_url: idea.thumbnail_url ?? '',
+			published_at: idea.published_at
+				? new Date(idea.published_at).toISOString().slice(0, 16)
+				: '',
+			notes: idea.notes ?? '',
+			views: idea.view_count,
+			likes: idea.like_count,
+			comments: idea.comment_count,
+			shares: idea.share_count,
+			saves: idea.save_count,
+		};
+	}
+
+	function closeEditModal() {
+		editingIdea = null;
+	}
+
+	async function saveEdit() {
+		if (!supabase || !editingIdea) return;
+		savingEdit = true;
+		errorMessage = '';
+		message = '';
+
+		const rawUrl = editForm.url.trim();
+		if (rawUrl) {
+			try {
+				const parsed = new URL(rawUrl);
+				if (!['http:', 'https:'].includes(parsed.protocol)) {
+					errorMessage = 'ลิงก์ต้องเป็น http/https เท่านั้น';
+					savingEdit = false;
+					return;
+				}
+			} catch {
+				errorMessage = 'ลิงก์ไม่ถูกต้อง';
+				savingEdit = false;
+				return;
+			}
+		}
+
+		const payload = {
+			url: rawUrl || null,
+			platform: editForm.platform,
+			content_type: editForm.content_type,
+			title: editForm.title.trim() || null,
+			description: editForm.description.trim() || null,
+			author_name: editForm.author_name.trim() || null,
+			thumbnail_url: editForm.thumbnail_url.trim() || null,
+			published_at: editForm.published_at
+				? new Date(editForm.published_at).toISOString()
+				: null,
+			view_count: editForm.views,
+			like_count: editForm.likes,
+			comment_count: editForm.comments,
+			share_count: editForm.shares,
+			save_count: editForm.saves,
+			notes: editForm.notes.trim() || null,
+		};
+
+		const { error } = await supabase
+			.from('idea_backlog')
+			.update(payload)
+			.eq('id', editingIdea.id);
+
+		savingEdit = false;
+
+		if (error) {
+			errorMessage = `แก้ไขไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		message = 'แก้ไข backlog เรียบร้อยแล้ว';
+		closeEditModal();
+		await loadIdeas();
+	}
+
 	onMount(async () => {
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	});
@@ -789,6 +945,7 @@
 										: null}
 								<article
 									class={`card ${platformFrameClass(idea.platform)}`}
+									oncontextmenu={(event) => openContextMenu(event, idea)}
 								>
 									{#if tiktokEmbedUrl}
 										<iframe
@@ -886,15 +1043,23 @@
 												No content link
 											</p>
 										{/if}
-										<button
-											class="danger"
-											onclick={() => deleteIdea(idea)}
-											disabled={deletingId === idea.id}
-										>
-											{deletingId === idea.id
-												? "Deleting..."
-												: "Delete"}
-										</button>
+										<div class="card-actions">
+											<button
+												class="edit-btn"
+												onclick={() => openEditModal(idea)}
+											>
+												Edit
+											</button>
+											<button
+												class="danger"
+												onclick={() => deleteIdea(idea)}
+												disabled={deletingId === idea.id}
+											>
+												{deletingId === idea.id
+													? "Deleting..."
+													: "Delete"}
+											</button>
+										</div>
 									</div>
 								</article>
 							{/each}
@@ -904,6 +1069,129 @@
 			</div>
 		{/if}
 	</section>
+
+	{#if contextMenuVisible && contextMenuIdea}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="ctx-overlay" onclick={closeContextMenu} onkeydown={(e) => { if (e.key === 'Escape') closeContextMenu(); }}></div>
+		<div
+			class="ctx-menu"
+			style="left:{contextMenuX}px;top:{contextMenuY}px"
+		>
+			<div class="ctx-header">
+				<span class="platform">{contextMenuIdea.platform.toUpperCase()}</span>
+				<strong>{backlogCode(contextMenuIdea)}</strong>
+			</div>
+			<p class="ctx-title">{contextMenuIdea.title ?? 'Untitled idea'}</p>
+			{#if scheduledBacklogIds.has(contextMenuIdea.id)}
+				<p class="ctx-note">ไอเดียนี้ถูก schedule แล้ว (จะย้ายวัน)</p>
+			{/if}
+			<label class="ctx-label" for="ctx-date">Shoot Date</label>
+			<input id="ctx-date" type="date" bind:value={scheduleDate} class="ctx-date-input" />
+			<div class="ctx-actions">
+				<button class="ctx-confirm" onclick={scheduleToCalendar} disabled={scheduling || !scheduleDate}>
+					{scheduling ? 'Scheduling...' : 'Schedule'}
+				</button>
+				<button class="ctx-cancel" onclick={closeContextMenu}>Cancel</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if editingIdea}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={closeEditModal} onkeydown={(e) => { if (e.key === 'Escape') closeEditModal(); }}></div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+			<div class="modal-header">
+				<h3>Edit — {backlogCode(editingIdea)}</h3>
+				<button class="modal-close" onclick={closeEditModal}>✕</button>
+			</div>
+
+			<div class="edit-row-inline">
+				<div class="edit-row">
+					<label for="edit-platform">Platform</label>
+					<select id="edit-platform" bind:value={editForm.platform}>
+						{#each platformOrder as p}
+							<option value={p}>{platformLabel[p]}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="edit-row">
+					<label for="edit-content-type">Content Type</label>
+					<select id="edit-content-type" bind:value={editForm.content_type}>
+						{#each contentTypeOptions as option}
+							<option value={option}>{contentTypeLabel[option]}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-title">Title</label>
+				<input id="edit-title" bind:value={editForm.title} placeholder="ชื่อคอนเทนต์" />
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-url">Content Link</label>
+				<input id="edit-url" bind:value={editForm.url} placeholder="https://..." />
+			</div>
+
+			<div class="edit-row-inline">
+				<div class="edit-row">
+					<label for="edit-author">Creator / Account</label>
+					<input id="edit-author" bind:value={editForm.author_name} placeholder="@username" />
+				</div>
+				<div class="edit-row">
+					<label for="edit-published">Published At</label>
+					<input id="edit-published" type="datetime-local" bind:value={editForm.published_at} />
+				</div>
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-thumbnail">Thumbnail URL</label>
+				<input id="edit-thumbnail" bind:value={editForm.thumbnail_url} placeholder="https://..." />
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-description">Description</label>
+				<textarea id="edit-description" bind:value={editForm.description} rows={3} placeholder="คำอธิบาย (ถ้ามี)"></textarea>
+			</div>
+
+			<div class="edit-metrics">
+				<div class="edit-metric">
+					<label for="edit-views">Views</label>
+					<input id="edit-views" type="number" min="0" bind:value={editForm.views} />
+				</div>
+				<div class="edit-metric">
+					<label for="edit-likes">Likes</label>
+					<input id="edit-likes" type="number" min="0" bind:value={editForm.likes} />
+				</div>
+				<div class="edit-metric">
+					<label for="edit-comments">Comments</label>
+					<input id="edit-comments" type="number" min="0" bind:value={editForm.comments} />
+				</div>
+				<div class="edit-metric">
+					<label for="edit-shares">Shares</label>
+					<input id="edit-shares" type="number" min="0" bind:value={editForm.shares} />
+				</div>
+				<div class="edit-metric">
+					<label for="edit-saves">Saves</label>
+					<input id="edit-saves" type="number" min="0" bind:value={editForm.saves} />
+				</div>
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-notes">Idea Notes</label>
+				<textarea id="edit-notes" bind:value={editForm.notes} rows={4} placeholder="ไอเดียจากคอนเทนต์นี้..."></textarea>
+			</div>
+
+			<div class="modal-footer">
+				<button class="primary" onclick={saveEdit} disabled={savingEdit || !hasSupabaseConfig}>
+					{savingEdit ? 'Saving...' : 'Save Changes'}
+				</button>
+				<button class="modal-cancel" onclick={closeEditModal}>Cancel</button>
+			</div>
+		</div>
+	{/if}
 </main>
 
 <style>
@@ -1277,6 +1565,100 @@
 		padding: 0.45rem 0.6rem;
 		border-radius: 0.6rem;
 		font-weight: 700;
+		cursor: pointer;
+	}
+
+	/* Context menu */
+	.ctx-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 999;
+	}
+
+	.ctx-menu {
+		position: fixed;
+		z-index: 1000;
+		width: 260px;
+		background: #fff;
+		border: 1px solid rgba(15, 23, 42, 0.12);
+		border-radius: 0.85rem;
+		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+		padding: 0.85rem;
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.ctx-header {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.ctx-header strong {
+		font-size: 0.86rem;
+	}
+
+	.ctx-title {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #475569;
+	}
+
+	.ctx-note {
+		margin: 0;
+		font-size: 0.75rem;
+		color: #b45309;
+		background: rgba(180, 83, 9, 0.08);
+		padding: 0.3rem 0.5rem;
+		border-radius: 0.5rem;
+	}
+
+	.ctx-label {
+		font-size: 0.78rem;
+		color: #64748b;
+		font-weight: 600;
+	}
+
+	.ctx-date-input {
+		width: 100%;
+		box-sizing: border-box;
+		font: inherit;
+		padding: 0.55rem 0.7rem;
+		border-radius: 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: #fff;
+	}
+
+	.ctx-actions {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.4rem;
+	}
+
+	.ctx-confirm {
+		border: 0;
+		padding: 0.55rem;
+		border-radius: 0.6rem;
+		background: #2563eb;
+		color: #fff;
+		font-weight: 700;
+		font-size: 0.82rem;
+		cursor: pointer;
+	}
+
+	.ctx-confirm:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.ctx-cancel {
+		border: 1px solid rgba(15, 23, 42, 0.12);
+		padding: 0.55rem;
+		border-radius: 0.6rem;
+		background: #fff;
+		color: #475569;
+		font-weight: 700;
+		font-size: 0.82rem;
 		cursor: pointer;
 	}
 
