@@ -131,15 +131,105 @@ export async function fetchTikTokOEmbed(
     }
 }
 
-// ── TikTok Rehydration JSON scraping ──────────────────────────────────
-// TikTok embeds metrics inside __UNIVERSAL_DATA_FOR_REHYDRATION__ or
-// SIGI_STATE script blocks. This extracts them when available.
+// ── Shared helpers ────────────────────────────────────────────────────
 
 function safeInt(value: unknown): number | null {
     if (value === null || value === undefined) return null;
     const num = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(num) ? Math.round(num) : null;
 }
+
+function parseCompactNumber(raw: string): number | null {
+    const m = raw.trim().replace(/,/g, '').match(/^([\d]*\.?[\d]+)\s*([KMBkmb])?$/);
+    if (!m) return null;
+    const base = parseFloat(m[1]);
+    if (!Number.isFinite(base)) return null;
+    const suffix = m[2]?.toUpperCase();
+    const mul = suffix === 'K' ? 1_000 : suffix === 'M' ? 1_000_000 : suffix === 'B' ? 1_000_000_000 : 1;
+    return Math.round(base * mul);
+}
+
+// ── YouTube HTML scraping ─────────────────────────────────────────────
+// YouTube hid exact like counts from public JSON fields (~2023).
+// We scrape accessibility labels and factoid renderers instead.
+
+export function extractYouTubeMetricsFromHtml(html: string): EnrichMetrics {
+    const metrics = emptyMetrics();
+
+    // Likes — accessibility text: "like this video along with 1,234 other people"
+    const likeAccessMatch = html.match(
+        /like this video along with ([\d][\d,. ]*) other people/i
+    );
+    if (likeAccessMatch) {
+        metrics.likes = safeInt(likeAccessMatch[1].replace(/[,. ]/g, ''));
+    }
+
+    // Likes — "label":"1,234 likes" or "accessibilityText":"1,234 likes"
+    if (metrics.likes === null) {
+        const likeLabelMatch = html.match(
+            /"(?:label|accessibilityText)"\s*:\s*"([\d][\d,. ]*?)\s+likes?"/i
+        );
+        if (likeLabelMatch) {
+            metrics.likes = safeInt(likeLabelMatch[1].replace(/[, ]/g, ''));
+        }
+    }
+
+    // Likes — factoidRenderer: {"value":{"simpleText":"1.2K"},...,"label":{"simpleText":"Likes"}}
+    if (metrics.likes === null) {
+        const factoidMatch = html.match(
+            /"simpleText"\s*:\s*"([\d][\d,.KMBkmb ]*?)"\s*\}\s*,\s*"label"\s*:\s*\{\s*"simpleText"\s*:\s*"Likes"/i
+        );
+        if (factoidMatch) {
+            metrics.likes = parseCompactNumber(factoidMatch[1]);
+        }
+    }
+
+    // Comments — "commentCountText":{"simpleText":"1,234"}
+    const commentMatch = html.match(
+        /"commentCountText"\s*:\s*\{\s*"simpleText"\s*:\s*"([\d][\d,.KMBkmb ]*)/i
+    ) ?? html.match(
+        /"commentCount"\s*:\s*\{\s*"simpleText"\s*:\s*"([\d][\d,.KMBkmb ]*)/i
+    );
+    if (commentMatch) {
+        metrics.comments = parseCompactNumber(commentMatch[1]);
+    }
+
+    return metrics;
+}
+
+// ── Facebook HTML scraping ────────────────────────────────────────────
+// Facebook embeds metrics in relay store / inline data objects.
+
+export function extractFacebookMetricsFromHtml(html: string): EnrichMetrics {
+    const metrics = emptyMetrics();
+
+    // Views
+    const viewMatch = html.match(/"video_view_count"\s*:\s*(\d+)/i)
+        ?? html.match(/"play_count"\s*:\s*(\d+)/i);
+    if (viewMatch) metrics.views = safeInt(viewMatch[1]);
+
+    // Reactions (≈ likes)
+    const reactionMatch = html.match(/"reaction_count"\s*:\s*\{\s*"count"\s*:\s*(\d+)/i)
+        ?? html.match(/"reactors"\s*:\s*\{\s*"count"\s*:\s*(\d+)/i);
+    if (reactionMatch) metrics.likes = safeInt(reactionMatch[1]);
+
+    // Comments
+    const commentMatch = html.match(/"comment_count"\s*:\s*\{\s*"total_count"\s*:\s*(\d+)/i)
+        ?? html.match(/"total_comment_count"\s*:\s*(\d+)/i)
+        ?? html.match(/"comments"\s*:\s*\{\s*"total_count"\s*:\s*(\d+)/i);
+    if (commentMatch) metrics.comments = safeInt(commentMatch[1]);
+
+    // Shares
+    const shareMatch = html.match(/"share_count"\s*:\s*\{\s*"count"\s*:\s*(\d+)/i)
+        ?? html.match(/"reshares"\s*:\s*\{\s*"count"\s*:\s*(\d+)/i);
+    if (shareMatch) metrics.shares = safeInt(shareMatch[1]);
+
+    return metrics;
+}
+
+// ── TikTok Rehydration JSON scraping ──────────────────────────────────
+// TikTok embeds metrics inside __UNIVERSAL_DATA_FOR_REHYDRATION__ or
+// SIGI_STATE script blocks. This extracts them when available.
 
 export function extractTikTokMetricsFromHtml(html: string): EnrichMetrics {
     const metrics = emptyMetrics();

@@ -6,6 +6,8 @@ import {
 	fetchFacebookOEmbed,
 	fetchTikTokOEmbed,
 	extractTikTokMetricsFromHtml,
+	extractYouTubeMetricsFromHtml,
+	extractFacebookMetricsFromHtml,
 	type OEmbedResult
 } from '$lib/server/platform-oembed';
 
@@ -375,11 +377,12 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		oEmbedResult = await fetchTikTokOEmbed(oEmbedTarget, fetch);
 	}
 
-	// ── TikTok rehydration metrics ──────────────────────────────────
-	const tiktokRehydrationMetrics: EnrichMetrics =
-		platform === 'tiktok' ? extractTikTokMetricsFromHtml(html) : {
-			views: null, likes: null, comments: null, shares: null, saves: null
-		};
+	// ── Platform-specific HTML scraping ──────────────────────────────
+	const platformHtmlMetrics: EnrichMetrics =
+		platform === 'tiktok' ? extractTikTokMetricsFromHtml(html)
+		: platform === 'youtube' ? extractYouTubeMetricsFromHtml(html)
+		: platform === 'facebook' ? extractFacebookMetricsFromHtml(html)
+		: { views: null, likes: null, comments: null, shares: null, saves: null };
 
 	let jsonLdSource: Record<string, unknown> | null = null;
 	const jsonLdMatches = html.matchAll(
@@ -427,7 +430,10 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			/"diggCount":\s*"?([0-9.,kmb]+)"?/i,
 			/\\"diggCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
 			/"edge_media_preview_like"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
-			/\\"edge_media_preview_like\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i
+			/\\"edge_media_preview_like\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i,
+			// Facebook relay store
+			/"reaction_count"\s*:\s*\{\s*"count"\s*:\s*([0-9]+)/i,
+			/"reactors"\s*:\s*\{\s*"count"\s*:\s*([0-9]+)/i
 		]),
 		comments: extractFirstByRegex(metricsHtml, [
 			/"commentCount":\s*"?([0-9.,kmb]+)"?/i,
@@ -437,11 +443,17 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			/"edge_media_to_comment"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
 			/\\"edge_media_to_comment\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i,
 			/"edge_media_to_parent_comment"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
-			/\\"edge_media_to_parent_comment\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i
+			/\\"edge_media_to_parent_comment\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i,
+			// Facebook relay store
+			/"comment_count"\s*:\s*\{\s*"total_count"\s*:\s*([0-9]+)/i,
+			/"total_comment_count"\s*:\s*([0-9]+)/i
 		]),
 		shares: extractFirstByRegex(metricsHtml, [
 			/"shareCount":\s*"?([0-9.,kmb]+)"?/i,
-			/\\"shareCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i
+			/\\"shareCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			// Facebook relay store
+			/"share_count"\s*:\s*\{\s*"count"\s*:\s*([0-9]+)/i,
+			/"reshares"\s*:\s*\{\s*"count"\s*:\s*([0-9]+)/i
 		]),
 		saves: extractFirstByRegex(metricsHtml, [
 			/"saveCount":\s*"?([0-9.,kmb]+)"?/i,
@@ -464,7 +476,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			),
 			oEmbedTitleMetrics
 		),
-		tiktokRehydrationMetrics
+		platformHtmlMetrics
 	);
 	const fallbackUsed =
 		(jsonLdMetrics.views === null && regexMetrics.views !== null) ||
@@ -536,7 +548,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			fallbackUsed ? 'regex-fallback' : null,
 			platform === 'instagram' && hasAnyMetricValue(oEmbedTitleMetrics) ? 'instagram-oembed' : null,
 			oEmbedResult ? oEmbedResult.source : null,
-			platform === 'tiktok' && hasAnyMetricValue(tiktokRehydrationMetrics) ? 'tiktok-rehydration' : null
+			hasAnyMetricValue(platformHtmlMetrics) ? `${platform}-html-scraping` : null
 		].filter((value, index, self): value is string => value !== null && self.indexOf(value) === index)
 	};
 
