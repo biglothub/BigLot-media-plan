@@ -996,53 +996,6 @@
 				</div>
 			</div>
 
-			<div class="metrics">
-				<div class="metric-item">
-					<label for="views">Views</label>
-					<input
-						id="views"
-						type="number"
-						min="0"
-						bind:value={metrics.views}
-					/>
-				</div>
-				<div class="metric-item">
-					<label for="likes">Likes</label>
-					<input
-						id="likes"
-						type="number"
-						min="0"
-						bind:value={metrics.likes}
-					/>
-				</div>
-				<div class="metric-item">
-					<label for="comments">Comments</label>
-					<input
-						id="comments"
-						type="number"
-						min="0"
-						bind:value={metrics.comments}
-					/>
-				</div>
-				<div class="metric-item">
-					<label for="shares">Shares</label>
-					<input
-						id="shares"
-						type="number"
-						min="0"
-						bind:value={metrics.shares}
-					/>
-				</div>
-				<div class="metric-item">
-					<label for="saves">Saves</label>
-					<input
-						id="saves"
-						type="number"
-						min="0"
-						bind:value={metrics.saves}
-					/>
-				</div>
-			</div>
 
 			<div class="row">
 				<label for="content-type">Content Type</label>
@@ -1193,53 +1146,6 @@
 					/>
 				</div>
 
-				<div class="metrics">
-					<div class="metric-item">
-						<label for="manual-views">Views</label>
-						<input
-							id="manual-views"
-							type="number"
-							min="0"
-							bind:value={manualMetrics.views}
-						/>
-					</div>
-					<div class="metric-item">
-						<label for="manual-likes">Likes</label>
-						<input
-							id="manual-likes"
-							type="number"
-							min="0"
-							bind:value={manualMetrics.likes}
-						/>
-					</div>
-					<div class="metric-item">
-						<label for="manual-comments">Comments</label>
-						<input
-							id="manual-comments"
-							type="number"
-							min="0"
-							bind:value={manualMetrics.comments}
-						/>
-					</div>
-					<div class="metric-item">
-						<label for="manual-shares">Shares</label>
-						<input
-							id="manual-shares"
-							type="number"
-							min="0"
-							bind:value={manualMetrics.shares}
-						/>
-					</div>
-					<div class="metric-item">
-						<label for="manual-saves">Saves</label>
-						<input
-							id="manual-saves"
-							type="number"
-							min="0"
-							bind:value={manualMetrics.saves}
-						/>
-					</div>
-				</div>
 
 				<div class="row">
 					<label for="manual-notes">Idea Notes</label>
@@ -1585,28 +1491,6 @@
 				<textarea id="edit-description" bind:value={editForm.description} rows={3} placeholder="คำอธิบาย (ถ้ามี)"></textarea>
 			</div>
 
-			<div class="edit-metrics">
-				<div class="edit-metric">
-					<label for="edit-views">Views</label>
-					<input id="edit-views" type="number" min="0" bind:value={editForm.views} />
-				</div>
-				<div class="edit-metric">
-					<label for="edit-likes">Likes</label>
-					<input id="edit-likes" type="number" min="0" bind:value={editForm.likes} />
-				</div>
-				<div class="edit-metric">
-					<label for="edit-comments">Comments</label>
-					<input id="edit-comments" type="number" min="0" bind:value={editForm.comments} />
-				</div>
-				<div class="edit-metric">
-					<label for="edit-shares">Shares</label>
-					<input id="edit-shares" type="number" min="0" bind:value={editForm.shares} />
-				</div>
-				<div class="edit-metric">
-					<label for="edit-saves">Saves</label>
-					<input id="edit-saves" type="number" min="0" bind:value={editForm.saves} />
-				</div>
-			</div>
 
 			<div class="edit-row">
 				<div class="notes-label-row">
