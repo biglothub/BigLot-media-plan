@@ -2,6 +2,7 @@
 	import { onMount } from "svelte";
 	import { goto } from '$app/navigation';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
+	import { Button, Spinner, PageHeader, Badge, toast } from '$lib';
 	import type { IdeaBacklogRow, ProductionCalendarRow, ProductionStage } from "$lib/types";
 	import {
 		addMonthsIso,
@@ -23,8 +24,6 @@
 	let calendarItems = $state<ProductionCalendarRow[]>([]);
 	let loadingIdeas = $state(false);
 	let loadingCalendar = $state(false);
-	let message = $state("");
-	let errorMessage = $state("");
 	let isTouchUi = $state(false);
 	let currentMonthStart = $state(getMonthStartIso(new Date()));
 	let mobileScheduleDate = $state(getMonthStartIso(new Date()));
@@ -105,7 +104,7 @@
 
 		loadingIdeas = false;
 		if (error) {
-			errorMessage = `โหลด backlog ไม่ได้: ${error.message}`;
+			toast.error(`โหลด backlog ไม่ได้: ${error.message}`);
 			return;
 		}
 		ideas = (data ?? []) as IdeaBacklogRow[];
@@ -125,7 +124,7 @@
 
 		loadingCalendar = false;
 		if (error) {
-			errorMessage = `โหลด calendar ไม่ได้: ${error.message}`;
+			toast.error(`โหลด calendar ไม่ได้: ${error.message}`);
 			return;
 		}
 
@@ -169,13 +168,8 @@
 		}
 	}
 
-	function scrollToTop() {
-		window.scrollTo({ top: 0, behavior: "smooth" });
-	}
-
 	async function scheduleIdeaOnDate(backlogId: string, dateIso: string) {
 		if (!supabase) return;
-		errorMessage = "";
 
 		const { error } = await supabase.from("production_calendar").upsert(
 			{
@@ -187,14 +181,11 @@
 		);
 
 		if (error) {
-			errorMessage = `วางแผนใน calendar ไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
+			toast.error(`วางแผนใน calendar ไม่สำเร็จ: ${error.message}`);
 			return;
 		}
 
-		message = "อัปเดตตารางถ่ายทำแล้ว";
-		setTimeout(() => { message = ""; }, 4000);
-		scrollToTop();
+		toast.success("อัปเดตตารางถ่ายทำแล้ว");
 		await loadCalendar();
 	}
 
@@ -210,7 +201,6 @@
 
 	async function unscheduleIdea(backlogId: string) {
 		if (!supabase) return;
-		errorMessage = "";
 
 		const { data, error } = await supabase
 			.from("production_calendar")
@@ -219,21 +209,17 @@
 			.select("id");
 
 		if (error) {
-			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
+			toast.error(`ลบออกจาก calendar ไม่สำเร็จ: ${error.message}`);
 			return;
 		}
 
 		if (!data || data.length === 0) {
-			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
-			scrollToTop();
+			toast.error(`ลบออกจาก calendar ไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`);
 			await loadCalendar();
 			return;
 		}
 
-		message = "นำออกจาก calendar แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
-		scrollToTop();
+		toast.success("นำออกจาก calendar แล้ว");
 		await loadCalendar();
 	}
 
@@ -249,8 +235,7 @@
 			.eq("id", calendarId);
 
 		if (error) {
-			errorMessage = `อัปเดตสถานะไม่สำเร็จ: ${error.message}`;
-			scrollToTop();
+			toast.error(`อัปเดตสถานะไม่สำเร็จ: ${error.message}`);
 			return;
 		}
 		await loadCalendar();
@@ -271,15 +256,13 @@
 </script>
 
 <main class="page">
-	<section class="hero">
-		<p class="kicker">Planning</p>
-		<h1>Shoot Calendar</h1>
-		<p>
-			{isTouchUi
-				? 'จัดตารางถ่ายทำแบบ agenda และเลือกวันถ่ายจาก action บนการ์ด'
-				: 'ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน'}
-		</p>
-	</section>
+	<PageHeader
+		eyebrow="Planning"
+		title="Shoot Calendar"
+		subtitle={isTouchUi
+			? 'จัดตารางถ่ายทำแบบ agenda และเลือกวันถ่ายจาก action บนการ์ด'
+			: 'ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน'}
+	/>
 
 	{#if !hasSupabaseConfig}
 		<p class="alert">
@@ -288,25 +271,13 @@
 		</p>
 	{/if}
 
-	{#if message}
-		<p class="notice success">{message}</p>
-	{/if}
-
-	{#if errorMessage}
-		<p class="notice error">{errorMessage}</p>
-	{/if}
-
 	<section class="panel">
 		<div class="list-head">
 			<h2>Monthly Plan</h2>
 			<div class="calendar-controls">
-				<button class="ghost" onclick={() => shiftMonth(-1)}
-					>&larr; Prev</button
-				>
+				<Button variant="ghost" size="sm" onclick={() => shiftMonth(-1)}>&larr; Prev</Button>
 				<span>{monthLabel}</span>
-				<button class="ghost" onclick={() => shiftMonth(1)}
-					>Next &rarr;</button
-				>
+				<Button variant="ghost" size="sm" onclick={() => shiftMonth(1)}>Next &rarr;</Button>
 			</div>
 		</div>
 
@@ -328,7 +299,7 @@
 						bind:value={ideaSearch}
 					/>
 					{#if loadingIdeas}
-						<p class="empty">Loading ideas...</p>
+						<div class="loading-center"><Spinner size="sm" /></div>
 					{:else if unscheduledIdeas.length === 0}
 						<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
 					{:else if filteredUnscheduledIdeas.length === 0}
@@ -343,9 +314,9 @@
 									</div>
 									<p>{idea.title ?? "Untitled idea"}</p>
 									<p>Views: {formatCount(idea.view_count)}</p>
-									<button class="ghost mobile-action-btn" onclick={() => scheduleIdeaOnDate(idea.id, mobileScheduleDate)}>
+									<Button variant="ghost" size="sm" onclick={() => scheduleIdeaOnDate(idea.id, mobileScheduleDate)}>
 										Schedule on {formatCalendarDate(mobileScheduleDate)}
-									</button>
+									</Button>
 								</article>
 							{/each}
 						</div>
@@ -358,7 +329,7 @@
 						<span>{mobileAgendaGroups.length}</span>
 					</div>
 					{#if loadingCalendar}
-						<p class="empty">Loading calendar...</p>
+						<div class="loading-center"><Spinner size="sm" /></div>
 					{:else if mobileAgendaGroups.length === 0}
 						<p class="empty">ยังไม่มีรายการในเดือนนี้</p>
 					{:else}
@@ -423,7 +394,7 @@
 						bind:value={ideaSearch}
 					/>
 					{#if loadingIdeas}
-						<p class="empty">Loading ideas...</p>
+						<div class="loading-center"><Spinner size="sm" /></div>
 					{:else if unscheduledIdeas.length === 0}
 						<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
 					{:else if filteredUnscheduledIdeas.length === 0}
@@ -480,7 +451,7 @@
 
 				<div class="calendar-shell">
 					{#if loadingCalendar}
-						<p class="empty">Loading calendar...</p>
+						<div class="loading-center"><Spinner size="sm" /></div>
 					{:else}
 						<div class="calendar-weekdays">
 							<span>Mon</span>
@@ -606,6 +577,12 @@
 </main>
 
 <style>
+	.loading-center {
+		display: flex;
+		justify-content: center;
+		padding: var(--space-4);
+	}
+
 	.page {
 		display: grid;
 		gap: 1rem;
@@ -615,58 +592,14 @@
 	h2,
 	h3,
 	h4 {
-		font-family: "Space Grotesk", "Noto Sans Thai", sans-serif;
-	}
-
-	.hero {
-		text-align: center;
-		padding: 1.2rem 0 0.2rem;
-	}
-
-	.hero h1 {
-		margin: 0.4rem 0;
-		font-size: clamp(1.8rem, 4.4vw, 2.7rem);
-	}
-
-	.hero p {
-		margin: 0;
-		color: #475569;
-	}
-
-	.kicker {
-		margin: 0;
-		font-size: 0.78rem;
-		text-transform: uppercase;
-		letter-spacing: 0.16em;
-		color: #1d4ed8;
-		font-weight: 700;
+		font-family: var(--font-heading);
 	}
 
 	.panel {
 		padding: 1rem;
 		border-radius: 1rem;
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 		background: rgba(255, 255, 255, 0.86);
-	}
-
-	.alert,
-	.notice {
-		padding: 0.8rem 0.95rem;
-		border-radius: 0.8rem;
-		font-size: 0.9rem;
-	}
-
-	.notice.success {
-		background: rgba(22, 163, 74, 0.12);
-		color: #166534;
-		border: 1px solid rgba(22, 163, 74, 0.22);
-	}
-
-	.notice.error,
-	.alert {
-		background: rgba(220, 38, 38, 0.1);
-		color: #991b1b;
-		border: 1px solid rgba(220, 38, 38, 0.2);
 	}
 
 	.list-head {
@@ -688,16 +621,6 @@
 		gap: 0.5rem;
 	}
 
-	.ghost {
-		border: 1px solid rgba(37, 99, 235, 0.25);
-		background: rgba(37, 99, 235, 0.08);
-		color: #1d4ed8;
-		padding: 0.42rem 0.75rem;
-		border-radius: 0.65rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
-
 	.calendar-layout {
 		display: grid;
 		grid-template-columns: 300px 1fr;
@@ -713,7 +636,7 @@
 	.mobile-panel {
 		border: 1px solid rgba(15, 23, 42, 0.09);
 		border-radius: 0.9rem;
-		background: #fff;
+		background: var(--color-bg-elevated);
 		padding: 0.8rem;
 	}
 
@@ -726,7 +649,7 @@
 	.mobile-schedule-bar label {
 		font-size: 0.76rem;
 		font-weight: 700;
-		color: #475569;
+		color: var(--color-slate-600);
 	}
 
 	.mobile-idea-list,
@@ -749,7 +672,7 @@
 		padding: 0.2rem 0;
 		font-size: 0.78rem;
 		font-weight: 700;
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.idea-card--mobile {
@@ -776,7 +699,7 @@
 	.calendar-shell {
 		border: 1px solid rgba(15, 23, 42, 0.09);
 		border-radius: 0.85rem;
-		background: #fff;
+		background: var(--color-bg-elevated);
 	}
 
 	.idea-bank {
@@ -803,11 +726,11 @@
 
 	.bank-head span {
 		padding: 0.1rem 0.55rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.75rem;
 		font-weight: 700;
 		background: rgba(37, 99, 235, 0.12);
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.idea-list {
@@ -833,8 +756,8 @@
 		font: inherit;
 		padding: 0.5rem 0.7rem;
 		border-radius: 0.6rem;
-		border: 1px solid rgba(15, 23, 42, 0.14);
-		background: #fff;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
 		font-size: 0.82rem;
 		margin-bottom: 0.6rem;
 	}
@@ -850,7 +773,7 @@
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		border-radius: 0.55rem;
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 		pointer-events: none;
 	}
 
@@ -863,7 +786,7 @@
 
 	.ig-preview {
 		border: 0;
-		background: #fff;
+		background: var(--color-bg-elevated);
 		aspect-ratio: 4 / 5;
 		max-height: 180px;
 	}
@@ -876,14 +799,14 @@
 	.idea-card p {
 		margin: 0;
 		font-size: 0.76rem;
-		color: #64748b;
+		color: var(--color-slate-500);
 	}
 
 	.platform {
 		display: inline-block;
 		width: fit-content;
 		padding: 0.14rem 0.5rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.67rem;
 		font-weight: 700;
 		background: rgba(180, 83, 9, 0.14);
@@ -911,7 +834,7 @@
 		text-align: center;
 		font-size: 0.75rem;
 		font-weight: 700;
-		color: #64748b;
+		color: var(--color-slate-500);
 	}
 
 	.calendar-grid {
@@ -954,13 +877,13 @@
 
 	.calendar-day-head small {
 		font-size: 0.7rem;
-		color: #64748b;
+		color: var(--color-slate-500);
 	}
 
 	.drop-hint,
 	.empty {
 		margin: 0;
-		color: #64748b;
+		color: var(--color-slate-500);
 		font-size: 0.8rem;
 	}
 
@@ -973,7 +896,7 @@
 		box-sizing: border-box;
 		border-radius: 0.65rem;
 		border: 1px solid var(--platform-frame-color);
-		background: #fff;
+		background: var(--color-bg-elevated);
 		cursor: grab;
 		min-width: 0;
 	}
@@ -992,7 +915,7 @@
 	.calendar-code {
 		font-size: 0.67rem;
 		letter-spacing: 0.02em;
-		color: #334155;
+		color: var(--color-slate-700);
 		line-height: 1.2;
 		word-break: break-word;
 		overflow-wrap: anywhere;
@@ -1025,7 +948,7 @@
 		margin: 0;
 		font-size: 0.77rem;
 		line-height: 1.35;
-		color: #334155;
+		color: var(--color-slate-700);
 		display: -webkit-box;
 		line-clamp: 2;
 		-webkit-line-clamp: 2;
@@ -1044,7 +967,7 @@
 		display: inline-flex;
 		align-items: center;
 		padding: 0.1rem 0.4rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.62rem;
 		font-weight: 700;
 	}
@@ -1061,14 +984,14 @@
 
 	.member-chip {
 		background: rgba(37, 99, 235, 0.12);
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.calendar-item p {
 		margin: 0;
 		font-size: 0.76rem;
 		line-height: 1.3;
-		color: #475569;
+		color: var(--color-slate-600);
 	}
 
 	.tiny-danger {
@@ -1092,11 +1015,11 @@
 	.badge-member {
 		display: inline-block;
 		padding: 0.1rem 0.4rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.62rem;
 		font-weight: 700;
 		background: rgba(37, 99, 235, 0.12);
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.calendar-item-actions {
@@ -1108,7 +1031,7 @@
 	.tiny-detail {
 		border: 0;
 		background: rgba(37, 99, 235, 0.12);
-		color: #1d4ed8;
+		color: var(--color-primary);
 		border-radius: 0.5rem;
 		font-size: 0.7rem;
 		font-weight: 700;
@@ -1127,7 +1050,7 @@
 		appearance: none;
 		-webkit-appearance: none;
 		border: 0;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		padding: 0.18rem 0.55rem;
 		font-size: 0.65rem;
 		font-weight: 700;
@@ -1143,7 +1066,7 @@
 
 	.stage-select--planned {
 		background-color: rgba(100, 116, 139, 0.14);
-		color: #475569;
+		color: var(--color-slate-600);
 	}
 
 	.stage-select--scripting {
@@ -1158,7 +1081,7 @@
 
 	.stage-select--editing {
 		background-color: rgba(59, 130, 246, 0.14);
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.stage-select--published {
@@ -1187,11 +1110,9 @@
 		border-left: 3px solid #16a34a;
 	}
 
-
 	@media (max-width: 940px) {
 		.panel {
 			padding: 0.85rem;
 		}
-
 	}
 </style>
