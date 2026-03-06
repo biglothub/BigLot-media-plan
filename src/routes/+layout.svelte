@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
+	import Toaster from '$lib/components/ui/Toaster.svelte';
+	import '$lib/styles/tokens.css';
+	import '$lib/styles/base.css';
 
 	let { children } = $props();
 
@@ -61,6 +64,8 @@
 		{@render children()}
 	</div>
 
+	<Toaster />
+
 	<nav class="bottom-nav" aria-label="Mobile navigation">
 		{#each menus as menu}
 			<a class:active={isActive(menu.href)} href={menu.href}>
@@ -72,19 +77,10 @@
 
 <style>
 	:global(:root) {
-		color-scheme: light;
-		--shell-max-width: 1200px;
-		--shell-side-padding: clamp(0.9rem, 3vw, 1.25rem);
-		--shell-bottom-nav-height: 5rem;
-	}
-
-	:global(body) {
-		margin: 0;
-		font-family: 'Noto Sans Thai', sans-serif;
-		background:
-			radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 28%),
-			linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-		color: #0f172a;
+		/* legacy aliases kept for any existing page styles */
+		--shell-max-width: var(--max-width);
+		--shell-side-padding: var(--side-padding);
+		--shell-bottom-nav-height: var(--bottom-nav-height);
 	}
 
 	.app-shell {
@@ -94,24 +90,24 @@
 	.top-bar {
 		position: sticky;
 		top: 0;
-		z-index: 30;
+		z-index: var(--z-sticky);
 		padding:
 			calc(0.8rem + env(safe-area-inset-top, 0px))
-			var(--shell-side-padding)
-			0.75rem;
+			var(--side-padding)
+			var(--space-3);
 		background:
 			linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(248, 250, 252, 0.9) 100%);
 		backdrop-filter: blur(16px);
-		border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	.top-bar-inner {
-		max-width: var(--shell-max-width);
+		max-width: var(--max-width);
 		margin: 0 auto;
 		display: flex;
 		justify-content: space-between;
 		align-items: flex-end;
-		gap: 1rem;
+		gap: var(--space-4);
 	}
 
 	.mobile-heading {
@@ -121,61 +117,68 @@
 
 	.eyebrow {
 		margin: 0;
-		font-size: 0.68rem;
-		font-weight: 700;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-bold);
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
-		color: #64748b;
+		color: var(--color-slate-500);
 	}
 
 	.mobile-heading strong {
 		display: block;
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
-		font-size: 1.02rem;
-		line-height: 1.15;
+		font-family: var(--font-heading);
+		font-size: var(--text-md);
+		line-height: var(--leading-tight);
 	}
 
 	.brand {
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
-		font-weight: 700;
-		text-decoration: none;
-		color: #0f172a;
+		font-family: var(--font-heading);
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-900);
 	}
 
 	.desktop-nav {
-		max-width: var(--shell-max-width);
-		margin: 0.75rem auto 0;
+		max-width: var(--max-width);
+		margin: var(--space-3) auto 0;
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: var(--space-1);
 		flex-wrap: wrap;
 	}
 
 	.desktop-nav a,
 	.bottom-nav a {
-		text-decoration: none;
-		color: #334155;
-		padding: 0.42rem 0.8rem;
-		border-radius: 999px;
-		font-size: 0.88rem;
-		font-weight: 600;
+		color: var(--color-slate-700);
+		padding: 0.42rem var(--space-3);
+		border-radius: var(--radius-full);
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
 		border: 1px solid transparent;
+		transition:
+			background var(--transition-fast),
+			color var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+
+	.desktop-nav a:hover:not(.active),
+	.bottom-nav a:hover:not(.active) {
+		background: var(--color-slate-100);
 	}
 
 	.desktop-nav a.active,
 	.bottom-nav a.active {
-		background: rgba(37, 99, 235, 0.12);
-		border-color: rgba(37, 99, 235, 0.2);
-		color: #1d4ed8;
+		background: var(--color-primary-bg);
+		border-color: var(--color-primary-border);
+		color: var(--color-primary);
 	}
 
 	.content {
-		max-width: var(--shell-max-width);
+		max-width: var(--max-width);
 		margin: 0 auto;
 		padding:
-			1.25rem
-			var(--shell-side-padding)
-			calc(2rem + env(safe-area-inset-bottom, 0px));
+			var(--space-5)
+			var(--side-padding)
+			calc(var(--space-8) + env(safe-area-inset-bottom, 0px));
 	}
 
 	.bottom-nav {
@@ -184,7 +187,7 @@
 
 	@media (max-width: 760px) {
 		.top-bar {
-			padding-bottom: 0.8rem;
+			padding-bottom: var(--space-3);
 		}
 
 		.brand {
@@ -200,7 +203,7 @@
 		}
 
 		.content {
-			padding-bottom: calc(var(--shell-bottom-nav-height) + 1.25rem + env(safe-area-inset-bottom, 0px));
+			padding-bottom: calc(var(--bottom-nav-height) + var(--space-5) + env(safe-area-inset-bottom, 0px));
 		}
 
 		.bottom-nav {
@@ -208,25 +211,67 @@
 			left: 0;
 			right: 0;
 			bottom: 0;
-			z-index: 40;
+			z-index: var(--z-sticky);
 			display: grid;
-				grid-template-columns: repeat(3, minmax(0, 1fr));
-			gap: 0.35rem;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: var(--space-1);
 			padding:
-				0.6rem
-				0.8rem
+				var(--space-2)
+				var(--space-3)
 				calc(0.7rem + env(safe-area-inset-bottom, 0px));
 			background: rgba(255, 255, 255, 0.96);
 			backdrop-filter: blur(16px);
-			border-top: 1px solid rgba(15, 23, 42, 0.08);
+			border-top: 1px solid var(--color-border);
 			box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
 		}
 
 		.bottom-nav a {
-			padding: 0.55rem 0.2rem;
+			padding: var(--space-2) var(--space-1);
 			text-align: center;
-			font-size: 0.75rem;
-			font-weight: 700;
+			font-size: var(--text-xs);
+			font-weight: var(--fw-bold);
+		}
+	}
+
+	/* ── Global Modal (legacy inline modals) ── */
+	:global(.modal-overlay) {
+		position: fixed;
+		inset: 0;
+		z-index: var(--z-modal);
+		background: rgba(0, 0, 0, 0.45);
+		display: grid;
+		place-items: center;
+		padding: var(--space-4);
+	}
+
+	:global(.modal-box) {
+		background: var(--color-bg-elevated);
+		border-radius: var(--radius-xl);
+		padding: var(--space-6);
+		width: 100%;
+		max-width: 560px;
+		max-height: calc(100vh - 2rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
+		display: grid;
+		gap: var(--space-4);
+		align-content: start;
+		box-shadow: var(--shadow-xl);
+	}
+
+	@media (max-width: 640px) {
+		:global(.modal-overlay) {
+			padding: 0;
+			place-items: end stretch;
+		}
+
+		:global(.modal-box) {
+			max-width: none;
+			max-height: 92vh;
+			width: 100%;
+			border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+			padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
 		}
 	}
 </style>
