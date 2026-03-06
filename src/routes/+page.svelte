@@ -2177,6 +2177,7 @@
 	.edit-row {
 		display: grid;
 		gap: 0.4rem;
+		min-height: 0;
 	}
 
 	.edit-row-inline {
