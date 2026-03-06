@@ -30,9 +30,12 @@
 			label: contentCategoryLabel[category],
 		})),
 	] as const;
-	const CATEGORY_GROUP_ORDER = [...CONTENT_CATEGORY_ORDER, "uncategorized"] as const;
-	type CategoryGroupKey = (typeof CATEGORY_GROUP_ORDER)[number];
 	type SuggestedContentCategory = Exclude<BacklogContentCategory, "pin">;
+	type IdeaGroup = {
+		key: string;
+		label: string;
+		items: IdeaBacklogRow[];
+	};
 
 	function toCategorySelectValue(
 		value: BacklogContentCategory | null | undefined,
@@ -164,21 +167,38 @@
 	let savingEdit = $state(false);
 
 	const groupedIdeas = $derived.by(() => {
-		const grouped = new Map<CategoryGroupKey, IdeaBacklogRow[]>();
+		const categorizedGroups = new Map<BacklogContentCategory, IdeaBacklogRow[]>();
+		const uncategorizedGroups = new Map<SupportedPlatform, IdeaBacklogRow[]>();
 
 		for (const idea of ideas) {
 			if (!showPublished && publishedBacklogIds.has(idea.id)) continue;
-			const groupKey = (idea.content_category ?? "uncategorized") as CategoryGroupKey;
-			const bucket = grouped.get(groupKey) ?? [];
+
+			if (idea.content_category) {
+				const bucket = categorizedGroups.get(idea.content_category) ?? [];
+				bucket.push(idea);
+				categorizedGroups.set(idea.content_category, bucket);
+				continue;
+			}
+
+			const bucket = uncategorizedGroups.get(idea.platform) ?? [];
 			bucket.push(idea);
-			grouped.set(groupKey, bucket);
+			uncategorizedGroups.set(idea.platform, bucket);
 		}
 
-		return CATEGORY_GROUP_ORDER.map((key) => ({
-			key,
-			label: key === "uncategorized" ? "Uncategorized" : contentCategoryLabel[key],
-			items: grouped.get(key) ?? [],
-		})).filter((group) => group.items.length > 0);
+		const groups: IdeaGroup[] = [
+			...CONTENT_CATEGORY_ORDER.map((category) => ({
+				key: category,
+				label: contentCategoryLabel[category],
+				items: categorizedGroups.get(category) ?? [],
+			})),
+			...platformOrder.map((platform) => ({
+				key: `uncategorized-${platform}`,
+				label: `Uncategorized - ${platformLabel[platform]}`,
+				items: uncategorizedGroups.get(platform) ?? [],
+			})),
+		];
+
+		return groups.filter((group) => group.items.length > 0);
 	});
 
 	const draftTikTokEmbedUrl = $derived(
