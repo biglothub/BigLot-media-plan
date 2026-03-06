@@ -1524,7 +1524,7 @@
 						{@html notesRendered}
 					</div>
 				{:else}
-					<textarea id="edit-notes" bind:value={editForm.notes} rows={8} placeholder="กด Generate Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
+					<textarea id="edit-notes" bind:value={editForm.notes} rows={6} placeholder="กด Generate Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
 				{/if}
 			</div>
 
@@ -1637,6 +1637,12 @@
 		border-radius: 0.7rem;
 		border: 1px solid rgba(15, 23, 42, 0.14);
 		background: #fff;
+	}
+
+	#edit-notes {
+		max-height: 420px;
+		overflow-y: auto;
+		resize: vertical;
 	}
 
 	.primary {
