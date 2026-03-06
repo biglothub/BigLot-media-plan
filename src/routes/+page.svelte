@@ -115,6 +115,7 @@
 	// AI Content Plan state (used in Edit modal)
 	let generatingPlan = $state(false);
 	let planContext = $state('');
+	let showPlanExpanded = $state(false);
 
 	// AI Auto-categorize state
 	let suggestedCategory = $state<SuggestedContentCategory | null>(null);
@@ -1675,9 +1676,12 @@
 					</div>
 				{/if}
 				{#if notesViewMode === 'preview' && editForm.notes}
-					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-					<div class="notes-preview" onclick={() => { notesViewMode = 'edit'; }}>
-						{@html notesRendered}
+					<div class="notes-preview-wrap">
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="notes-preview" onclick={() => { notesViewMode = 'edit'; }}>
+							{@html notesRendered}
+						</div>
+						<button class="notes-expand-btn" onclick={() => { showPlanExpanded = true; }} title="ขยายเพื่ออ่าน">⤢</button>
 					</div>
 				{:else}
 					<textarea id="edit-notes" bind:value={editForm.notes} rows={6} placeholder="กด Generate Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
@@ -1692,6 +1696,20 @@
 			</div>
 		</div>
 	{/if}
+
+{#if showPlanExpanded}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div class="modal-overlay plan-expand-overlay" onclick={() => { showPlanExpanded = false; }}></div>
+	<div class="modal-box plan-expand-box" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === 'Escape') showPlanExpanded = false; }}>
+		<div class="plan-expand-header">
+			<span class="plan-expand-title">✦ Content Plan</span>
+			<button class="modal-close" onclick={() => { showPlanExpanded = false; }}>✕</button>
+		</div>
+		<div class="plan-expand-body notes-preview">
+			{@html notesRendered}
+		</div>
+	</div>
+{/if}
 </main>
 
 <style>
@@ -2866,6 +2884,73 @@
 		background: #f1f5f9;
 		border-color: #cbd5e1;
 		color: #334155;
+	}
+
+	.notes-preview-wrap {
+		position: relative;
+	}
+
+	.notes-expand-btn {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		background: rgba(255, 255, 255, 0.9);
+		border: 1px solid #e2e8f0;
+		border-radius: 0.4rem;
+		width: 1.75rem;
+		height: 1.75rem;
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+		color: #64748b;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.15s, color 0.15s;
+		z-index: 2;
+	}
+
+	.notes-expand-btn:hover {
+		background: #f1f5f9;
+		color: #0f172a;
+	}
+
+	.plan-expand-overlay {
+		z-index: 1100;
+	}
+
+	.plan-expand-box {
+		z-index: 1101;
+		width: min(780px, calc(100vw - 2rem));
+		max-height: calc(100vh - 3rem);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.plan-expand-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1rem 1.25rem 0.75rem;
+		border-bottom: 1px solid #e2e8f0;
+		flex-shrink: 0;
+	}
+
+	.plan-expand-title {
+		font-weight: 700;
+		font-size: 1rem;
+		color: #0f172a;
+	}
+
+	.plan-expand-body {
+		flex: 1;
+		overflow-y: auto;
+		max-height: none;
+		border: none;
+		border-radius: 0;
+		padding: 1.25rem 1.5rem;
+		font-size: 0.95rem;
+		cursor: default;
 	}
 
 	.notes-preview {

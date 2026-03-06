@@ -60,5 +60,10 @@ export async function chat(messages: Message[], options: ChatOptions = {}): Prom
 		throw new Error(`MiniMax returned no choices. Response: ${JSON.stringify(data)}`);
 	}
 
-	return data.choices[0].message.content as string;
+	const choice = data.choices[0];
+	if (choice.finish_reason === 'length') {
+		throw new Error('AI response was cut off (max_tokens reached) — try increasing max_tokens or reducing prompt size');
+	}
+
+	return choice.message.content as string;
 }

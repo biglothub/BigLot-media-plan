@@ -74,7 +74,7 @@ ${categoryNote}
 				{ role: 'system', content: systemPrompt },
 				{ role: 'user', content: userPrompt }
 			],
-			{ temperature: 0.85, max_tokens: 2000 }
+			{ temperature: 0.85, max_tokens: 4000 }
 		);
 
 		// Strip markdown code fences if present
