@@ -9,7 +9,6 @@
 	} from "$lib/types";
 	import {
 		contentTypeLabel,
-		formatCount,
 		getInstagramEmbedUrl,
 		getTikTokEmbedUrl,
 		numberFormatter,
@@ -63,6 +62,23 @@
 	let contextMenuVisible = $state(false);
 	let scheduleDate = $state("");
 	let scheduling = $state(false);
+
+	// AI Suggest Ideas modal state
+	type IdeaSuggestion = {
+		title: string;
+		description: string;
+		platform: string;
+		content_category: 'hero' | 'hub' | 'help';
+		reason: string;
+	};
+	let showSuggestModal = $state(false);
+	let suggestLoading = $state(false);
+	let suggestions = $state<IdeaSuggestion[]>([]);
+	let suggestError = $state('');
+	let acceptingIndex = $state<number | null>(null);
+
+	// AI Content Plan state (used in Edit modal)
+	let generatingPlan = $state(false);
 
 	let manualExpanded = $state(false);
 	let manualUrl = $state("");
@@ -649,6 +665,76 @@
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
 
+	async function generateContentPlan() {
+		if (!editingIdea) return;
+		generatingPlan = true;
+		try {
+			const res = await fetch('/api/openclaw/ai/content-plan', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: editForm.title || editingIdea.title,
+					description: editForm.description || editingIdea.description,
+					platform: editForm.platform,
+					content_category: editingIdea.content_category,
+				}),
+			});
+			const data = await res.json();
+			if (res.ok && data.plan) {
+				editForm.notes = data.plan;
+			} else {
+				errorMessage = data.error ?? 'Generate plan ไม่สำเร็จ';
+			}
+		} catch {
+			errorMessage = 'เชื่อมต่อ AI ไม่ได้';
+		}
+		generatingPlan = false;
+	}
+
+	async function suggestIdeas() {
+		showSuggestModal = true;
+		suggestLoading = true;
+		suggestError = '';
+		suggestions = [];
+		try {
+			const res = await fetch('/api/openclaw/ai/suggest-ideas', { method: 'POST' });
+			const body = await res.json();
+			if (!res.ok) {
+				suggestError = body.error ?? 'เกิดข้อผิดพลาด';
+			} else {
+				suggestions = body.suggestions ?? [];
+			}
+		} catch {
+			suggestError = 'เชื่อมต่อ AI ไม่ได้ กรุณาลองใหม่';
+		}
+		suggestLoading = false;
+	}
+
+	async function acceptSuggestion(s: IdeaSuggestion, index: number) {
+		acceptingIndex = index;
+		try {
+			const res = await fetch('/api/openclaw/ideas', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					platform: s.platform,
+					content_type: 'video',
+					content_category: s.content_category,
+					title: s.title,
+					description: s.description,
+				}),
+			});
+			if (res.ok) {
+				suggestions = suggestions.filter((_, i) => i !== index);
+				await loadIdeas();
+				message = `เพิ่ม "${s.title}" เข้า Backlog แล้ว`;
+				setTimeout(() => { message = ''; }, 4000);
+			}
+		} finally {
+			acceptingIndex = null;
+		}
+	}
+
 	function exportBacklogCSV() {
 		const headers = ['Code','Platform','Content Type','Title','URL','Views','Likes','Comments','Shares','Saves','Notes','Created'];
 		const rows = ideas.map(idea => [
@@ -748,9 +834,14 @@
 				placeholder="https://www.instagram.com/p/... หรือ https://www.youtube.com/watch?v=..."
 			/>
 		</div>
-		<button class="primary" onclick={analyzeLink} disabled={enriching}>
-			{enriching ? "Analyzing..." : "Analyze Link"}
-		</button>
+		<div class="panel-actions">
+			<button class="primary" onclick={analyzeLink} disabled={enriching}>
+				{enriching ? "Analyzing..." : "Analyze Link"}
+			</button>
+			<button class="ai-suggest-btn" onclick={suggestIdeas} disabled={suggestLoading}>
+				✦ ช่วยคิด idea
+			</button>
+		</div>
 	</section>
 
 	{#if message}
@@ -1148,37 +1239,6 @@
 										<p class="idea-title">
 											{idea.title ?? "Untitled idea"}
 										</p>
-										<div class="stats">
-											<div class="stat-badge">
-												<span>Views</span><span
-													>{formatCount(
-														idea.view_count,
-													)}</span
-												>
-											</div>
-											<div class="stat-badge">
-												<span>Likes</span><span
-													>{formatCount(
-														idea.like_count,
-													)}</span
-												>
-											</div>
-											<div class="stat-badge">
-												<span>Comments</span><span
-													>{formatCount(
-														idea.comment_count,
-													)}</span
-												>
-											</div>
-											<div class="stat-badge">
-												<span>Shares</span><span
-													>{formatCount(
-														idea.share_count,
-													)}</span
-												>
-											</div>
-										</div>
-
 										{#if idea.notes}
 											<p class="notes">{idea.notes}</p>
 										{/if}
@@ -1245,6 +1305,63 @@
 				</button>
 				<button class="ctx-cancel" onclick={closeContextMenu}>Cancel</button>
 			</div>
+		</div>
+	{/if}
+
+	{#if showSuggestModal}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={() => { showSuggestModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModal = false; }}></div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-box suggest-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+			<div class="modal-header">
+				<div class="modal-title">
+					<p class="modal-code">AI SUGGEST</p>
+					<h3>ช่วยคิด Content Idea</h3>
+				</div>
+				<button class="modal-close" onclick={() => { showSuggestModal = false; }}>✕</button>
+			</div>
+
+			{#if suggestLoading}
+				<div class="suggest-loading">
+					<p class="suggest-loading-label">✦ AI กำลังคิด idea...</p>
+					<div class="suggest-progress-track">
+						<div class="suggest-progress-bar"></div>
+					</div>
+					<p class="suggest-loading-sub">กำลังวิเคราะห์ backlog และสร้าง ideas ที่เหมาะกับธุรกิจ IB</p>
+				</div>
+			{:else if suggestError}
+				<p class="notice error">{suggestError}</p>
+				<button class="primary" onclick={suggestIdeas}>ลองใหม่</button>
+			{:else if suggestions.length === 0}
+				<p class="suggest-empty">ไม่มี idea ที่แนะนำ ลองกด ช่วยคิด ใหม่อีกครั้ง</p>
+				<button class="primary" onclick={suggestIdeas}>สร้าง idea ใหม่</button>
+			{:else}
+				<div class="suggest-list">
+					{#each suggestions as s, i}
+						<div class="suggest-card">
+							<div class="suggest-card-header">
+								<div class="chip-row">
+									<span class="platform">{s.platform.toUpperCase()}</span>
+									<span class="category-chip category--{s.content_category}">{s.content_category}</span>
+								</div>
+							</div>
+							<p class="suggest-title">{s.title}</p>
+							<p class="suggest-desc">{s.description}</p>
+							<p class="suggest-reason">💡 {s.reason}</p>
+							<div class="suggest-actions">
+								<button
+									class="suggest-accept"
+									onclick={() => acceptSuggestion(s, i)}
+									disabled={acceptingIndex === i}
+								>
+									{acceptingIndex === i ? 'กำลังเพิ่ม...' : '+ เพิ่มเข้า Backlog'}
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+				<button class="suggest-regenerate" onclick={suggestIdeas}>สร้าง idea ใหม่อีกชุด</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -1340,8 +1457,18 @@
 			</div>
 
 			<div class="edit-row">
-				<label for="edit-notes">Idea Notes</label>
-				<textarea id="edit-notes" bind:value={editForm.notes} rows={4} placeholder="ไอเดียจากคอนเทนต์นี้..."></textarea>
+				<div class="notes-label-row">
+					<label for="edit-notes">Idea Notes</label>
+					<button class="ai-plan-btn" onclick={generateContentPlan} disabled={generatingPlan}>
+						{generatingPlan ? '✦ กำลังวางแผน...' : '✦ Generate Content Plan'}
+					</button>
+				</div>
+				{#if generatingPlan}
+					<div class="suggest-progress-track" style="margin-bottom: 0.4rem;">
+						<div class="suggest-progress-bar"></div>
+					</div>
+				{/if}
+				<textarea id="edit-notes" bind:value={editForm.notes} rows={6} placeholder="กด Generate Content Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
 			</div>
 
 			<div class="modal-footer">
@@ -1704,21 +1831,6 @@
 		margin: 0;
 		font-size: 0.84rem;
 		color: #475569;
-	}
-
-	.stats {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.4rem;
-	}
-
-	.stat-badge {
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.78rem;
-		padding: 0.42rem 0.5rem;
-		border-radius: 0.55rem;
-		background: rgba(15, 23, 42, 0.05);
 	}
 
 	.notes {
@@ -2110,6 +2222,62 @@
 		}
 	}
 
+	@media (max-width: 640px) {
+		.list-head,
+		.panel-actions,
+		.card-actions,
+		.modal-footer {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.grid {
+			grid-template-columns: 1fr;
+		}
+
+		.dash-cards {
+			grid-template-columns: 1fr;
+		}
+
+		.metrics,
+		.edit-metrics {
+			grid-template-columns: 1fr;
+		}
+
+		.ctx-menu {
+			left: 0 !important;
+			right: 0;
+			bottom: 0;
+			top: auto !important;
+			width: auto;
+			border-radius: 1rem 1rem 0 0;
+			padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.modal-overlay {
+			display: grid;
+			place-items: end stretch;
+		}
+
+		.modal-box {
+			inset: auto 0 0;
+			max-width: none;
+			max-height: 92vh;
+			border-radius: 1rem 1rem 0 0;
+			padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.primary,
+		.ai-suggest-btn,
+		.export-btn,
+		.toggle-btn,
+		.edit-btn,
+		.danger,
+		.modal-cancel {
+			width: 100%;
+		}
+	}
+
 	.export-btn {
 		border: 1px solid rgba(15, 23, 42, 0.14);
 		background: rgba(15, 23, 42, 0.04);
@@ -2145,5 +2313,231 @@
 	.toggle-btn.active {
 		background: rgba(22, 163, 74, 0.18);
 		border-color: rgba(22, 163, 74, 0.45);
+	}
+
+	/* AI Suggest */
+	.panel-actions {
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.ai-suggest-btn {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		color: #fff;
+		border: none;
+		padding: 0.55rem 1.1rem;
+		border-radius: 0.6rem;
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.15s;
+	}
+
+	.ai-suggest-btn:hover:not(:disabled) {
+		opacity: 0.88;
+	}
+
+	.ai-suggest-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.suggest-modal {
+		max-width: 620px;
+	}
+
+	.suggest-loading {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 2rem 0;
+	}
+
+	.suggest-loading-label {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #6366f1;
+	}
+
+	.suggest-loading-sub {
+		margin: 0;
+		font-size: 0.78rem;
+		color: #94a3b8;
+	}
+
+	.suggest-progress-track {
+		width: 100%;
+		height: 6px;
+		background: #e2e8f0;
+		border-radius: 999px;
+		overflow: hidden;
+	}
+
+	.suggest-progress-bar {
+		height: 100%;
+		border-radius: 999px;
+		background: linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1);
+		background-size: 200% 100%;
+		animation: progress-slide 1.4s ease-in-out infinite;
+		width: 50%;
+	}
+
+	@keyframes progress-slide {
+		0% { background-position: 200% 0; transform: translateX(-100%); }
+		100% { background-position: -200% 0; transform: translateX(300%); }
+	}
+
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+
+	.suggest-empty {
+		color: #94a3b8;
+		font-size: 0.9rem;
+		text-align: center;
+		padding: 1rem 0;
+	}
+
+	.suggest-list {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.suggest-card {
+		border: 1px solid #e2e8f0;
+		border-radius: 0.75rem;
+		padding: 0.9rem 1rem;
+		display: grid;
+		gap: 0.4rem;
+		background: #fafafa;
+	}
+
+	.suggest-card-header {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.category-chip {
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 0.18rem 0.5rem;
+		border-radius: 0.35rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.category--hero {
+		background: rgba(220, 38, 38, 0.1);
+		color: #b91c1c;
+	}
+
+	.category--hub {
+		background: rgba(37, 99, 235, 0.1);
+		color: #1d4ed8;
+	}
+
+	.category--help {
+		background: rgba(22, 163, 74, 0.1);
+		color: #15803d;
+	}
+
+	.suggest-title {
+		margin: 0;
+		font-size: 0.95rem;
+		font-weight: 600;
+		color: #0f172a;
+		line-height: 1.35;
+	}
+
+	.suggest-desc {
+		margin: 0;
+		font-size: 0.83rem;
+		color: #475569;
+		line-height: 1.5;
+	}
+
+	.suggest-reason {
+		margin: 0;
+		font-size: 0.8rem;
+		color: #7c3aed;
+		line-height: 1.4;
+	}
+
+	.suggest-actions {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: 0.25rem;
+	}
+
+	.suggest-accept {
+		background: #0f172a;
+		color: #fff;
+		border: none;
+		padding: 0.4rem 0.9rem;
+		border-radius: 0.5rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.15s;
+	}
+
+	.suggest-accept:hover:not(:disabled) {
+		opacity: 0.8;
+	}
+
+	.suggest-accept:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.suggest-regenerate {
+		background: transparent;
+		border: 1px solid #c4b5fd;
+		color: #6d28d9;
+		padding: 0.45rem 1rem;
+		border-radius: 0.55rem;
+		font-size: 0.83rem;
+		font-weight: 600;
+		cursor: pointer;
+		width: 100%;
+		margin-top: 0.25rem;
+	}
+
+	.suggest-regenerate:hover {
+		background: rgba(109, 40, 217, 0.05);
+	}
+
+	/* Content Plan */
+	.notes-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.ai-plan-btn {
+		background: linear-gradient(135deg, #6366f1, #8b5cf6);
+		color: #fff;
+		border: none;
+		padding: 0.3rem 0.75rem;
+		border-radius: 0.45rem;
+		font-size: 0.78rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		transition: opacity 0.15s;
+	}
+
+	.ai-plan-btn:hover:not(:disabled) {
+		opacity: 0.85;
+	}
+
+	.ai-plan-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 </style>

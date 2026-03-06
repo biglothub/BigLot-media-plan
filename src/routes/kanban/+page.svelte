@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
 	import { TEAM_MEMBERS } from '$lib/team';
 	import type {
@@ -32,6 +32,8 @@
 	let loading = $state(false);
 	let message = $state('');
 	let errorMessage = $state('');
+	let isTouchUi = $state(false);
+	let mobileStage = $state<ProductionStage>('planned');
 
 	// ── Drag ────────────────────────────────────────────────────────────────
 	let draggingItemId = $state<string | null>(null);
@@ -39,6 +41,10 @@
 
 	// ── Preview panel ────────────────────────────────────────────────────────
 	let previewItem = $state<ProductionCalendarRow | null>(null);
+	let previewPanelTop = $state(16);
+	let previewPanelLeft = $state(16);
+	let previewAnchorEl = $state<HTMLElement | null>(null);
+	let previewPanelEl = $state<HTMLElement | null>(null);
 
 	const previewUrl = $derived(previewItem?.idea_backlog?.url ?? null);
 	const previewIsPortrait = $derived(
@@ -115,10 +121,18 @@
 		return map;
 	});
 
+	const visibleStages = $derived.by(() => isTouchUi ? [mobileStage] : PRODUCTION_STAGES);
+
 	// ── Helpers ──────────────────────────────────────────────────────────────
 	function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
 		const code = idea.idea_code?.trim();
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
+	}
+
+	function handleQuickStageChange(calendarId: string, event: Event) {
+		const target = event.currentTarget as HTMLSelectElement | null;
+		if (!target) return;
+		void moveCard(calendarId, target.value as ProductionStage);
 	}
 
 	// ── Data loading ─────────────────────────────────────────────────────────
@@ -175,8 +189,44 @@
 	}
 
 	// ── Preview ───────────────────────────────────────────────────────────────
-	function openPreview(item: ProductionCalendarRow) { previewItem = item; }
-	function closePreview() { previewItem = null; }
+	function positionPreviewNearAnchor(anchorEl: HTMLElement) {
+		const margin = 12;
+		const gap = 12;
+		const rect = anchorEl.getBoundingClientRect();
+		const panelWidth = previewPanelEl?.offsetWidth ?? 420;
+		const panelHeight = previewPanelEl?.offsetHeight ?? 560;
+
+		let left = rect.right + gap;
+		if (left + panelWidth + margin > window.innerWidth) {
+			left = rect.left - panelWidth - gap;
+		}
+		if (left < margin) {
+			left = Math.max(margin, window.innerWidth - panelWidth - margin);
+		}
+
+		let top = rect.top;
+		const maxTop = Math.max(margin, window.innerHeight - panelHeight - margin);
+		if (top > maxTop) top = maxTop;
+		if (top < margin) top = margin;
+
+		previewPanelTop = top;
+		previewPanelLeft = left;
+	}
+
+	async function openPreview(item: ProductionCalendarRow, event: MouseEvent) {
+		previewItem = item;
+		if (isTouchUi) return;
+		const anchorEl = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+		if (!anchorEl) return;
+		previewAnchorEl = anchorEl;
+		await tick();
+		positionPreviewNearAnchor(anchorEl);
+	}
+
+	function closePreview() {
+		previewItem = null;
+		previewAnchorEl = null;
+	}
 
 	// ── Detail modal ──────────────────────────────────────────────────────────
 	function openDetail(item: ProductionCalendarRow) {
@@ -275,13 +325,37 @@
 	onMount(() => {
 		loadCalendar();
 		const sb = supabase;
-		if (!sb) return;
+		const touchQuery = window.matchMedia('(max-width: 900px), (pointer: coarse)');
+		const syncTouchUi = () => {
+			isTouchUi = touchQuery.matches;
+			if (isTouchUi) {
+				previewAnchorEl = null;
+				return;
+			}
+			if (previewItem && previewAnchorEl) positionPreviewNearAnchor(previewAnchorEl);
+		};
+		const handleResize = () => {
+			if (previewItem && previewAnchorEl) positionPreviewNearAnchor(previewAnchorEl);
+		};
+		syncTouchUi();
+		window.addEventListener('resize', handleResize);
+		touchQuery.addEventListener('change', syncTouchUi);
+		if (!sb) {
+			return () => {
+				window.removeEventListener('resize', handleResize);
+				touchQuery.removeEventListener('change', syncTouchUi);
+			};
+		}
 		const channel = sb
 			.channel('kanban-realtime')
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'production_calendar' }, () => loadCalendar())
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_assignments' }, () => loadCalendar())
 			.subscribe();
-		return () => { sb.removeChannel(channel); };
+		return () => {
+			sb.removeChannel(channel);
+			window.removeEventListener('resize', handleResize);
+			touchQuery.removeEventListener('change', syncTouchUi);
+		};
 	});
 </script>
 
@@ -289,7 +363,7 @@
 	<section class="hero">
 		<p class="kicker">Production</p>
 		<h1>Kanban Board</h1>
-		<p>ลากการ์ดข้ามคอลัมน์เพื่ออัปเดตสถานะการผลิตคอนเทนต์</p>
+		<p>{isTouchUi ? 'เลือก stage แล้วอัปเดตสถานะจากการ์ดโดยตรง' : 'ลากการ์ดข้ามคอลัมน์เพื่ออัปเดตสถานะการผลิตคอนเทนต์'}</p>
 	</section>
 
 	{#if !hasSupabaseConfig}
@@ -306,8 +380,26 @@
 			{#if loading}
 				<p class="loading">กำลังโหลด...</p>
 			{:else}
-				<div class="board">
-					{#each PRODUCTION_STAGES as stage}
+				{#if isTouchUi}
+					<div class="mobile-stage-strip" aria-label="Select stage">
+						{#each PRODUCTION_STAGES as stage}
+							<button
+								type="button"
+								class:active={mobileStage === stage}
+								style={`--stage-color:${STAGE_META[stage].color};--stage-bg:${STAGE_META[stage].headerBg};`}
+								onclick={() => {
+									mobileStage = stage;
+									closePreview();
+								}}
+							>
+								<span>{stageLabel[stage]}</span>
+								<strong>{(boardColumns.get(stage) ?? []).length}</strong>
+							</button>
+						{/each}
+					</div>
+				{/if}
+				<div class="board {isTouchUi ? 'board--mobile' : ''}">
+					{#each visibleStages as stage}
 						{@const meta = STAGE_META[stage]}
 						{@const cards = boardColumns.get(stage) ?? []}
 						<div
@@ -315,9 +407,9 @@
 							style="--col-bg:{meta.bg};--col-header-bg:{meta.headerBg};--col-color:{meta.color}"
 							role="region"
 							aria-label={stageLabel[stage]}
-							ondragover={(e) => handleDragOver(e, stage)}
-							ondragleave={() => (dragHoverStage = null)}
-							ondrop={(e) => handleDrop(e, stage)}
+							ondragover={(e) => !isTouchUi && handleDragOver(e, stage)}
+							ondragleave={() => !isTouchUi && (dragHoverStage = null)}
+							ondrop={(e) => !isTouchUi && handleDrop(e, stage)}
 						>
 							<div class="col-header">
 								<span class="col-title">{stageLabel[stage]}</span>
@@ -330,12 +422,20 @@
 								{#each cards as item}
 									{@const bl = item.idea_backlog}
 									<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-									<article
+									<div
 										class="card stage--{item.status || 'planned'} {previewItem?.id === item.id ? 'card--active' : ''}"
-										draggable="true"
-										ondragstart={(e) => handleDragStart(e, item.id)}
+										draggable={!isTouchUi}
+										role="button"
+										tabindex="0"
+										ondragstart={(e) => !isTouchUi && handleDragStart(e, item.id)}
 										ondragend={() => { draggingItemId = null; dragHoverStage = null; }}
-										onclick={() => openPreview(item)}
+										onclick={(e) => openPreview(item, e)}
+										onkeydown={(e) => {
+											if (e.key === 'Enter' || e.key === ' ') {
+												e.preventDefault();
+												openPreview(item, e as unknown as MouseEvent);
+											}
+										}}
 									>
 										{#if bl?.thumbnail_url}
 											<img class="card-thumb" src={bl.thumbnail_url} alt={bl.title ?? 'thumbnail'} />
@@ -386,9 +486,21 @@
 											{/if}
 										</div>
 										<div class="card-actions">
+											{#if isTouchUi}
+												<select
+													class="quick-stage-select"
+													value={item.status || 'planned'}
+													onclick={(e) => e.stopPropagation()}
+													onchange={(e) => handleQuickStageChange(item.id, e)}
+												>
+													{#each PRODUCTION_STAGES as quickStage}
+														<option value={quickStage}>{stageLabel[quickStage]}</option>
+													{/each}
+												</select>
+											{/if}
 											<button class="btn-detail" onclick={(e) => { e.stopPropagation(); openDetail(item); }}>Detail</button>
 										</div>
-									</article>
+									</div>
 								{/each}
 							</div>
 						</div>
@@ -400,7 +512,11 @@
 		<!-- Preview panel — appears when a card is clicked -->
 		{#if previewItem}
 			{@const bl = previewItem.idea_backlog}
-			<aside class="preview-panel {previewIsPortrait ? 'portrait' : 'landscape'}">
+			<aside
+				bind:this={previewPanelEl}
+				class="preview-panel {previewIsPortrait ? 'portrait' : 'landscape'} {isTouchUi ? 'preview-panel--mobile' : ''}"
+				style={isTouchUi ? '' : `top: ${previewPanelTop}px; left: ${previewPanelLeft}px; --preview-top: ${previewPanelTop}px;`}
+			>
 				<div class="preview-header">
 					<div class="preview-title">
 						<p class="preview-code">{bl ? backlogCode(bl) : 'Unknown'}</p>
@@ -622,6 +738,10 @@
 		overflow-x: auto;
 	}
 
+	.mobile-stage-strip {
+		display: none;
+	}
+
 	.board {
 		display: grid;
 		grid-template-columns: repeat(6, minmax(200px, 1fr));
@@ -705,6 +825,17 @@
 	.card-members { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
 
 	.card-actions { padding: 0.35rem 0.75rem 0.55rem; display: flex; justify-content: flex-end; }
+	.quick-stage-select {
+		display: none;
+		border: 1px solid rgba(15,23,42,0.14);
+		background: #fff;
+		border-radius: 0.55rem;
+		padding: 0.34rem 0.5rem;
+		font: inherit;
+		font-size: 0.76rem;
+		color: #334155;
+		max-width: 100%;
+	}
 	.btn-detail {
 		border: 0; background: rgba(37,99,235,0.1); color: #1d4ed8;
 		border-radius: 0.45rem; font-size: 0.68rem; font-weight: 700;
@@ -714,10 +845,9 @@
 
 	/* ── Preview Panel ── */
 	.preview-panel {
-		flex-shrink: 0;
-		position: sticky;
-		top: 1rem;
-		max-height: calc(100vh - 2rem);
+		position: fixed;
+		z-index: 200;
+		max-height: calc(100vh - var(--preview-top, 1rem) - 1rem);
 		overflow-y: auto;
 		background: #fff;
 		border-radius: 1rem;
@@ -795,5 +925,109 @@
 	.revision-warn { color: #b91c1c; font-size: 0.72rem; font-weight: 700; margin-left: 0.3rem; }
 
 	@media (max-width: 1300px) { .board { grid-template-columns: repeat(3, minmax(200px, 1fr)); } }
-	@media (max-width: 700px)  { .board { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+	@media (max-width: 900px) {
+		.mobile-stage-strip {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 0.45rem;
+			margin-bottom: 0.8rem;
+		}
+
+		.mobile-stage-strip button {
+			border: 1px solid rgba(15,23,42,0.08);
+			background: #fff;
+			border-radius: 0.85rem;
+			padding: 0.6rem 0.7rem;
+			display: grid;
+			gap: 0.15rem;
+			text-align: left;
+			color: #334155;
+			font: inherit;
+			cursor: pointer;
+		}
+
+		.mobile-stage-strip button.active {
+			border-color: color-mix(in srgb, var(--stage-color) 30%, transparent);
+			background: color-mix(in srgb, var(--stage-bg) 72%, white);
+			box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-color) 18%, transparent);
+		}
+
+		.mobile-stage-strip span {
+			font-size: 0.72rem;
+			font-weight: 700;
+		}
+
+		.mobile-stage-strip strong {
+			font-size: 1rem;
+			font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		}
+
+		.board--mobile {
+			grid-template-columns: 1fr;
+			min-width: 0;
+		}
+
+		.column {
+			min-height: 0;
+		}
+
+		.card {
+			cursor: pointer;
+		}
+
+		.card-actions {
+			padding-top: 0;
+			justify-content: stretch;
+			gap: 0.45rem;
+		}
+
+		.quick-stage-select,
+		.btn-detail {
+			display: block;
+			flex: 1;
+			width: 100%;
+		}
+
+		.preview-panel--mobile {
+			position: fixed;
+			inset: auto 0 0;
+			width: auto;
+			max-height: min(82vh, 44rem);
+			border-radius: 1.2rem 1.2rem 0 0;
+			padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+			box-shadow: 0 -16px 40px rgba(15, 23, 42, 0.18);
+		}
+
+		.preview-panel--mobile.landscape,
+		.preview-panel--mobile.portrait {
+			width: auto;
+		}
+
+		.preview-panel--mobile .preview-embed iframe {
+			height: min(48vh, 22rem);
+		}
+
+		.modal-overlay {
+			padding: 0;
+			place-items: end stretch;
+		}
+
+		.modal-box {
+			max-width: none;
+			max-height: 92vh;
+			border-radius: 1.2rem 1.2rem 0 0;
+			padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.form-row,
+		.metrics-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 700px) {
+		.mobile-stage-strip {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
 </style>

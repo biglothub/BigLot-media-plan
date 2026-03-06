@@ -1033,5 +1033,70 @@
 		.phase-info { flex-direction: column; }
 		.video-row { grid-template-columns: 2rem 1fr; }
 		.video-thumb, .video-thumb-placeholder { display: none; }
+
+		.table-scroll {
+			overflow: visible;
+		}
+
+		.engagement-table,
+		.kpi-checklist,
+		.engagement-table thead,
+		.kpi-checklist thead,
+		.engagement-table tbody,
+		.kpi-checklist tbody,
+		.engagement-table tr,
+		.kpi-checklist tr,
+		.engagement-table td,
+		.kpi-checklist td {
+			display: block;
+			width: 100%;
+			box-sizing: border-box;
+		}
+
+		.engagement-table thead,
+		.kpi-checklist thead {
+			display: none;
+		}
+
+		.engagement-table tr,
+		.kpi-checklist tr {
+			margin-bottom: 0.75rem;
+			padding: 0.75rem;
+			border: 1px solid rgba(15,23,42,0.08);
+			border-radius: 0.9rem;
+			background: rgba(255,255,255,0.92);
+		}
+
+		.engagement-table td,
+		.kpi-checklist td {
+			border: none;
+			padding: 0.22rem 0;
+		}
+
+		.engagement-table td::before,
+		.kpi-checklist td::before {
+			display: block;
+			margin-bottom: 0.12rem;
+			font-size: 0.68rem;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: #94a3b8;
+		}
+
+		.engagement-table td:nth-child(1)::before { content: 'Platform'; }
+		.engagement-table td:nth-child(2)::before { content: 'Likes'; }
+		.engagement-table td:nth-child(3)::before { content: 'Comments'; }
+		.engagement-table td:nth-child(4)::before { content: 'Shares'; }
+		.engagement-table td:nth-child(5)::before { content: 'Saves'; }
+
+		.kpi-checklist td:nth-child(1)::before { content: '#'; }
+		.kpi-checklist td:nth-child(2)::before { content: 'KPI'; }
+		.kpi-checklist td:nth-child(3)::before { content: 'เกณฑ์'; }
+		.kpi-checklist td:nth-child(4)::before { content: 'สถานะ'; }
+
+		.kpi-checklist td:first-child {
+			width: 100%;
+		}
 	}
 </style>

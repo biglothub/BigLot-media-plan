@@ -6,6 +6,7 @@
 	import {
 		addMonthsIso,
 		buildMonthCells,
+		formatCalendarDate,
 		formatCalendarDayMeta,
 		formatCalendarDayNumber,
 		formatCount,
@@ -25,7 +26,9 @@
 	let loadingCalendar = $state(false);
 	let message = $state("");
 	let errorMessage = $state("");
+	let isTouchUi = $state(false);
 	let currentMonthStart = $state(getMonthStartIso(new Date()));
+	let mobileScheduleDate = $state(getMonthStartIso(new Date()));
 	let dragHoverDate = $state<string | null>(null);
 	let draggingBacklogId = $state<string | null>(null);
 	let detailItem = $state<ProductionCalendarRow | null>(null);
@@ -80,6 +83,24 @@
 			grouped.set(item.shoot_date, bucket);
 		}
 		return grouped;
+	});
+	const mobileAgendaGroups = $derived.by(() => {
+		const monthEnd = addMonthsIso(currentMonthStart, 1);
+		const grouped = new Map<string, ProductionCalendarRow[]>();
+		for (const item of calendarItems) {
+			if (item.shoot_date < currentMonthStart || item.shoot_date >= monthEnd) continue;
+			const bucket = grouped.get(item.shoot_date) ?? [];
+			bucket.push(item);
+			grouped.set(item.shoot_date, bucket);
+		}
+
+		return Array.from(grouped.entries())
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([dateIso, items]) => ({
+				dateIso,
+				label: formatCalendarDate(dateIso),
+				items: items.sort((a, b) => a.created_at.localeCompare(b.created_at)),
+			}));
 	});
 
 	function backlogCode(
@@ -151,7 +172,11 @@
 	}
 
 	function shiftMonth(months: number) {
-		currentMonthStart = addMonthsIso(currentMonthStart, months);
+		const nextMonthStart = addMonthsIso(currentMonthStart, months);
+		currentMonthStart = nextMonthStart;
+		if (mobileScheduleDate < nextMonthStart || mobileScheduleDate >= addMonthsIso(nextMonthStart, 1)) {
+			mobileScheduleDate = nextMonthStart;
+		}
 	}
 
 	function handleDragStart(event: DragEvent, backlogId: string) {
@@ -369,8 +394,17 @@
 		await loadCalendar();
 	}
 
-	onMount(async () => {
-		await Promise.all([loadIdeas(), loadCalendar()]);
+	onMount(() => {
+		const touchQuery = window.matchMedia('(max-width: 940px), (pointer: coarse)');
+		const syncTouchUi = () => {
+			isTouchUi = touchQuery.matches;
+		};
+		syncTouchUi();
+		touchQuery.addEventListener('change', syncTouchUi);
+		void Promise.all([loadIdeas(), loadCalendar()]);
+		return () => {
+			touchQuery.removeEventListener('change', syncTouchUi);
+		};
 	});
 </script>
 
@@ -379,7 +413,9 @@
 		<p class="kicker">Planning</p>
 		<h1>Shoot Calendar</h1>
 		<p>
-			ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน
+			{isTouchUi
+				? 'จัดตารางถ่ายทำแบบ agenda และเลือกวันถ่ายจาก action บนการ์ด'
+				: 'ลากไอเดียที่ยังไม่ schedule มาวางลงวันที่เพื่อวางแผนถ่ายทำรายเดือน'}
 		</p>
 	</section>
 
@@ -412,115 +448,207 @@
 			</div>
 		</div>
 
-		<div class="calendar-layout">
-			<aside class="idea-bank">
-				<div class="bank-head">
-					<h3>Unscheduled Ideas</h3>
-					<span>{unscheduledIdeas.length}</span>
-				</div>
-				<input
-					class="idea-search"
-					type="text"
-					placeholder="ค้นหาด้วยรหัสหรือชื่อ..."
-					bind:value={ideaSearch}
-				/>
-				{#if loadingIdeas}
-					<p class="empty">Loading ideas...</p>
-				{:else if unscheduledIdeas.length === 0}
-					<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
-				{:else if filteredUnscheduledIdeas.length === 0}
-					<p class="empty">ไม่พบไอเดียที่ค้นหา</p>
-				{:else}
-					<div class="idea-list">
-						{#each filteredUnscheduledIdeas as idea}
-							{@const tiktokEmbed = idea.platform === 'tiktok' && idea.url ? getTikTokEmbedUrl(idea.url) : null}
-							{@const igEmbed = idea.platform === 'instagram' && idea.url ? getInstagramEmbedUrl(idea.url) : null}
-							<article
-								class={`idea-card ${platformFrameClass(idea.platform)}`}
-								draggable="true"
-								ondragstart={(event) =>
-									handleDragStart(event, idea.id)}
-								ondragend={() => {
-									draggingBacklogId = null;
-									dragHoverDate = null;
-								}}
-							>
-								{#if tiktokEmbed}
-									<iframe
-										class="idea-preview tiktok-preview"
-										src={tiktokEmbed}
-										title="TikTok Preview"
-										loading="lazy"
-										allow="encrypted-media"
-									></iframe>
-								{:else if igEmbed}
-									<iframe
-										class="idea-preview ig-preview"
-										src={igEmbed}
-										title="Instagram Preview"
-										loading="lazy"
-										allow="encrypted-media"
-									></iframe>
-								{:else if idea.thumbnail_url}
-									<img
-										class="idea-preview"
-										src={idea.thumbnail_url}
-										alt={idea.title ?? 'thumbnail'}
-									/>
-								{/if}
-								<span class="platform"
-									>{platformLabel[idea.platform]}</span
+		{#if isTouchUi}
+			<div class="mobile-calendar">
+				<section class="mobile-panel">
+					<div class="bank-head">
+						<h3>Quick Schedule</h3>
+						<span>{unscheduledIdeas.length}</span>
+					</div>
+					<div class="mobile-schedule-bar">
+						<label for="mobile-schedule-date">Shoot date</label>
+						<input id="mobile-schedule-date" type="date" bind:value={mobileScheduleDate} />
+					</div>
+					<input
+						class="idea-search"
+						type="text"
+						placeholder="ค้นหาด้วยรหัสหรือชื่อ..."
+						bind:value={ideaSearch}
+					/>
+					{#if loadingIdeas}
+						<p class="empty">Loading ideas...</p>
+					{:else if unscheduledIdeas.length === 0}
+						<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
+					{:else if filteredUnscheduledIdeas.length === 0}
+						<p class="empty">ไม่พบไอเดียที่ค้นหา</p>
+					{:else}
+						<div class="mobile-idea-list">
+							{#each filteredUnscheduledIdeas as idea}
+								<article class={`idea-card idea-card--mobile ${platformFrameClass(idea.platform)}`}>
+									<div class="idea-mobile-head">
+										<span class="platform">{platformLabel[idea.platform]}</span>
+										<strong>{backlogCode(idea)}</strong>
+									</div>
+									<p>{idea.title ?? "Untitled idea"}</p>
+									<p>Views: {formatCount(idea.view_count)}</p>
+									<button class="ghost mobile-action-btn" onclick={() => scheduleIdeaOnDate(idea.id, mobileScheduleDate)}>
+										Schedule on {formatCalendarDate(mobileScheduleDate)}
+									</button>
+								</article>
+							{/each}
+						</div>
+					{/if}
+				</section>
+
+				<section class="mobile-panel">
+					<div class="bank-head">
+						<h3>Agenda</h3>
+						<span>{mobileAgendaGroups.length}</span>
+					</div>
+					{#if loadingCalendar}
+						<p class="empty">Loading calendar...</p>
+					{:else if mobileAgendaGroups.length === 0}
+						<p class="empty">ยังไม่มีรายการในเดือนนี้</p>
+					{:else}
+						<div class="agenda-list">
+							{#each mobileAgendaGroups as group}
+								<section class="agenda-group">
+									<div class="agenda-date">{group.label}</div>
+									<div class="agenda-items">
+										{#each group.items as item}
+											<article class={`calendar-item agenda-item stage--${item.status || 'planned'} ${platformFrameClass(item.idea_backlog?.platform)}`}>
+												<div class="calendar-item-head">
+													<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? "IDEA"}</span>
+													<strong class="calendar-code">{item.idea_backlog ? backlogCode(item.idea_backlog) : "Unknown code"}</strong>
+												</div>
+												<p class="calendar-title">{item.idea_backlog?.title ?? "Untitled idea"}</p>
+												<div class="calendar-item-meta">
+													{#if item.publish_deadline}
+														<span class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}>
+															Deadline {formatCalendarDayMeta(item.publish_deadline)}
+														</span>
+													{/if}
+													{#if (item.calendar_assignments ?? []).length > 0}
+														<span class="meta-chip member-chip">ทีม {(item.calendar_assignments ?? []).length} คน</span>
+													{/if}
+												</div>
+												<select
+													class="stage-select stage-select--{item.status || 'planned'}"
+													value={item.status || 'planned'}
+													onchange={(e) => {
+														const target = e.target as HTMLSelectElement;
+														void updateStatus(item.id, target.value as ProductionStage);
+													}}
+												>
+													{#each PRODUCTION_STAGES as stage}
+														<option value={stage}>{stageLabel[stage]}</option>
+													{/each}
+												</select>
+												<div class="calendar-item-actions">
+													<button class="tiny-detail" onclick={() => openDetail(item)}>Detail</button>
+													<button class="tiny-danger" onclick={() => unscheduleIdea(item.backlog_id)}>Unschedule</button>
+												</div>
+											</article>
+										{/each}
+									</div>
+								</section>
+							{/each}
+						</div>
+					{/if}
+				</section>
+			</div>
+		{:else}
+			<div class="calendar-layout">
+				<aside class="idea-bank">
+					<div class="bank-head">
+						<h3>Unscheduled Ideas</h3>
+						<span>{unscheduledIdeas.length}</span>
+					</div>
+					<input
+						class="idea-search"
+						type="text"
+						placeholder="ค้นหาด้วยรหัสหรือชื่อ..."
+						bind:value={ideaSearch}
+					/>
+					{#if loadingIdeas}
+						<p class="empty">Loading ideas...</p>
+					{:else if unscheduledIdeas.length === 0}
+						<p class="empty">ยังไม่มีไอเดียค้างวางแผน</p>
+					{:else if filteredUnscheduledIdeas.length === 0}
+						<p class="empty">ไม่พบไอเดียที่ค้นหา</p>
+					{:else}
+						<div class="idea-list">
+							{#each filteredUnscheduledIdeas as idea}
+								{@const tiktokEmbed = idea.platform === 'tiktok' && idea.url ? getTikTokEmbedUrl(idea.url) : null}
+								{@const igEmbed = idea.platform === 'instagram' && idea.url ? getInstagramEmbedUrl(idea.url) : null}
+								<article
+									class={`idea-card ${platformFrameClass(idea.platform)}`}
+									draggable="true"
+									ondragstart={(event) =>
+										handleDragStart(event, idea.id)}
+									ondragend={() => {
+										draggingBacklogId = null;
+										dragHoverDate = null;
+									}}
 								>
-								<h4>{backlogCode(idea)}</h4>
-								<p>{idea.title ?? "Untitled idea"}</p>
-								<p>Views: {formatCount(idea.view_count)}</p>
-							</article>
-						{/each}
-					</div>
-				{/if}
-			</aside>
-
-			<div class="calendar-shell">
-				{#if loadingCalendar}
-					<p class="empty">Loading calendar...</p>
-				{:else}
-					<div class="calendar-weekdays">
-						<span>Mon</span>
-						<span>Tue</span>
-						<span>Wed</span>
-						<span>Thu</span>
-						<span>Fri</span>
-						<span>Sat</span>
-						<span>Sun</span>
-					</div>
-					<div class="calendar-grid">
-						{#each monthCells as cell}
-							<div
-								class={`calendar-day ${cell.inCurrentMonth ? "" : "outside-month"} ${dragHoverDate === cell.dateIso ? "drop-hover" : ""}`}
-								role="region"
-								aria-label={`Shoot day ${cell.dateIso}`}
-								ondragover={(event) =>
-									handleDragOver(event, cell.dateIso)}
-								ondragleave={() => (dragHoverDate = null)}
-								ondrop={(event) =>
-									handleDropOnDate(event, cell.dateIso)}
-							>
-								<div class="calendar-day-head">
-									<strong
-										>{formatCalendarDayNumber(
-											cell.dateIso,
-										)}</strong
+									{#if tiktokEmbed}
+										<iframe
+											class="idea-preview tiktok-preview"
+											src={tiktokEmbed}
+											title="TikTok Preview"
+											loading="lazy"
+											allow="encrypted-media"
+										></iframe>
+									{:else if igEmbed}
+										<iframe
+											class="idea-preview ig-preview"
+											src={igEmbed}
+											title="Instagram Preview"
+											loading="lazy"
+											allow="encrypted-media"
+										></iframe>
+									{:else if idea.thumbnail_url}
+										<img
+											class="idea-preview"
+											src={idea.thumbnail_url}
+											alt={idea.title ?? 'thumbnail'}
+										/>
+									{/if}
+									<span class="platform"
+										>{platformLabel[idea.platform]}</span
 									>
-									<small
-										>{formatCalendarDayMeta(
-											cell.dateIso,
-										)}</small
-									>
-								</div>
+									<h4>{backlogCode(idea)}</h4>
+									<p>{idea.title ?? "Untitled idea"}</p>
+									<p>Views: {formatCount(idea.view_count)}</p>
+								</article>
+							{/each}
+						</div>
+					{/if}
+				</aside>
 
-								{#if (calendarByDate.get(cell.dateIso) ?? []).length === 0}
-									<p class="drop-hint">Drop idea here</p>
-								{/if}
+				<div class="calendar-shell">
+					{#if loadingCalendar}
+						<p class="empty">Loading calendar...</p>
+					{:else}
+						<div class="calendar-weekdays">
+							<span>Mon</span>
+							<span>Tue</span>
+							<span>Wed</span>
+							<span>Thu</span>
+							<span>Fri</span>
+							<span>Sat</span>
+							<span>Sun</span>
+						</div>
+						<div class="calendar-grid">
+							{#each monthCells as cell}
+								<div
+									class={`calendar-day ${cell.inCurrentMonth ? "" : "outside-month"} ${dragHoverDate === cell.dateIso ? "drop-hover" : ""}`}
+									role="region"
+									aria-label={`Shoot day ${cell.dateIso}`}
+									ondragover={(event) =>
+										handleDragOver(event, cell.dateIso)}
+									ondragleave={() => (dragHoverDate = null)}
+									ondrop={(event) =>
+										handleDropOnDate(event, cell.dateIso)}
+								>
+									<div class="calendar-day-head">
+										<strong>{formatCalendarDayNumber(cell.dateIso)}</strong>
+										<small>{formatCalendarDayMeta(cell.dateIso)}</small>
+									</div>
+
+									{#if (calendarByDate.get(cell.dateIso) ?? []).length === 0}
+										<p class="drop-hint">Drop idea here</p>
+									{/if}
 
 									{#each calendarByDate.get(cell.dateIso) ?? [] as item}
 										<article
@@ -533,17 +661,8 @@
 												)}
 										>
 											<div class="calendar-item-head">
-												<span class="platform"
-													>{item.idea_backlog?.platform?.toUpperCase() ??
-														"IDEA"}</span
-												>
-												<strong class="calendar-code"
-													>{item.idea_backlog
-														? backlogCode(
-																item.idea_backlog,
-															)
-														: "Unknown code"}</strong
-												>
+												<span class="platform">{item.idea_backlog?.platform?.toUpperCase() ?? "IDEA"}</span>
+												<strong class="calendar-code">{item.idea_backlog ? backlogCode(item.idea_backlog) : "Unknown code"}</strong>
 											</div>
 											<a
 												class="calendar-link"
@@ -551,25 +670,17 @@
 												target="_blank"
 												rel="noopener noreferrer"
 												onclick={(event) => {
-													if (
-														!item.idea_backlog?.url?.trim()
-													) {
+													if (!item.idea_backlog?.url?.trim()) {
 														event.preventDefault();
-														errorMessage =
-															"ไม่พบลิงก์คลิปของไอเดียนี้";
+														errorMessage = "ไม่พบลิงก์คลิปของไอเดียนี้";
 													}
 												}}
-												>
-													<p class="calendar-title">
-														{item.idea_backlog?.title ??
-															"Untitled idea"}
-													</p>
-												</a>
+											>
+												<p class="calendar-title">{item.idea_backlog?.title ?? "Untitled idea"}</p>
+											</a>
 											<div class="calendar-item-meta">
 												{#if item.publish_deadline}
-													<span
-														class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}
-													>
+													<span class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}>
 														Deadline {formatCalendarDayMeta(item.publish_deadline)}
 													</span>
 												{/if}
@@ -579,57 +690,56 @@
 													</span>
 												{/if}
 											</div>
-												<select
-													class="stage-select stage-select--{item.status || 'planned'}"
-													value={item.status || 'planned'}
-													onclick={(e) => e.stopPropagation()}
-													onchange={(e) => {
-														e.stopPropagation();
-														const target = e.target as HTMLSelectElement;
-														void updateStatus(item.id, target.value as ProductionStage);
+											<select
+												class="stage-select stage-select--{item.status || 'planned'}"
+												value={item.status || 'planned'}
+												onclick={(e) => e.stopPropagation()}
+												onchange={(e) => {
+													e.stopPropagation();
+													const target = e.target as HTMLSelectElement;
+													void updateStatus(item.id, target.value as ProductionStage);
+												}}
+											>
+												{#each PRODUCTION_STAGES as stage}
+													<option value={stage}>{stageLabel[stage]}</option>
+												{/each}
+											</select>
+											{#if (item.calendar_assignments ?? []).length > 0}
+												<div class="assignment-badges">
+													{#each item.calendar_assignments ?? [] as a}
+														<span class="badge-member">{a.member_name}</span>
+													{/each}
+												</div>
+											{/if}
+											<div class="calendar-item-actions">
+												<button
+													class="tiny-detail"
+													onclick={(event) => {
+														event.stopPropagation();
+														openDetail(item);
 													}}
 												>
-													{#each PRODUCTION_STAGES as stage}
-														<option value={stage}>{stageLabel[stage]}</option>
-													{/each}
-												</select>
-												{#if (item.calendar_assignments ?? []).length > 0}
-													<div class="assignment-badges">
-														{#each item.calendar_assignments ?? [] as a}
-															<span class="badge-member">{a.member_name}</span>
-														{/each}
-													</div>
-												{/if}
-												<div class="calendar-item-actions">
-													<button
-														class="tiny-detail"
-														onclick={(event) => {
-															event.stopPropagation();
-															openDetail(item);
-														}}
-													>
-														Detail
-													</button>
-													<button
-														class="tiny-danger"
-														onclick={(event) => {
-															event.stopPropagation();
-															void unscheduleIdea(
-																item.backlog_id,
-															);
-														}}
-													>
-														Unschedule
-													</button>
-												</div>
+													Detail
+												</button>
+												<button
+													class="tiny-danger"
+													onclick={(event) => {
+														event.stopPropagation();
+														void unscheduleIdea(item.backlog_id);
+													}}
+												>
+													Unschedule
+												</button>
+											</div>
 										</article>
 									{/each}
-							</div>
-						{/each}
-					</div>
-				{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
-		</div>
+		{/if}
 	</section>
 	{#if detailItem}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -889,6 +999,73 @@
 		grid-template-columns: 300px 1fr;
 		gap: 0.8rem;
 		align-items: start;
+	}
+
+	.mobile-calendar {
+		display: grid;
+		gap: 0.85rem;
+	}
+
+	.mobile-panel {
+		border: 1px solid rgba(15, 23, 42, 0.09);
+		border-radius: 0.9rem;
+		background: #fff;
+		padding: 0.8rem;
+	}
+
+	.mobile-schedule-bar {
+		display: grid;
+		gap: 0.35rem;
+		margin-bottom: 0.65rem;
+	}
+
+	.mobile-schedule-bar label {
+		font-size: 0.76rem;
+		font-weight: 700;
+		color: #475569;
+	}
+
+	.mobile-idea-list,
+	.agenda-list,
+	.agenda-items {
+		display: grid;
+		gap: 0.55rem;
+	}
+
+	.agenda-group {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.agenda-date {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.92) 100%);
+		padding: 0.2rem 0;
+		font-size: 0.78rem;
+		font-weight: 700;
+		color: #1d4ed8;
+	}
+
+	.idea-card--mobile {
+		cursor: default;
+	}
+
+	.idea-mobile-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.mobile-action-btn {
+		width: 100%;
+		margin-top: 0.2rem;
+	}
+
+	.agenda-item {
+		cursor: default;
 	}
 
 	.idea-bank,
@@ -1509,7 +1686,24 @@
 	}
 
 	@media (max-width: 940px) {
-		.calendar-layout {
+		.panel {
+			padding: 0.85rem;
+		}
+
+		.modal-overlay {
+			padding: 0;
+			place-items: end stretch;
+		}
+
+		.modal-box {
+			max-width: none;
+			max-height: 92vh;
+			border-radius: 1.2rem 1.2rem 0 0;
+			padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.form-row,
+		.metrics-grid {
 			grid-template-columns: 1fr;
 		}
 	}

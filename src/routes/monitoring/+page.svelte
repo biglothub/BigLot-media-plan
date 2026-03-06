@@ -50,6 +50,8 @@
 	let loading = $state(false);
 	let loadingChannelVideos = $state(false);
 	let syncingChannelVideos = $state(false);
+	let isTouchUi = $state(false);
+	let mobilePane = $state<'list' | 'detail'>('list');
 	let channelVideoLoadToken = 0;
 	let message = $state('');
 	let errorMessage = $state('');
@@ -319,6 +321,7 @@
 		const links = linksByContentId.get(contentId) ?? [];
 		selectedPlatform = links[0]?.platform ?? 'youtube';
 		hydrateSelectedForms();
+		if (isTouchUi) mobilePane = 'detail';
 	}
 
 	function selectPlatform(platform: SupportedPlatform) {
@@ -761,8 +764,18 @@
 		URL.revokeObjectURL(url);
 	}
 
-	onMount(async () => {
-		await loadAll();
+	onMount(() => {
+		const touchQuery = window.matchMedia('(max-width: 860px), (pointer: coarse)');
+		const syncTouchUi = () => {
+			isTouchUi = touchQuery.matches;
+			if (!touchQuery.matches) mobilePane = 'list';
+		};
+		syncTouchUi();
+		touchQuery.addEventListener('change', syncTouchUi);
+		void loadAll();
+		return () => {
+			touchQuery.removeEventListener('change', syncTouchUi);
+		};
 	});
 </script>
 
@@ -810,8 +823,23 @@
 	</section>
 
 	<section class="panel">
+		{#if isTouchUi}
+			<div class="mobile-pane-switch">
+				<button type="button" class:active={mobilePane === 'list'} onclick={() => (mobilePane = 'list')}>
+					Content List
+				</button>
+				<button
+					type="button"
+					class:active={mobilePane === 'detail'}
+					onclick={() => (mobilePane = 'detail')}
+					disabled={!selectedContent}
+				>
+					Detail
+				</button>
+			</div>
+		{/if}
 		<div class="monitor-layout">
-			<div class="monitor-left">
+			<div class="monitor-left {isTouchUi && mobilePane === 'detail' ? 'mobile-hidden' : ''}">
 				<div class="create-content-box">
 					<h2>Add Monitoring Content</h2>
 					<div class="row">
@@ -922,11 +950,14 @@
 				{/if}
 			</div>
 
-			<div class="monitor-right">
+			<div class="monitor-right {isTouchUi && mobilePane === 'list' ? 'mobile-hidden' : ''}">
 				{#if !selectedContent}
 					<p class="empty">เลือก content จากฝั่งซ้ายเพื่อเริ่ม monitor</p>
 				{:else}
 					<div class="source-head">
+						{#if isTouchUi}
+							<button class="ghost small mobile-back-btn" onclick={() => (mobilePane = 'list')}>← Back to list</button>
+						{/if}
 						<p class="kicker small">Selected Content</p>
 						<h3>{contentCode(selectedContent)}</h3>
 						<p class="meta"><strong>{selectedContent.title}</strong></p>
@@ -1272,6 +1303,10 @@
 		gap: 0.9rem;
 	}
 
+	.mobile-pane-switch {
+		display: none;
+	}
+
 	.monitor-left,
 	.monitor-right {
 		border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1504,6 +1539,10 @@
 
 	.source-head h3 {
 		margin: 0.2rem 0;
+	}
+
+	.mobile-back-btn {
+		margin-bottom: 0.55rem;
 	}
 
 	.head-actions {
@@ -1815,6 +1854,38 @@
 	}
 
 	@media (max-width: 860px) {
+		.mobile-pane-switch {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.45rem;
+			margin-bottom: 0.8rem;
+		}
+
+		.mobile-pane-switch button {
+			border: 1px solid rgba(15, 23, 42, 0.12);
+			background: #fff;
+			color: #334155;
+			border-radius: 999px;
+			padding: 0.55rem 0.7rem;
+			font: inherit;
+			font-size: 0.78rem;
+			font-weight: 700;
+		}
+
+		.mobile-pane-switch button.active {
+			border-color: rgba(37, 99, 235, 0.35);
+			background: rgba(37, 99, 235, 0.08);
+			color: #1d4ed8;
+		}
+
+		.mobile-pane-switch button:disabled {
+			opacity: 0.45;
+		}
+
+		.mobile-hidden {
+			display: none;
+		}
+
 		.summary-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
