@@ -813,7 +813,13 @@
 			if (res.ok && data.plan) {
 				editForm.notes = data.plan;
 				notesViewMode = 'preview';
-				await saveEdit();
+				// Auto-save notes to Supabase without closing modal
+				if (supabase && editingIdea) {
+					await supabase
+						.from('idea_backlog')
+						.update({ notes: data.plan.trim() || null })
+						.eq('id', editingIdea.id);
+				}
 			} else {
 				planError = data.error ?? 'Generate plan ไม่สำเร็จ';
 			}
