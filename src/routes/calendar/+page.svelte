@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import { goto } from '$app/navigation';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
 	import { TEAM_MEMBERS } from "$lib/team";
 	import type { IdeaBacklogRow, ProductionCalendarRow, CalendarAssignmentRow, TeamMember, ProductionStage, SupportedPlatform, BacklogContentType } from "$lib/types";
@@ -264,37 +265,7 @@
 	}
 
 	function openDetail(item: ProductionCalendarRow) {
-		detailItem = item;
-		detailNotes = item.notes ?? '';
-		detailShootDate = item.shoot_date ?? '';
-		detailPublishDeadline = item.publish_deadline ?? '';
-		detailStatus = (item.status as ProductionStage) ?? 'planned';
-
-		const bl = item.idea_backlog;
-		detailPlatform = (bl?.platform as SupportedPlatform) ?? 'youtube';
-		detailContentType = (bl?.content_type as BacklogContentType) ?? 'video';
-		detailTitle = bl?.title ?? '';
-		detailUrl = bl?.url ?? '';
-		detailAuthorName = bl?.author_name ?? '';
-		detailDescription = bl?.description ?? '';
-		detailThumbnailUrl = bl?.thumbnail_url ?? '';
-		detailPublishedAt = bl?.published_at ? new Date(bl.published_at).toISOString().slice(0, 16) : '';
-		detailViews = bl?.view_count ?? null;
-		detailLikes = bl?.like_count ?? null;
-		detailComments = bl?.comment_count ?? null;
-		detailShares = bl?.share_count ?? null;
-		detailSaves = bl?.save_count ?? null;
-
-		const existing = item.calendar_assignments ?? [];
-		assignmentDraft = {
-			'โฟน': { enabled: false, role_detail: '' },
-			'ฟิวส์': { enabled: false, role_detail: '' },
-			'อิก': { enabled: false, role_detail: '' },
-			'ต้า': { enabled: false, role_detail: '' },
-		};
-		for (const a of existing) {
-			assignmentDraft[a.member_name] = { enabled: true, role_detail: a.role_detail };
-		}
+		void goto(`/?edit=${item.backlog_id}`, { keepFocus: true, noScroll: false });
 	}
 
 	function closeDetail() {

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { marked } from "marked";
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
 	import type {
 		BacklogContentCategory,
@@ -312,6 +314,16 @@
 		const parsed = new Date(normalized);
 		if (Number.isNaN(parsed.getTime())) return null;
 		return parsed.toISOString();
+	}
+
+	function buildEditUrl(backlogId: string | null): URL {
+		const nextUrl = new URL(page.url);
+		if (backlogId) {
+			nextUrl.searchParams.set('edit', backlogId);
+		} else {
+			nextUrl.searchParams.delete('edit');
+		}
+		return nextUrl;
 	}
 
 	async function loadIdeas() {
@@ -683,7 +695,8 @@
 		await loadIdeas();
 	}
 
-	function openEditModal(idea: IdeaBacklogRow) {
+	async function openEditModal(idea: IdeaBacklogRow, options?: { syncUrl?: boolean }) {
+		const syncUrl = options?.syncUrl ?? true;
 		editingIdea = idea;
 		const calEntry = scheduledCalendarMap.get(idea.id);
 		editForm = {
@@ -706,10 +719,14 @@
 			shares: idea.share_count,
 			saves: idea.save_count,
 		};
+		if (syncUrl) {
+			await goto(buildEditUrl(idea.id), { replaceState: true, noScroll: true, keepFocus: true });
+		}
 	}
 
-	function closeEditModal() {
+	async function closeEditModal() {
 		editingIdea = null;
+		await goto(buildEditUrl(null), { replaceState: true, noScroll: true, keepFocus: true });
 	}
 
 	async function saveEdit() {
@@ -925,6 +942,22 @@
 
 	onMount(async () => {
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
+	});
+
+	$effect(() => {
+		const editId = page.url.searchParams.get('edit');
+		if (!editId || ideas.length === 0) return;
+		if (editingIdea?.id === editId) return;
+		const matchedIdea = ideas.find((idea) => idea.id === editId);
+		if (matchedIdea) {
+			void openEditModal(matchedIdea, { syncUrl: false });
+		}
+	});
+
+	$effect(() => {
+		if (page.url.searchParams.get('edit')) return;
+		if (!editingIdea) return;
+		editingIdea = null;
 	});
 </script>
 
