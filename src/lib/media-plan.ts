@@ -1,6 +1,25 @@
-import type { BacklogContentCategory, BacklogContentType, ProductionStage, SupportedPlatform } from '$lib/types';
+import type { BacklogContentCategory, BacklogContentType, IdeaBacklogRow, ProductionStage, SupportedPlatform } from '$lib/types';
 
 export const numberFormatter = new Intl.NumberFormat('en-US');
+
+export const CONTENT_CATEGORY_ORDER = ['pin', 'hero', 'hub', 'help'] as const satisfies readonly BacklogContentCategory[];
+
+export function backlogCode(idea: Pick<IdeaBacklogRow, 'id' | 'idea_code'>): string {
+	const code = idea.idea_code?.trim();
+	return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
+}
+
+export function toCategorySelectValue(
+	value: BacklogContentCategory | null | undefined,
+): BacklogContentCategory | '' {
+	return value ?? '';
+}
+
+export function fromCategorySelectValue(
+	value: BacklogContentCategory | '',
+): BacklogContentCategory | null {
+	return value || null;
+}
 
 export const platformOrder = ['youtube', 'facebook', 'instagram', 'tiktok'] as const;
 

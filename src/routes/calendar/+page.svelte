@@ -505,7 +505,7 @@
 												onclick={(event) => {
 													if (!item.idea_backlog?.url?.trim()) {
 														event.preventDefault();
-														errorMessage = "ไม่พบลิงก์คลิปของไอเดียนี้";
+														toast.error("ไม่พบลิงก์คลิปของไอเดียนี้");
 													}
 												}}
 											>
