@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { Button, Spinner, PageHeader, Badge, toast, StatsCard } from '$lib';
+	import { Button, Spinner, PageHeader, Badge, toast, StatsCard, IdeaCard } from '$lib';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
@@ -14,7 +14,9 @@
 	} from "$lib/types";
 	import {
 		backlogCode,
+		CONTENT_CATEGORY_OPTIONS,
 		CONTENT_CATEGORY_ORDER,
+		CONTENT_TYPE_OPTIONS,
 		contentCategoryLabel,
 		contentTypeLabel,
 		fromCategorySelectValue,
@@ -30,13 +32,6 @@
 	import IdeaEditModal from '$lib/components/domain/IdeaEditModal.svelte';
 	import AISuggestModal from '$lib/components/domain/AISuggestModal.svelte';
 
-	const CONTENT_CATEGORY_OPTIONS = [
-		{ value: "" as const, label: "ไม่ระบุ" },
-		...CONTENT_CATEGORY_ORDER.map((category) => ({
-			value: category as BacklogContentCategory,
-			label: contentCategoryLabel[category],
-		})),
-	];
 	type SuggestedContentCategory = Exclude<BacklogContentCategory, "pin">;
 	type IdeaGroup = {
 		key: string;
@@ -174,39 +169,11 @@
 			? getYouTubeEmbedUrl(draft.url)
 			: null,
 	);
-	const contentTypeOptions = ["video", "post", "image", "live"] as const;
 	const platformOptions = platformOrder as readonly SupportedPlatform[];
 
 
-	function plainTextContent(value: string): string {
-		return value
-			.replace(/```[\s\S]*?```/g, " ")
-			.replace(/`([^`]+)`/g, "$1")
-			.replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
-			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
-			.replace(/^#{1,6}\s+/gm, "")
-			.replace(/^\s*>\s?/gm, "")
-			.replace(/^\s*[-*+]\s+/gm, "")
-			.replace(/^\s*\d+\.\s+/gm, "")
-			.replace(/\*\*([^*]+)\*\*/g, "$1")
-			.replace(/__([^_]+)__/g, "$1")
-			.replace(/[*_~|]/g, " ")
-			.replace(/\s+/g, " ")
-			.trim();
-	}
-
 	function scrollToTop() {
 		window.scrollTo({ top: 0, behavior: "smooth" });
-	}
-
-	function platformFrameClass(
-		platform: IdeaBacklogRow["platform"] | null | undefined,
-	): string {
-		if (platform === "instagram") return "platform-frame--instagram";
-		if (platform === "tiktok") return "platform-frame--tiktok";
-		if (platform === "youtube") return "platform-frame--youtube";
-		if (platform === "facebook") return "platform-frame--facebook";
-		return "";
 	}
 
 	function clearState() {
@@ -827,7 +794,7 @@
 			<div class="row">
 				<label for="content-type">Content Type</label>
 				<select id="content-type" bind:value={selectedContentType}>
-					{#each contentTypeOptions as option}
+					{#each CONTENT_TYPE_OPTIONS as option}
 						<option value={option}
 							>{contentTypeLabel[option]}</option
 						>
@@ -904,7 +871,7 @@
 							id="manual-content-type"
 							bind:value={manualContentType}
 						>
-							{#each contentTypeOptions as option}
+							{#each CONTENT_TYPE_OPTIONS as option}
 								<option value={option}
 									>{contentTypeLabel[option]}</option
 								>
@@ -1020,124 +987,17 @@
 
 						<div class="grid category-group-grid">
 							{#each group.items as idea}
-								{@const tiktokEmbedUrl =
-									idea.platform === "tiktok" && idea.url
-										? getTikTokEmbedUrl(idea.url)
-										: null}
-								{@const instagramEmbedUrl =
-									idea.platform === "instagram" && idea.url
-										? getInstagramEmbedUrl(idea.url)
-										: null}
-								{@const notesText =
-									idea.notes ? plainTextContent(idea.notes) : null}
-								<article
-									class={`card ${platformFrameClass(idea.platform)}`}
-									oncontextmenu={(event) => openContextMenu(event, idea)}
-								>
-									{#if tiktokEmbedUrl}
-										<iframe
-											class="card-media tiktok-frame"
-											src={tiktokEmbedUrl}
-											title="TikTok Backlog Preview"
-											loading="lazy"
-											allow="encrypted-media; picture-in-picture"
-											allowfullscreen
-										></iframe>
-									{:else if instagramEmbedUrl}
-										<iframe
-											class="card-media instagram-frame"
-											src={instagramEmbedUrl}
-											title="Instagram Backlog Preview"
-											loading="lazy"
-											allow="encrypted-media; picture-in-picture"
-											allowfullscreen
-										></iframe>
-									{:else if idea.thumbnail_url}
-										<img
-											class="card-media"
-											src={idea.thumbnail_url}
-											alt={idea.title ?? "thumbnail"}
-										/>
-									{/if}
-
-									<div class="card-body">
-										<div class="head-row">
-											<div class="chip-row">
-												{#if idea.content_category}
-													<span class="category-chip category--{idea.content_category}">
-														{contentCategoryLabel[idea.content_category]}
-													</span>
-												{/if}
-												<span class="platform"
-													>{idea.platform.toUpperCase()}</span
-												>
-												<span class="content-type"
-													>{contentTypeLabel[
-														idea.content_type ??
-															"video"
-													]}</span
-												>
-											</div>
-											<div class="head-row-right">
-												{#if scheduledBacklogIds.has(idea.id)}
-													<span class="chip"
-														>Scheduled</span
-													>
-												{/if}
-												<button
-													class="dot-menu-btn"
-													onclick={(e) => { e.stopPropagation(); openContextMenu(e, idea); }}
-													title="More options"
-												>⋮</button>
-											</div>
-										</div>
-										<h3>{backlogCode(idea)}</h3>
-										<p class="idea-title">
-											{idea.title ?? "Untitled idea"}
-										</p>
-										{#if notesText}
-											<div class="notes-wrap">
-												<p class="notes" title={notesText}>{notesText}</p>
-											</div>
-										{/if}
-
-										{#if idea.url}
-											<a
-												class="link"
-												href={idea.url}
-												target="_blank"
-												rel="noreferrer">{idea.url}</a
-											>
-										{:else}
-											<p class="link link-muted">
-												No content link
-											</p>
-										{/if}
-										<div class="card-actions">
-											<button
-												class="pin-btn"
-												onclick={() => togglePinnedState(idea)}
-											>
-												{idea.content_category === "pin" ? "Unpin" : "Pin"}
-											</button>
-											<button
-												class="edit-btn"
-												onclick={() => openEditModal(idea)}
-											>
-												Edit
-											</button>
-											<button
-												class="danger"
-												onclick={() => deleteIdea(idea)}
-												disabled={deletingId === idea.id}
-											>
-												{deletingId === idea.id
-													? "Deleting..."
-													: "Delete"}
-											</button>
-										</div>
-									</div>
-								</article>
+								<IdeaCard
+									{idea}
+									code={backlogCode(idea)}
+									isScheduled={scheduledBacklogIds.has(idea.id)}
+									isDeleting={deletingId === idea.id}
+									oncontextmenu={(e, idea) => openContextMenu(e, idea)}
+									onpin={(idea) => togglePinnedState(idea)}
+									onedit={(idea) => openEditModal(idea)}
+									ondelete={(idea) => deleteIdea(idea)}
+									onmenu={(e, idea) => openContextMenu(e, idea)}
+								/>
 							{/each}
 						</div>
 					</details>
@@ -1198,7 +1058,6 @@
 		gap: 1rem;
 	}
 
-	h1,
 	h2,
 	h3 {
 		font-family: var(--font-heading);
@@ -1269,29 +1128,6 @@
 		background: var(--color-bg-elevated);
 	}
 
-	#edit-notes {
-		max-height: 420px;
-		overflow-y: auto;
-		resize: vertical;
-	}
-
-	.primary {
-		width: 100%;
-		border: 0;
-		padding: 0.8rem;
-		border-radius: 0.75rem;
-		background: #2563eb;
-		color: #fff;
-		font-weight: 700;
-		cursor: pointer;
-	}
-
-	.primary:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.notice,
 	.alert {
 		padding: 0.8rem 0.95rem;
 		border-radius: 0.8rem;
@@ -1305,13 +1141,12 @@
 		align-items: start;
 	}
 
-	.preview-media,
-	.card-media {
+	.preview-media {
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		border-radius: 0.75rem;
-		border: 1px solid rgba(15, 23, 42, 0.1);
+		border: 1px solid var(--color-border-medium);
 	}
 
 	.tiktok-frame {
@@ -1362,32 +1197,6 @@
 		margin: 0.25rem 0 0;
 		color: var(--color-slate-500);
 		font-size: 0.9rem;
-	}
-
-	.metrics {
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 0.6rem;
-		margin: 1rem 0;
-	}
-
-	.metric-item {
-		padding: 0.65rem;
-		border-radius: 0.75rem;
-		background: var(--color-bg-elevated);
-		border: 1px solid var(--color-border);
-	}
-
-	.metric-item input {
-		border: 0;
-		background: transparent;
-		padding: 0;
-		font-weight: 700;
-		font-size: 1.02rem;
-	}
-
-	.metric-item label {
-		font-size: 0.74rem;
 	}
 
 	.list-head {
@@ -1476,169 +1285,7 @@
 		gap: 0.9rem;
 	}
 
-	.card {
-		--platform-frame-color: rgba(15, 23, 42, 0.1);
-		background: var(--color-bg-elevated);
-		border-radius: 0.95rem;
-		border: 1px solid var(--platform-frame-color);
-		padding: 0.7rem;
-		display: grid;
-		gap: 0.7rem;
-	}
 
-	.platform-frame--instagram {
-		--platform-frame-color: #ec4899;
-	}
-
-	.platform-frame--tiktok {
-		--platform-frame-color: #111111;
-	}
-
-	.platform-frame--youtube {
-		--platform-frame-color: #dc2626;
-	}
-
-	.platform-frame--facebook {
-		--platform-frame-color: #1877f2;
-	}
-
-	.card-body {
-		display: grid;
-		gap: 0.55rem;
-	}
-
-	.head-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.35rem;
-		flex-wrap: wrap;
-	}
-
-	.head-row-right {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.dot-menu-btn {
-		background: none;
-		border: none;
-		padding: 0.15rem 0.4rem;
-		border-radius: 0.4rem;
-		font-size: 1.1rem;
-		line-height: 1;
-		cursor: pointer;
-		color: var(--color-slate-400);
-		transition: background var(--transition-fast), color 0.15s;
-	}
-
-	.dot-menu-btn:hover {
-		background: rgba(15, 23, 42, 0.07);
-		color: var(--color-slate-700);
-	}
-
-	.chip {
-		padding: 0.12rem 0.48rem;
-		border-radius: var(--radius-full);
-		font-size: 0.7rem;
-		font-weight: 700;
-		background: rgba(22, 163, 74, 0.12);
-		color: #166534;
-	}
-
-	.card h3 {
-		margin: 0;
-		font-size: 1rem;
-	}
-
-	.idea-title {
-		margin: 0;
-		font-size: 0.84rem;
-		color: var(--color-slate-600);
-		line-height: 1.45;
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.notes-wrap {
-		max-height: 5.9rem;
-		overflow-y: auto;
-		padding-right: 0.25rem;
-		scrollbar-width: thin;
-		scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
-	}
-
-	.notes-wrap::-webkit-scrollbar {
-		width: 0.35rem;
-	}
-
-	.notes-wrap::-webkit-scrollbar-thumb {
-		background: rgba(148, 163, 184, 0.7);
-		border-radius: var(--radius-full);
-	}
-
-	.notes {
-		margin: 0;
-		font-size: 0.85rem;
-		color: var(--color-slate-600);
-		line-height: 1.55;
-	}
-
-	.link {
-		font-size: 0.8rem;
-		color: var(--color-blue-600);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		text-decoration: none;
-	}
-
-	.link-muted {
-		margin: 0;
-		color: var(--color-slate-400);
-	}
-
-	.card-actions {
-		display: flex;
-		gap: 0.4rem;
-	}
-
-	.pin-btn {
-		flex: 1;
-		border: 1px solid rgba(180, 83, 9, 0.24);
-		background: rgba(180, 83, 9, 0.08);
-		color: #92400e;
-		padding: 0.45rem 0.6rem;
-		border-radius: 0.6rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
-
-	.edit-btn {
-		flex: 1;
-		border: 1px solid rgba(37, 99, 235, 0.24);
-		background: rgba(37, 99, 235, 0.08);
-		color: var(--color-primary);
-		padding: 0.45rem 0.6rem;
-		border-radius: 0.6rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
-
-	.danger {
-		flex: 1;
-		border: 1px solid rgba(220, 38, 38, 0.24);
-		background: rgba(220, 38, 38, 0.08);
-		color: #b91c1c;
-		padding: 0.45rem 0.6rem;
-		border-radius: 0.6rem;
-		font-weight: 700;
-		cursor: pointer;
-	}
 
 	/* Context menu */
 	.ctx-overlay {
@@ -1652,7 +1299,7 @@
 		z-index: 1000;
 		width: 260px;
 		background: var(--color-bg-elevated);
-		border: 1px solid rgba(15, 23, 42, 0.12);
+		border: 1px solid var(--color-border-medium);
 		border-radius: 0.85rem;
 		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 		padding: 0.85rem;
@@ -1735,7 +1382,7 @@
 	}
 
 	.ctx-cancel {
-		border: 1px solid rgba(15, 23, 42, 0.12);
+		border: 1px solid var(--color-border-medium);
 		padding: 0.55rem;
 		border-radius: 0.6rem;
 		background: var(--color-bg-elevated);
@@ -1801,10 +1448,6 @@
 			grid-template-columns: 1fr;
 		}
 
-		.metrics {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
 		.row-inline {
 			grid-template-columns: 1fr;
 		}
@@ -1821,8 +1464,7 @@
 
 	@media (max-width: 640px) {
 		.list-head,
-		.panel-actions,
-		.card-actions {
+		.panel-actions {
 			flex-direction: column;
 			align-items: stretch;
 		}
@@ -1832,10 +1474,6 @@
 		}
 
 		.dash-cards {
-			grid-template-columns: 1fr;
-		}
-
-		.metrics {
 			grid-template-columns: 1fr;
 		}
 
@@ -1849,20 +1487,15 @@
 			padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 		}
 
-		.primary,
-		.ai-suggest-btn,
 		.export-btn,
-		.toggle-btn,
-		.edit-btn,
-		.danger,
-		.modal-cancel {
+		.toggle-btn {
 			width: 100%;
 		}
 	}
 
 	.export-btn {
 		border: 1px solid var(--color-border-strong);
-		background: rgba(15, 23, 42, 0.04);
+		background: var(--color-bg-subtle);
 		color: var(--color-slate-600);
 		padding: 0.3rem 0.7rem;
 		border-radius: 0.55rem;
@@ -1873,7 +1506,7 @@
 	}
 
 	.export-btn:hover {
-		background: rgba(15, 23, 42, 0.08);
+		background: var(--color-border);
 	}
 
 	.toggle-btn {
@@ -1902,35 +1535,6 @@
 		gap: 0.5rem;
 		flex-wrap: wrap;
 	}
-
-	.ai-suggest-btn {
-		background: linear-gradient(135deg, #6366f1, #8b5cf6);
-		color: #fff;
-		border: none;
-		padding: 0.55rem 1.1rem;
-		border-radius: 0.6rem;
-		font-size: 0.88rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: opacity 0.15s;
-	}
-
-	.ai-suggest-btn:hover:not(:disabled) { opacity: 0.88; }
-	.ai-suggest-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-	.category-chip {
-		font-size: 0.7rem;
-		font-weight: 700;
-		padding: 0.18rem 0.5rem;
-		border-radius: 0.35rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
-	.category--hero { background: rgba(220, 38, 38, 0.1); color: #b91c1c; }
-	.category--hub { background: rgba(37, 99, 235, 0.1); color: var(--color-primary); }
-	.category--help { background: rgba(22, 163, 74, 0.1); color: #15803d; }
-	.category--pin { background: rgba(180, 83, 9, 0.12); color: #92400e; }
 
 	/* Auto-categorize */
 	.category-suggest-label {

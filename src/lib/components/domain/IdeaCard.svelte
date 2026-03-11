@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { IdeaBacklogRow, BacklogContentCategory } from '$lib/types';
-  import { contentCategoryLabel, contentTypeLabel, getTikTokEmbedUrl, getInstagramEmbedUrl } from '$lib/media-plan';
+  import type { IdeaBacklogRow } from '$lib/types';
+  import { contentTypeLabel, getTikTokEmbedUrl, getInstagramEmbedUrl } from '$lib/media-plan';
+  import { stripMarkdown } from '$lib/utils/text';
   import Badge from '$lib/components/ui/Badge.svelte';
 
   interface Props {
@@ -36,23 +37,6 @@
 
   function platformFrameClass(platform: IdeaBacklogRow['platform']): string {
     return `platform-frame--${platform}`;
-  }
-
-  function stripMarkdown(value: string): string {
-    return value
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/^\s*>\s?/gm, '')
-      .replace(/^\s*[-*+]\s+/gm, '')
-      .replace(/^\s*\d+\.\s+/gm, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/__([^_]+)__/g, '$1')
-      .replace(/[*_~|]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
   }
 
   const notesText = $derived(idea.notes ? stripMarkdown(idea.notes) : null);
@@ -286,6 +270,7 @@
     line-height: var(--leading-snug);
     margin: 0;
     display: -webkit-box;
+    line-clamp: 3;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
@@ -297,6 +282,7 @@
     line-height: var(--leading-relaxed);
     margin: 0;
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;

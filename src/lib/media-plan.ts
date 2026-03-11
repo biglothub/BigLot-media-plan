@@ -229,6 +229,13 @@ export function getMetricSource(
 	return autoMetrics[platform].includes(metric) ? 'auto' : 'manual';
 }
 
+export const CONTENT_CATEGORY_OPTIONS = [
+	{ value: '' as const, label: 'ไม่ระบุ' },
+	...CONTENT_CATEGORY_ORDER.map((cat) => ({ value: cat as BacklogContentCategory, label: contentCategoryLabel[cat] })),
+];
+
+export const CONTENT_TYPE_OPTIONS = ['video', 'post', 'image', 'live'] as const;
+
 export function isYouTubeShort(url: string): boolean {
 	try {
 		const parsed = new URL(url);
