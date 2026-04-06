@@ -1,6 +1,8 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
 export type BacklogContentType = 'video' | 'post' | 'image' | 'live';
 export type BacklogContentCategory = 'hero' | 'help' | 'hub' | 'pin';
+export type ContentJourneyStage = 'awareness' | 'trust' | 'conversion';
+export type SuggestIdeasUseCase = 'backlog' | 'carousel_studio';
 export type CarouselProjectStatus = 'draft' | 'ready' | 'exported' | 'archived';
 export type CarouselSlideRole = 'cover' | 'body' | 'cta';
 export type CarouselLayoutVariant = 'cover' | 'content' | 'cta';
@@ -50,6 +52,19 @@ export interface IdeaBacklogRow {
 	status: string;
 	engagement_json: Record<string, unknown> | null;
 	created_at: string;
+}
+
+export interface AIIdeaSuggestion {
+	title: string;
+	description: string;
+	platform: SupportedPlatform;
+	content_category: Exclude<BacklogContentCategory, 'pin'>;
+	reason: string;
+	audience: string | null;
+	hook: string | null;
+	journey_stage: ContentJourneyStage | null;
+	slide_outline: string[];
+	cta: string | null;
 }
 
 export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'review' | 'published';
