@@ -8,6 +8,7 @@ import type { AIIdeaSuggestion, ContentJourneyStage, SuggestIdeasUseCase, Suppor
 const SUPPORTED_PLATFORMS = ['youtube', 'facebook', 'instagram', 'tiktok'] as const satisfies readonly SupportedPlatform[];
 const SUPPORTED_CATEGORIES = ['hero', 'hub', 'help'] as const;
 const SUPPORTED_JOURNEY_STAGES = ['awareness', 'trust', 'conversion'] as const satisfies readonly ContentJourneyStage[];
+const DEFAULT_LINE_OA_CTA = 'แอด Line OA @biglot.ai เพื่อรับไอเดียเทรดและอัปเดตจากทีม BigLot';
 
 type SuggestIdeasRequest = {
 	prompt?: string;
@@ -95,10 +96,10 @@ function normalizeSuggestions(value: unknown, useCase: SuggestIdeasUseCase, coun
 				hook: asTrimmedString(raw.hook),
 				journey_stage: normalizeJourneyStage(raw.journey_stage),
 				slide_outline: normalizeSlideOutline(raw.slide_outline),
-				cta: asTrimmedString(raw.cta)
+				cta: asTrimmedString(raw.cta) ?? DEFAULT_LINE_OA_CTA
 			} satisfies AIIdeaSuggestion;
 		})
-		.filter((item): item is AIIdeaSuggestion => Boolean(item))
+		.filter((item): item is NonNullable<typeof item> => item !== null)
 		.slice(0, count);
 
 	if (suggestions.length === 0) {
@@ -137,7 +138,7 @@ ${input.categoryNote}
 - journey_stage ต้องเป็น awareness, trust หรือ conversion
 - hook = ข้อความเปิดที่ชัดกว่าหัวข้อหลัก
 - slide_outline = array 4-6 ข้อ เรียง flow ของแต่ละ slide แบบใช้งานได้จริง
-- cta = ปิดโพสต์ให้ชวน save, follow, comment หรือ join community
+- cta = default ให้ชวนคนเข้า Line OA @biglot.ai ถ้าโจทย์ไม่ได้ระบุ CTA อื่นชัดเจน
 - reason = อธิบายว่าทำไม idea นี้เหมาะกับ funnel และมีโอกาส perform
 - ให้ mix ทั้งมุมให้ความรู้, emotional pain point และ community conversion
 - หลีกเลี่ยงหัวข้อกว้างเกินไป เช่น "สอนเทรดทองเบื้องต้น" โดยไม่มีมุมเฉพาะ
@@ -154,7 +155,7 @@ ${customPromptBlock}
     "hook": "ข้อความเปิด / cover hook",
     "journey_stage": "awareness|trust|conversion",
     "slide_outline": ["slide 1", "slide 2", "slide 3", "slide 4"],
-    "cta": "คำชวนให้ทำ action ต่อ"
+    "cta": "แอด Line OA @biglot.ai เพื่อรับไอเดียเทรดและอัปเดตจากทีม BigLot"
   }
 ]`;
 	}
@@ -173,7 +174,7 @@ ${input.categoryNote}
 - audience ระบุกลุ่มเป้าหมายให้ชัด
 - hook เป็นประโยคเปิด content
 - slide_outline เป็น array สรุป flow 3-5 ข้อ เพื่อให้ทีมเอาไปแตกต่อได้
-- cta ต้องบอกว่าจะปิด content ยังไง
+- cta ต้องบอกว่าจะปิด content ยังไง และ default ให้ชวนคนเข้า Line OA @biglot.ai ถ้าไม่มีเงื่อนไขอื่น
 - reason ต้องบอกว่า idea นี้ช่วย Awareness/Trust/Conversion อย่างไร
 ${customPromptBlock}
 ตอบเป็น JSON array format นี้:
@@ -188,7 +189,7 @@ ${customPromptBlock}
     "hook": "ประโยคเปิด content",
     "journey_stage": "awareness|trust|conversion",
     "slide_outline": ["beat 1", "beat 2", "beat 3"],
-    "cta": "คำชวนให้ทำ action ต่อ"
+    "cta": "แอด Line OA @biglot.ai เพื่อรับไอเดียเทรดและอัปเดตจากทีม BigLot"
   }
 ]`;
 }
