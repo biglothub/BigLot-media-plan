@@ -26,6 +26,8 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.98.0",
+		"html-to-image": "^1.11.13",
+		"jszip": "^3.10.1",
 		"marked": "^17.0.4",
 		"postgres": "^3.4.8"
 	}

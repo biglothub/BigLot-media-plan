@@ -1,12 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
-
-function generateIdeaCode(): string {
-	const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-	const rand = Math.random().toString(16).slice(2, 10);
-	return `BL-${date}-${rand}`;
-}
+import { generateIdeaCode } from '$lib/server/backlog';
 
 export const GET: RequestHandler = async ({ url }) => {
 	if (!supabase) return json({ error: 'Supabase not configured' }, { status: 500 });

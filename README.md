@@ -12,7 +12,8 @@ Workflow:
 5. หรือถ้าต้องการสร้างไอเดียเอง ให้กรอกในส่วน `Create Manually` แล้วกด `Save Manual Idea` (ช่อง `Content Link` ไม่บังคับ)
 6. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
 7. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` ได้หลายแพลตฟอร์ม (YouTube/Facebook/Instagram/TikTok) เพื่อเทียบ KPI แยกแพลตฟอร์ม
-8. เข้า `Content Monitoring` เพื่อสร้างรายการ `content ที่ผลิตจริง` โดยตรง (ไม่อิง backlog) แล้วเพิ่มคลิปย้อนหลัง/ดู preview ครบทุกแพลตฟอร์ม/ดู BI performance summary
+8. เข้า `Carousel Studio` เพื่อแตก idea backlog ให้กลายเป็น Instagram carousel พร้อม AI draft, Pexels asset search และ export package
+9. เข้า `Content Monitoring` เพื่อสร้างรายการ `content ที่ผลิตจริง` โดยตรง (ไม่อิง backlog) แล้วเพิ่มคลิปย้อนหลัง/ดู preview ครบทุกแพลตฟอร์ม/ดู BI performance summary
 
 ## Tech Stack
 - SvelteKit
@@ -34,6 +35,9 @@ cp .env.example .env
 - `PUBLIC_SUPABASE_URL`
 - `PUBLIC_SUPABASE_ANON_KEY`
 - `DATABASE_URL` (Supabase Postgres connection string)
+- `DEEPSEEK_API_KEY` (AI draft generation ผ่าน DeepSeek Chat API)
+- `PEXELS_API_KEY` (Pexels stock photo search)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side upload asset เข้า bucket `carousel-assets`)
 
 3. สร้าง/อัปเดตฐานข้อมูล
 ```bash
@@ -78,6 +82,8 @@ npm run dev:auto
 
 ## โครงสร้างสำคัญ
 - หน้า UI: [`src/routes/+page.svelte`](./src/routes/+page.svelte)
+- Carousel list: [`src/routes/carousel/+page.svelte`](./src/routes/carousel/+page.svelte)
+- Carousel studio: [`src/routes/carousel/[id]/+page.svelte`](./src/routes/carousel/[id]/+page.svelte)
 - Calendar: [`src/routes/calendar/+page.svelte`](./src/routes/calendar/+page.svelte)
 - Kanban: [`src/routes/kanban/+page.svelte`](./src/routes/kanban/+page.svelte)
 - KPI Compare: [`src/routes/kpi/+page.svelte`](./src/routes/kpi/+page.svelte)
