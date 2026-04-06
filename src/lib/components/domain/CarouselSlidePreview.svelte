@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { carouselRoleLabel, getCarouselSelectedAssetUrl } from '$lib/carousel';
+	import { getCarouselSelectedAssetUrl } from '$lib/carousel';
 	import type { CarouselSlideRow } from '$lib/types';
 
 	interface Props {
@@ -11,7 +11,6 @@
 	let { slide, fallbackAssetUrl = null, exportId = '' }: Props = $props();
 
 	const backgroundUrl = $derived(getCarouselSelectedAssetUrl(slide) ?? fallbackAssetUrl);
-	const isCover = $derived(slide.layout_variant === 'cover');
 	const isCta = $derived(slide.layout_variant === 'cta');
 </script>
 
@@ -19,15 +18,7 @@
 	<div class="slide-preview-bg" style:background-image={backgroundUrl ? `url("${backgroundUrl}")` : 'none'}></div>
 	<div class="slide-preview-noise"></div>
 	<div class="slide-preview-content">
-		<div class="slide-preview-top">
-			<span class="slide-preview-kicker">BigLot Carousel</span>
-			<span class="slide-preview-step">{String(slide.position).padStart(2, '0')} · {carouselRoleLabel[slide.role]}</span>
-		</div>
-
 		<div class="slide-preview-main">
-			{#if isCover}
-				<p class="slide-preview-eyebrow">Instagram-first storyboard</p>
-			{/if}
 			<h3>{slide.headline ?? 'Untitled slide'}</h3>
 			{#if slide.body}
 				<p class="slide-preview-body">{slide.body}</p>
@@ -37,11 +28,6 @@
 			{:else if slide.cta}
 				<p class="slide-preview-cta-note">{slide.cta}</p>
 			{/if}
-		</div>
-
-		<div class="slide-preview-footer">
-			<p>{slide.visual_brief ?? 'Add a visual brief for this slide'}</p>
-			<span>{slide.freepik_query ?? 'No Pexels query yet'}</span>
 		</div>
 	</div>
 </article>
@@ -86,45 +72,14 @@
 		height: 100%;
 		padding: 1.15rem;
 		display: flex;
-		flex-direction: column;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.slide-preview-top {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		font-size: 0.72rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.09em;
-	}
-
-	.slide-preview-kicker {
-		padding: 0.28rem 0.65rem;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.12);
-		backdrop-filter: blur(8px);
-	}
-
-	.slide-preview-step {
-		color: rgba(255, 255, 255, 0.82);
+		align-items: stretch;
 	}
 
 	.slide-preview-main {
 		display: grid;
 		gap: 0.8rem;
 		align-content: center;
-	}
-
-	.slide-preview-eyebrow {
-		margin: 0;
-		font-size: 0.78rem;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: rgba(255, 255, 255, 0.72);
+		margin: auto 0;
 	}
 
 	h3 {
@@ -165,33 +120,6 @@
 		font-size: 0.84rem;
 		font-weight: 700;
 		color: rgba(255, 255, 255, 0.88);
-	}
-
-	.slide-preview-footer {
-		display: grid;
-		gap: 0.45rem;
-		padding: 0.85rem;
-		border-radius: 1rem;
-		background: rgba(15, 23, 42, 0.34);
-		backdrop-filter: blur(10px);
-	}
-
-	.slide-preview-footer p,
-	.slide-preview-footer span {
-		margin: 0;
-	}
-
-	.slide-preview-footer p {
-		font-size: 0.78rem;
-		line-height: 1.45;
-		color: rgba(255, 255, 255, 0.9);
-	}
-
-	.slide-preview-footer span {
-		font-size: 0.72rem;
-		color: rgba(255, 255, 255, 0.68);
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
 	}
 
 	.slide-preview--content h3 {
