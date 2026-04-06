@@ -6,6 +6,12 @@ export type SuggestIdeasUseCase = 'backlog' | 'carousel_studio';
 export type CarouselProjectStatus = 'draft' | 'ready' | 'exported' | 'archived';
 export type CarouselSlideRole = 'cover' | 'body' | 'cta';
 export type CarouselLayoutVariant = 'cover' | 'content' | 'cta';
+export type CarouselFontPreset =
+	| 'biglot'
+	| 'apple_clean'
+	| 'mitr_friendly'
+	| 'ibm_plex_thai'
+	| 'editorial_serif';
 
 import type { TeamMember } from '$lib/team';
 export type { TeamMember } from '$lib/team';
@@ -156,6 +162,8 @@ export interface CarouselProjectRow {
 	backlog_id: string;
 	platform: 'instagram';
 	status: CarouselProjectStatus;
+	font_preset: CarouselFontPreset;
+	text_letter_spacing_em: number;
 	title: string | null;
 	visual_direction: string | null;
 	caption: string | null;

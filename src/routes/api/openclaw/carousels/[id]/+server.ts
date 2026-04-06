@@ -1,9 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { normalizeHashtags } from '$lib/carousel';
+import { normalizeCarouselTextLetterSpacingEm, normalizeHashtags } from '$lib/carousel';
 import { supabase } from '$lib/supabase';
-import { getCarouselBundle, recomputeCarouselStatus } from '$lib/server/carousel-store';
-import type { CarouselProjectStatus } from '$lib/types';
+import { getCarouselBundle, isMissingCarouselProjectColumnError, recomputeCarouselStatus } from '$lib/server/carousel-store';
+import type { CarouselFontPreset, CarouselProjectStatus } from '$lib/types';
 
 export const GET: RequestHandler = async ({ params }) => {
 	try {
@@ -27,6 +27,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		};
 
 		if (body.title !== undefined) updates.title = typeof body.title === 'string' ? body.title.trim() || null : null;
+		if (body.font_preset !== undefined) updates.font_preset = body.font_preset as CarouselFontPreset;
+		if (body.text_letter_spacing_em !== undefined) {
+			updates.text_letter_spacing_em = normalizeCarouselTextLetterSpacingEm(body.text_letter_spacing_em);
+		}
 		if (body.visual_direction !== undefined) {
 			updates.visual_direction = typeof body.visual_direction === 'string' ? body.visual_direction.trim() || null : null;
 		}
@@ -46,7 +50,24 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			return json({ error: 'No fields to update' }, { status: 400 });
 		}
 
-		const { error } = await supabase.from('carousel_projects').update(updates).eq('id', params.id);
+		let pendingUpdates: Record<string, unknown> = { ...updates };
+		let { error } = await supabase.from('carousel_projects').update(pendingUpdates).eq('id', params.id);
+		while (error) {
+			const unsupportedColumns = ['font_preset', 'text_letter_spacing_em'].filter(
+				(column) => column in pendingUpdates && isMissingCarouselProjectColumnError(error, column)
+			);
+			if (unsupportedColumns.length === 0) break;
+			for (const column of unsupportedColumns) {
+				delete pendingUpdates[column];
+			}
+			if (Object.keys(pendingUpdates).length === 1) {
+				error = null;
+				break;
+			}
+			const retryResult = await supabase.from('carousel_projects').update(pendingUpdates).eq('id', params.id);
+			error = retryResult.error;
+		}
+
 		if (error) {
 			return json({ error: error.message }, { status: 500 });
 		}

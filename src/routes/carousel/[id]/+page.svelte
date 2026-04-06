@@ -1,16 +1,22 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
 	import {
+		CAROUSEL_FONT_PRESETS,
+		CAROUSEL_TEXT_LETTER_SPACING_MAX_EM,
+		CAROUSEL_TEXT_LETTER_SPACING_MIN_EM,
+		CAROUSEL_TEXT_LETTER_SPACING_STEP_EM,
 		DEFAULT_CAROUSEL_SLIDE_COUNT,
+		DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM,
 		deriveCarouselProjectStatus,
+		getCarouselFontPresetDefinition,
 		getCarouselProjectBlockers,
 		getCarouselSlideReadiness,
 		INSTAGRAM_CAROUSEL_HEIGHT,
 		INSTAGRAM_CAROUSEL_WIDTH,
+		normalizeCarouselTextLetterSpacingEm,
 		normalizeHashtags,
 		carouselStatusLabel
 	} from '$lib/carousel';
@@ -49,6 +55,8 @@
 		project = {
 			...body,
 			carousel_slides: undefined,
+			font_preset: body.font_preset ?? 'biglot',
+			text_letter_spacing_em: normalizeCarouselTextLetterSpacingEm(body.text_letter_spacing_em),
 			title: body.title ?? '',
 			visual_direction: body.visual_direction ?? '',
 			caption: body.caption ?? '',
@@ -87,6 +95,11 @@
 	function slideReadiness(slide: CarouselSlideRow) {
 		return getCarouselSlideReadiness(slide);
 	}
+
+	const selectedFontPreset = $derived(getCarouselFontPresetDefinition(project?.font_preset ?? 'biglot'));
+	const selectedLetterSpacingLabel = $derived(
+		`${normalizeCarouselTextLetterSpacingEm(project?.text_letter_spacing_em ?? DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM).toFixed(2)}em`
+	);
 
 	async function loadProject() {
 		loading = true;
@@ -137,6 +150,8 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					title: project.title,
+					font_preset: project.font_preset,
+					text_letter_spacing_em: project.text_letter_spacing_em,
 					visual_direction: project.visual_direction,
 					caption: project.caption,
 					hashtags_json: parseHashtagsInput(hashtagsInput)
@@ -420,8 +435,8 @@
 					<Badge variant="platform" value="instagram" />
 					<Badge variant="neutral" label={`${slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT} slides`} />
 				</div>
-				<h2>{project.idea_backlog?.title ?? project.title ?? 'Untitled idea'}</h2>
-				<p>{project.idea_backlog?.description ?? 'ยังไม่มี description ใน backlog item นี้'}</p>
+				<h2>{project.title ?? 'Untitled carousel'}</h2>
+				<p>{project.caption?.trim() || project.visual_direction?.trim() || 'ยังไม่มี caption หรือ visual direction'}</p>
 			</div>
 
 			<div class="studio-metrics">
@@ -470,7 +485,7 @@
 			{/if}
 
 			<div class="studio-grid">
-			<section class="meta-panel">
+				<section class="meta-panel">
 				<div class="panel-headline">
 					<div>
 						<p class="panel-kicker">Project meta</p>
@@ -482,6 +497,55 @@
 				<label>
 					<span>Carousel title</span>
 					<input bind:value={project.title} placeholder="ชื่อ carousel" />
+				</label>
+
+				<label>
+					<span>Font preset</span>
+					<select bind:value={project.font_preset}>
+						{#each CAROUSEL_FONT_PRESETS as preset}
+							<option value={preset.value}>{preset.label} · {preset.description}</option>
+						{/each}
+					</select>
+				</label>
+
+				<div class="font-preview-card">
+					<p class="context-label">Active font</p>
+					<strong
+						style:font-family={selectedFontPreset.headingFont}
+						style:letter-spacing={selectedLetterSpacingLabel}
+					>
+						{selectedFontPreset.label}
+					</strong>
+					<p
+						style:font-family={selectedFontPreset.bodyFont}
+						style:letter-spacing={selectedLetterSpacingLabel}
+					>
+						{selectedFontPreset.description}
+					</p>
+				</div>
+
+				<label>
+					<span>Letter spacing</span>
+					<div class="letter-spacing-field">
+						<input
+							type="range"
+							min={CAROUSEL_TEXT_LETTER_SPACING_MIN_EM}
+							max={CAROUSEL_TEXT_LETTER_SPACING_MAX_EM}
+							step={CAROUSEL_TEXT_LETTER_SPACING_STEP_EM}
+							bind:value={project.text_letter_spacing_em}
+						/>
+						<div class="letter-spacing-input">
+							<input
+								type="number"
+								min={CAROUSEL_TEXT_LETTER_SPACING_MIN_EM}
+								max={CAROUSEL_TEXT_LETTER_SPACING_MAX_EM}
+								step={CAROUSEL_TEXT_LETTER_SPACING_STEP_EM}
+								bind:value={project.text_letter_spacing_em}
+							/>
+							<span>em</span>
+						</div>
+					</div>
+					<small>ค่าลบทำให้ตัวอักษรชิดขึ้น ค่าบวกทำให้ช่องไฟกว้างขึ้น</small>
 				</label>
 
 				<label>
@@ -503,19 +567,18 @@
 			<aside class="context-panel">
 				<div class="panel-headline">
 					<div>
-						<p class="panel-kicker">Backlog context</p>
-						<h3>Source idea</h3>
+						<p class="panel-kicker">Project context</p>
+						<h3>Studio status</h3>
 					</div>
-					<Button variant="ghost" onclick={() => { if (project) void goto(`/?edit=${project.backlog_id}`); }}>Open Idea</Button>
 				</div>
 
 				<div class="context-card">
-					<p class="context-label">Idea code</p>
-					<strong>{project.idea_backlog?.idea_code ?? project.backlog_id}</strong>
+					<p class="context-label">Project ref</p>
+					<strong>{project.id.slice(0, 8)}</strong>
 				</div>
 				<div class="context-card">
-					<p class="context-label">Notes</p>
-					<p>{project.idea_backlog?.notes ?? 'ยังไม่มี notes'}</p>
+					<p class="context-label">Visual direction</p>
+					<p>{project.visual_direction?.trim() || 'ยังไม่มี visual direction'}</p>
 				</div>
 				<div class="context-card">
 					<p class="context-label">Readiness</p>
@@ -542,7 +605,13 @@
 					{#each slides as slide}
 						<article class="slide-row">
 							<div class="slide-preview-col">
-								<CarouselSlidePreview slide={slide} fallbackAssetUrl={previewAssetForSlide(slide)} exportId={slide.id} />
+								<CarouselSlidePreview
+									slide={slide}
+									fontPreset={project.font_preset}
+									textLetterSpacingEm={project.text_letter_spacing_em}
+									fallbackAssetUrl={previewAssetForSlide(slide)}
+									exportId={slide.id}
+								/>
 							</div>
 
 							<div class="slide-editor-col">
@@ -858,6 +927,12 @@
 		gap: 0.45rem;
 	}
 
+	small {
+		font-size: 0.74rem;
+		line-height: 1.5;
+		color: var(--color-slate-500);
+	}
+
 	input,
 	textarea,
 	select {
@@ -887,6 +962,66 @@
 	.context-card strong {
 		font-size: 1rem;
 		color: var(--color-slate-900);
+	}
+
+	.font-preview-card {
+		display: grid;
+		gap: 0.3rem;
+		padding: 0.95rem 1rem;
+		border-radius: 1rem;
+		background: var(--color-slate-50);
+		border: 1px solid var(--color-border);
+	}
+
+	.font-preview-card strong,
+	.font-preview-card p {
+		margin: 0;
+	}
+
+	.font-preview-card strong {
+		font-size: 1.15rem;
+		color: var(--color-slate-900);
+	}
+
+	.font-preview-card p {
+		color: var(--color-slate-600);
+		line-height: 1.5;
+	}
+
+	.letter-spacing-field {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: var(--space-3);
+		align-items: center;
+	}
+
+	.letter-spacing-field input[type='range'] {
+		padding: 0;
+		border: none;
+		background: transparent;
+	}
+
+	.letter-spacing-input {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.72rem 0.85rem;
+		border-radius: 0.95rem;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
+	}
+
+	.letter-spacing-input input[type='number'] {
+		width: 5.5rem;
+		padding: 0;
+		border: none;
+		border-radius: 0;
+	}
+
+	.letter-spacing-input span {
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: var(--color-slate-500);
 	}
 
 	.slide-list {
@@ -1077,7 +1212,8 @@
 
 	@media (max-width: 720px) {
 		.field-grid,
-		.field-grid--query {
+		.field-grid--query,
+		.letter-spacing-field {
 			grid-template-columns: 1fr;
 		}
 	}

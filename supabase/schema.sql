@@ -283,6 +283,8 @@ CREATE TABLE IF NOT EXISTS public.carousel_projects (
     CHECK (platform IN ('instagram')),
   status            text NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'ready', 'exported', 'archived')),
+  font_preset       text NOT NULL DEFAULT 'biglot'
+    CHECK (font_preset IN ('biglot', 'apple_clean', 'mitr_friendly', 'ibm_plex_thai', 'editorial_serif')),
   title             text,
   visual_direction  text,
   caption           text,

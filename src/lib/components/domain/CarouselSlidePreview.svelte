@@ -1,20 +1,41 @@
 <script lang="ts">
-	import { getCarouselSelectedAssetUrl } from '$lib/carousel';
-	import type { CarouselSlideRow } from '$lib/types';
+	import {
+		DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM,
+		getCarouselFontPresetDefinition,
+		getCarouselSelectedAssetUrl,
+		normalizeCarouselTextLetterSpacingEm
+	} from '$lib/carousel';
+	import type { CarouselFontPreset, CarouselSlideRow } from '$lib/types';
 
 	interface Props {
 		slide: CarouselSlideRow;
+		fontPreset?: CarouselFontPreset;
+		textLetterSpacingEm?: number;
 		fallbackAssetUrl?: string | null;
 		exportId?: string;
 	}
 
-	let { slide, fallbackAssetUrl = null, exportId = '' }: Props = $props();
+	let {
+		slide,
+		fontPreset = 'biglot',
+		textLetterSpacingEm = DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM,
+		fallbackAssetUrl = null,
+		exportId = ''
+	}: Props = $props();
 
 	const backgroundUrl = $derived(getCarouselSelectedAssetUrl(slide) ?? fallbackAssetUrl);
 	const isCta = $derived(slide.layout_variant === 'cta');
+	const fontPresetDefinition = $derived(getCarouselFontPresetDefinition(fontPreset));
+	const textLetterSpacingCss = $derived(`${normalizeCarouselTextLetterSpacingEm(textLetterSpacingEm)}em`);
 </script>
 
-<article class="slide-preview slide-preview--{slide.layout_variant}" data-export-slide-id={exportId || slide.id}>
+<article
+	class="slide-preview slide-preview--{slide.layout_variant}"
+	data-export-slide-id={exportId || slide.id}
+	style:--carousel-font-heading={fontPresetDefinition.headingFont}
+	style:--carousel-font-body={fontPresetDefinition.bodyFont}
+	style:--carousel-text-letter-spacing={textLetterSpacingCss}
+>
 	<div class="slide-preview-bg" style:background-image={backgroundUrl ? `url("${backgroundUrl}")` : 'none'}></div>
 	<div class="slide-preview-noise"></div>
 	<div class="slide-preview-content">
@@ -42,6 +63,8 @@
 			radial-gradient(circle at top left, rgba(251, 146, 60, 0.24), transparent 42%),
 			linear-gradient(160deg, #111827 0%, #172554 42%, #431407 100%);
 		color: #fff;
+		font-family: var(--carousel-font-body);
+		letter-spacing: var(--carousel-text-letter-spacing, 0em);
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		box-shadow: var(--shadow-lg);
 	}
@@ -84,7 +107,7 @@
 
 	h3 {
 		margin: 0;
-		font-family: var(--font-heading);
+		font-family: var(--carousel-font-heading);
 		font-size: clamp(1.45rem, 2.7vw, 2.4rem);
 		line-height: 1.02;
 		text-wrap: balance;
@@ -111,6 +134,7 @@
 		border-radius: 999px;
 		background: #fff;
 		color: #0f172a;
+		font-family: var(--carousel-font-body);
 		font-weight: 800;
 		font-size: 0.94rem;
 		max-width: fit-content;

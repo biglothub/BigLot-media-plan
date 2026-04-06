@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { marked } from 'marked';
 	import { Button, Modal, toast } from '$lib';
 	import { supabase, hasSupabaseConfig } from '$lib/supabase';
@@ -102,7 +101,6 @@
 	let generatingPlan = $state(false);
 	let planContext = $state('');
 	let planError = $state('');
-	let openingCarousel = $state(false);
 
 	async function saveEdit() {
 		if (!supabase) return;
@@ -249,28 +247,6 @@
 			planError = 'เชื่อมต่อ AI ไม่ได้';
 		}
 		generatingPlan = false;
-	}
-
-	async function openCarouselStudio() {
-		openingCarousel = true;
-		try {
-			const response = await fetch('/api/openclaw/carousels', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ backlog_id: idea.id })
-			});
-			const body = await response.json();
-			if (!response.ok) {
-				toast.error(body.error ?? 'เปิด Carousel Studio ไม่สำเร็จ');
-				return;
-			}
-
-			await goto(`/carousel/${body.id}`);
-		} catch {
-			toast.error('เปิด Carousel Studio ไม่สำเร็จ');
-		} finally {
-			openingCarousel = false;
-		}
 	}
 </script>
 
@@ -468,9 +444,6 @@
 	</div>
 
 	{#snippet footer()}
-		<Button variant="secondary" onclick={openCarouselStudio} loading={openingCarousel} disabled={!hasSupabaseConfig}>
-			{openingCarousel ? 'Opening...' : 'Create / Open Carousel'}
-		</Button>
 		<Button variant="primary" onclick={saveEdit} loading={savingEdit} disabled={!hasSupabaseConfig}>
 			{savingEdit ? 'Saving...' : 'Save Changes'}
 		</Button>

@@ -114,7 +114,6 @@
 	let scheduling = $state(false);
 
 	let showSuggestModeModal = $state(false);
-	let openingCarouselId = $state<string | null>(null);
 
 	// AI Auto-categorize state
 	let suggestedCategory = $state<SuggestedContentCategory | null>(null);
@@ -501,29 +500,6 @@
 		toast.success("ลบออกจาก backlog แล้ว");
 		scrollToTop();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
-	}
-
-	async function openCarouselStudioForIdea(idea: IdeaBacklogRow) {
-		openingCarouselId = idea.id;
-		try {
-			const response = await fetch('/api/openclaw/carousels', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ backlog_id: idea.id })
-			});
-			const body = await response.json();
-			if (!response.ok) {
-				toast.error(body.error ?? 'เปิด Carousel Studio ไม่สำเร็จ');
-				return;
-			}
-
-			closeContextMenu();
-			await goto(`/carousel/${body.id}`);
-		} catch {
-			toast.error('เปิด Carousel Studio ไม่สำเร็จ');
-		} finally {
-			openingCarouselId = null;
-		}
 	}
 
 	function openContextMenu(event: MouseEvent, idea: IdeaBacklogRow) {
@@ -1149,15 +1125,6 @@
 				}}
 			>
 				{contextMenuIdea.content_category === 'pin' ? 'Unpin จาก category pin' : 'Pin คลิปนี้'}
-			</button>
-			<button
-				class="ctx-carousel"
-				onclick={() => {
-					if (contextMenuIdea) void openCarouselStudioForIdea(contextMenuIdea);
-				}}
-				disabled={openingCarouselId === contextMenuIdea.id}
-			>
-				{openingCarouselId === contextMenuIdea.id ? 'Opening Carousel...' : 'Create / Open Carousel'}
 			</button>
 			{#if scheduledBacklogIds.has(contextMenuIdea.id)}
 				<p class="ctx-note">ไอเดียนี้ถูก schedule แล้ว (จะย้ายวัน)</p>
@@ -1911,22 +1878,6 @@
 		font-weight: 700;
 		font-size: 0.82rem;
 		cursor: pointer;
-	}
-
-	.ctx-carousel {
-		border: 1px solid rgba(79, 70, 229, 0.2);
-		background: rgba(79, 70, 229, 0.08);
-		color: var(--color-indigo-700);
-		padding: 0.56rem 0.72rem;
-		border-radius: 0.6rem;
-		font-weight: 700;
-		font-size: 0.82rem;
-		cursor: pointer;
-	}
-
-	.ctx-carousel:disabled {
-		opacity: 0.65;
-		cursor: wait;
 	}
 
 	.ctx-note {

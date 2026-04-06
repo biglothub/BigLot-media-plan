@@ -1,8 +1,12 @@
-import type { CarouselProjectRow, CarouselProjectStatus, CarouselSlideRow } from '$lib/types';
+import type { CarouselFontPreset, CarouselProjectRow, CarouselProjectStatus, CarouselSlideRow } from '$lib/types';
 
 export const INSTAGRAM_CAROUSEL_WIDTH = 1080;
 export const INSTAGRAM_CAROUSEL_HEIGHT = 1350;
 export const DEFAULT_CAROUSEL_SLIDE_COUNT = 6;
+export const DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM = 0;
+export const CAROUSEL_TEXT_LETTER_SPACING_MIN_EM = -0.08;
+export const CAROUSEL_TEXT_LETTER_SPACING_MAX_EM = 0.24;
+export const CAROUSEL_TEXT_LETTER_SPACING_STEP_EM = 0.01;
 
 export const CAROUSEL_PROJECT_STATUSES = ['draft', 'ready', 'exported', 'archived'] as const satisfies readonly CarouselProjectStatus[];
 
@@ -24,6 +28,74 @@ export const carouselLayoutLabel = {
 	content: 'Content',
 	cta: 'CTA'
 } as const;
+
+export const CAROUSEL_FONT_PRESETS = [
+	{
+		value: 'biglot',
+		label: 'BigLot Default',
+		description: 'Space Grotesk + Noto Sans Thai',
+		headingFont: "'Space Grotesk', 'Noto Sans Thai', sans-serif",
+		bodyFont: "'Noto Sans Thai', sans-serif"
+	},
+	{
+		value: 'apple_clean',
+		label: 'Apple Clean',
+		description: 'SF Pro style system stack',
+		headingFont:
+			"'SF Pro Display', 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Thai', sans-serif",
+		bodyFont:
+			"'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans Thai', sans-serif"
+	},
+	{
+		value: 'mitr_friendly',
+		label: 'Mitr Friendly',
+		description: 'Mitr from Google Fonts',
+		headingFont: "'Mitr', 'Noto Sans Thai', sans-serif",
+		bodyFont: "'Mitr', 'Noto Sans Thai', sans-serif"
+	},
+	{
+		value: 'ibm_plex_thai',
+		label: 'IBM Plex Thai',
+		description: 'IBM Plex Sans Thai from Google Fonts',
+		headingFont: "'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif",
+		bodyFont: "'IBM Plex Sans Thai', 'Noto Sans Thai', sans-serif"
+	},
+	{
+		value: 'editorial_serif',
+		label: 'Editorial Serif',
+		description: 'Playfair Display + Sarabun',
+		headingFont: "'Playfair Display', 'Noto Sans Thai', serif",
+		bodyFont: "'Sarabun', 'Noto Sans Thai', sans-serif"
+	}
+] as const satisfies ReadonlyArray<{
+	value: CarouselFontPreset;
+	label: string;
+	description: string;
+	headingFont: string;
+	bodyFont: string;
+}>;
+
+const carouselFontPresetMap = Object.fromEntries(
+	CAROUSEL_FONT_PRESETS.map((preset) => [preset.value, preset])
+) as Record<CarouselFontPreset, (typeof CAROUSEL_FONT_PRESETS)[number]>;
+
+export function getCarouselFontPresetDefinition(fontPreset: CarouselFontPreset | null | undefined) {
+	return carouselFontPresetMap[fontPreset ?? 'biglot'] ?? carouselFontPresetMap.biglot;
+}
+
+export function normalizeCarouselTextLetterSpacingEm(value: unknown): number {
+	const parsed =
+		typeof value === 'number'
+			? value
+			: typeof value === 'string' && value.trim()
+				? Number(value)
+				: DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM;
+
+	if (!Number.isFinite(parsed)) return DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM;
+
+	const clamped = Math.min(CAROUSEL_TEXT_LETTER_SPACING_MAX_EM, Math.max(CAROUSEL_TEXT_LETTER_SPACING_MIN_EM, parsed));
+	return Math.round(clamped * 1000) / 1000;
+}
 
 export function normalizeHashtags(value: string[] | null | undefined): string[] {
 	if (!Array.isArray(value)) return [];

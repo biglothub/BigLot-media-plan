@@ -39,7 +39,7 @@
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
-		href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap"
+		href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;700&family=Mitr:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;700;800&family=Playfair+Display:wght@600;700&family=Sarabun:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap"
 		rel="stylesheet"
 	/>
 </svelte:head>

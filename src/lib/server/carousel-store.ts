@@ -1,8 +1,28 @@
-import { deriveCarouselProjectStatus, normalizeHashtags } from '$lib/carousel';
+import { deriveCarouselProjectStatus, normalizeCarouselTextLetterSpacingEm, normalizeHashtags } from '$lib/carousel';
 import { supabase } from '$lib/supabase';
-import type { CarouselAsset, CarouselProjectRow, CarouselProjectStatus, CarouselSlideRow, IdeaBacklogRow } from '$lib/types';
+import type {
+	CarouselAsset,
+	CarouselFontPreset,
+	CarouselProjectRow,
+	CarouselProjectStatus,
+	CarouselSlideRow,
+	IdeaBacklogRow
+} from '$lib/types';
 
 type JsonRecord = Record<string, unknown>;
+type SupabaseLikeError = { message?: string; details?: string; hint?: string; code?: string } | null | undefined;
+
+export function isMissingCarouselProjectColumnError(error: SupabaseLikeError, columnName: string): boolean {
+	const combined = `${error?.message ?? ''}\n${error?.details ?? ''}\n${error?.hint ?? ''}`.toLowerCase();
+	return (
+		combined.includes(columnName.toLowerCase()) &&
+		(combined.includes('schema cache') || combined.includes('column') || error?.code === 'PGRST204')
+	);
+}
+
+export function isMissingFontPresetColumnError(error: SupabaseLikeError): boolean {
+	return isMissingCarouselProjectColumnError(error, 'font_preset');
+}
 
 function normalizeRelation<T>(value: unknown): T | null {
 	if (Array.isArray(value)) {
@@ -45,6 +65,8 @@ function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 		backlog_id: row.backlog_id as string,
 		platform: 'instagram',
 		status: row.status as CarouselProjectStatus,
+		font_preset: ((typeof row.font_preset === 'string' ? row.font_preset : 'biglot') as CarouselFontPreset) ?? 'biglot',
+		text_letter_spacing_em: normalizeCarouselTextLetterSpacingEm(row.text_letter_spacing_em),
 		title: typeof row.title === 'string' ? row.title : null,
 		visual_direction: typeof row.visual_direction === 'string' ? row.visual_direction : null,
 		caption: typeof row.caption === 'string' ? row.caption : null,
@@ -135,6 +157,7 @@ export async function ensureCarouselProject(backlogId: string): Promise<Carousel
 			backlog_id: backlogId,
 			platform: 'instagram',
 			status: 'draft',
+			font_preset: 'biglot',
 			title: backlog.title ?? 'Untitled carousel',
 			caption: backlog.description ?? null,
 			hashtags_json: [],
@@ -142,6 +165,25 @@ export async function ensureCarouselProject(backlogId: string): Promise<Carousel
 		})
 		.select('*, idea_backlog(*)')
 		.single();
+
+	if (error && isMissingFontPresetColumnError(error)) {
+		const fallbackInsert = await supabase
+			.from('carousel_projects')
+			.insert({
+				backlog_id: backlogId,
+				platform: 'instagram',
+				status: 'draft',
+				title: backlog.title ?? 'Untitled carousel',
+				caption: backlog.description ?? null,
+				hashtags_json: [],
+				slide_count: 0
+			})
+			.select('*, idea_backlog(*)')
+			.single();
+
+		if (fallbackInsert.error) throw new Error(fallbackInsert.error.message);
+		return normalizeCarouselProject(fallbackInsert.data as JsonRecord);
+	}
 
 	if (error) throw new Error(error.message);
 	return normalizeCarouselProject(data as JsonRecord);
