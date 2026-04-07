@@ -8,6 +8,14 @@ const PEXELS_TIMEOUT_MS = 60_000;
 const CAROUSEL_ASSET_BUCKET = 'carousel-assets';
 const MAX_CAROUSEL_ACCOUNT_AVATAR_BYTES = 5 * 1024 * 1024;
 const SUPPORTED_CAROUSEL_ACCOUNT_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_CUSTOM_CAROUSEL_ASSET_BYTES = 15 * 1024 * 1024;
+const SUPPORTED_CUSTOM_CAROUSEL_ASSET_TYPES = new Set([
+	'image/jpeg',
+	'image/png',
+	'image/webp',
+	'image/gif',
+	'image/avif'
+]);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -156,6 +164,22 @@ function contentTypeToExtension(contentType: string | null, url: string): string
 	return extensionFromUrl(url) ?? 'jpg';
 }
 
+function contentTypeToUploadExtension(contentType: string | null, fileName: string): string {
+	if (contentType?.includes('png')) return 'png';
+	if (contentType?.includes('webp')) return 'webp';
+	if (contentType?.includes('gif')) return 'gif';
+	if (contentType?.includes('avif')) return 'avif';
+	if (contentType?.includes('jpeg') || contentType?.includes('jpg')) return 'jpg';
+	const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
+	return match?.[1] ?? 'jpg';
+}
+
+function sanitizeAssetTitle(fileName: string): string {
+	const trimmed = fileName.trim();
+	if (!trimmed) return 'Uploaded image';
+	return trimmed.replace(/\.[a-z0-9]+$/i, '').trim() || 'Uploaded image';
+}
+
 function contentTypeToAccountAvatarExtension(contentType: string): string {
 	if (contentType === 'image/png') return 'png';
 	if (contentType === 'image/webp') return 'webp';
@@ -228,6 +252,67 @@ export async function downloadAndStorePexelsAsset(
 		publicUrl,
 		asset: {
 			...asset,
+			selected_format: 'original',
+			storage_url: publicUrl
+		}
+	};
+}
+
+export async function uploadCustomCarouselAsset(
+	file: File,
+	projectId: string,
+	slideId: string
+): Promise<{ path: string; publicUrl: string; asset: CarouselAsset }> {
+	if (!hasSupabaseServiceRoleConfig || !supabaseAdmin) {
+		throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for asset uploads');
+	}
+	if (!SUPPORTED_CUSTOM_CAROUSEL_ASSET_TYPES.has(file.type)) {
+		throw new Error('รองรับเฉพาะไฟล์ภาพ JPG, PNG, WEBP, GIF หรือ AVIF');
+	}
+	if (file.size <= 0) {
+		throw new Error('ไฟล์ภาพว่างเปล่า');
+	}
+	if (file.size > MAX_CUSTOM_CAROUSEL_ASSET_BYTES) {
+		throw new Error('ไฟล์ภาพใหญ่เกิน 15MB');
+	}
+
+	const extension = contentTypeToUploadExtension(file.type, file.name);
+	const filePath = `projects/${projectId}/${slideId}-upload-${randomUUID()}.${extension}`;
+	const buffer = await file.arrayBuffer();
+	const { error: uploadError } = await supabaseAdmin.storage.from(CAROUSEL_ASSET_BUCKET).upload(filePath, buffer, {
+		contentType: file.type || 'image/jpeg',
+		upsert: false
+	});
+
+	if (uploadError) {
+		throw new Error(`Supabase storage upload failed: ${uploadError.message}`);
+	}
+
+	const { data: publicData } = supabaseAdmin.storage.from(CAROUSEL_ASSET_BUCKET).getPublicUrl(filePath);
+	const publicUrl = publicData.publicUrl;
+
+	return {
+		path: filePath,
+		publicUrl,
+		asset: {
+			id: -(Date.now() + Math.floor(Math.random() * 1000)),
+			title: sanitizeAssetTitle(file.name),
+			type: file.type || 'image',
+			url: publicUrl,
+			preview_url: publicUrl,
+			preview_width: null,
+			preview_height: null,
+			orientation: null,
+			author_name: 'Uploaded image',
+			author_slug: null,
+			license_url: null,
+			premium: false,
+			is_ai_generated: false,
+			downloads: null,
+			likes: null,
+			published_at: null,
+			available_formats: ['original'],
+			source_query: 'uploaded',
 			selected_format: 'original',
 			storage_url: publicUrl
 		}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
+	import { Badge, Button, Modal, PageHeader, Spinner, toast } from '$lib';
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
 	import {
 		CAROUSEL_FONT_PRESETS,
@@ -23,6 +23,7 @@
 		normalizeCarouselQuoteFontScale,
 		normalizeCarouselTextLetterSpacingEm,
 		normalizeHashtags,
+		carouselRoleLabel,
 		carouselStatusLabel
 	} from '$lib/carousel';
 	import { buildCarouselExportEntries, buildCarouselExportManifest, buildPostingChecklist } from '$lib/carousel-export';
@@ -49,6 +50,8 @@
 	let savingSlideId = $state<string | null>(null);
 	let rerollingSlideId = $state<string | null>(null);
 	let selectingAssetSlideId = $state<string | null>(null);
+	let uploadingAssetSlideId = $state<string | null>(null);
+	let previewOpen = $state(false);
 	let projectError = $state('');
 	let hashtagsInput = $state('');
 
@@ -57,6 +60,7 @@
 	const isQuoteMode = $derived(contentMode === 'quote');
 	const computedStatus = $derived(deriveCarouselProjectStatus(project, slides));
 	const projectBlockers = $derived(getCarouselProjectBlockers(project, slides));
+	const previewBlockers = $derived(projectBlockers.slice(0, 4));
 	const readyToExport = $derived(computedStatus === 'ready' || project?.status === 'exported');
 	const readySlidesCount = $derived(slides.filter((slide) => getCarouselSlideReadiness(slide, contentMode).isReady).length);
 
@@ -156,6 +160,14 @@
 
 	function isQuoteNonCtaSlide(slide: CarouselSlideRow): boolean {
 		return project?.content_mode === 'quote' && slide.role !== 'cta';
+	}
+
+	function closePreview() {
+		previewOpen = false;
+	}
+
+	function previewSlideLabel(slide: CarouselSlideRow): string {
+		return `Slide ${slide.position} · ${carouselRoleLabel[slide.role]}`;
 	}
 
 	async function loadProject() {
@@ -372,6 +384,36 @@
 		}
 	}
 
+	async function uploadReplacementAsset(slide: CarouselSlideRow, event: Event) {
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+		if (!file) return;
+
+		uploadingAssetSlideId = slide.id;
+		try {
+			const formData = new FormData();
+			formData.set('file', file);
+
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/${slide.id}/upload-asset`, {
+				method: 'POST',
+				body: formData
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'อัปโหลดรูปไม่สำเร็จ');
+				return;
+			}
+
+			await loadProject();
+			toast.success(`อัปโหลดรูปใหม่สำหรับ slide ${slide.position} แล้ว`);
+		} catch {
+			toast.error('อัปโหลดรูปไม่สำเร็จ');
+		} finally {
+			if (input) input.value = '';
+			uploadingAssetSlideId = null;
+		}
+	}
+
 	async function autoPickMissingAssets() {
 		if (!project) return;
 
@@ -540,6 +582,9 @@
 			<Button variant="secondary" href="/carousel">All Projects</Button>
 			<Button variant="ai" onclick={generateDraft} loading={generating} disabled={!hasSupabaseConfig}>
 				{generating ? 'Generating...' : slides.length > 0 ? 'Regenerate Draft' : 'Generate Draft'}
+			</Button>
+			<Button variant="secondary" onclick={() => { previewOpen = true; }} disabled={slides.length === 0}>
+				Preview
 			</Button>
 			<Button variant="primary" onclick={exportPackage} loading={exporting} disabled={!readyToExport}>
 				{exporting ? 'Exporting...' : 'Export Package'}
@@ -961,6 +1006,23 @@
 									</div>
 
 									<div class="asset-grid">
+										<div class="asset-toolbar">
+											<div class="asset-toolbar-copy">
+												<strong>ไม่ชอบรูปนี้?</strong>
+												<span>อัปโหลดภาพจากเครื่องเพื่อใช้แทน asset เดิมของ slide นี้ได้ทันที</span>
+											</div>
+											<label class="asset-upload-button" class:loading={uploadingAssetSlideId === slide.id}>
+												<input
+													type="file"
+													accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+													onchange={(event) => {
+														void uploadReplacementAsset(slide, event);
+													}}
+													disabled={uploadingAssetSlideId === slide.id}
+												/>
+												<span>{uploadingAssetSlideId === slide.id ? 'Uploading...' : 'Upload New Image'}</span>
+											</label>
+										</div>
 										{#if !slideReadiness(slide).hasAsset}
 											<div class="asset-warning">
 												<strong>ยังไม่ได้เลือก asset สำหรับ slide นี้</strong>
@@ -974,14 +1036,14 @@
 													class="asset-card"
 													class:selected={slide.selected_asset_json?.id === asset.id}
 													onclick={() => { void selectAsset(slide, asset); }}
-													disabled={selectingAssetSlideId === slide.id}
+													disabled={selectingAssetSlideId === slide.id || uploadingAssetSlideId === slide.id}
 												>
 													{#if asset.preview_url}
 														<img src={asset.preview_url} alt={asset.title} loading="lazy" />
 													{/if}
 													<div class="asset-copy">
 														<strong>{asset.title}</strong>
-														<span>{asset.author_name ?? 'Pexels asset'}</span>
+														<span>{asset.author_name ?? (asset.source_query === 'uploaded' ? 'Uploaded image' : 'Pexels asset')}</span>
 													</div>
 												</button>
 											{/each}
@@ -1001,6 +1063,101 @@
 		</section>
 	{/if}
 </main>
+
+{#if project && slides.length > 0}
+	<Modal bind:open={previewOpen} title="Carousel Preview" size="full" onclose={closePreview}>
+		<div class="preview-modal">
+			<section class="preview-modal-hero">
+				<div class="preview-modal-copy">
+					<div class="preview-modal-badges">
+						<Badge variant={statusVariant(project.status)} label={carouselStatusLabel[project.status]} />
+						<Badge variant="platform" value="instagram" />
+						<Badge variant="neutral" label={isQuoteMode ? 'Quote Mode' : 'Standard Mode'} />
+						<Badge variant="neutral" label={`${slides.length} slides`} />
+					</div>
+					<h3>{project.title ?? 'Untitled carousel'}</h3>
+					<p>
+						{project.caption?.trim() ||
+							project.visual_direction?.trim() ||
+							'ตรวจลำดับสไลด์ งานภาพ และข้อความก่อน export package'}
+					</p>
+				</div>
+
+				<div class="preview-modal-stats">
+					<div class="preview-stat-card">
+						<span>Status</span>
+						<strong>{carouselStatusLabel[computedStatus]}</strong>
+					</div>
+					<div class="preview-stat-card">
+						<span>Ready slides</span>
+						<strong>{readySlidesCount}/{slides.length}</strong>
+					</div>
+				</div>
+			</section>
+
+			{#if projectBlockers.length > 0}
+				<section class="preview-modal-blockers">
+					<div class="preview-modal-blockers-copy">
+						<strong>Export blockers</strong>
+						<span>ยังเปิด preview ได้ แต่ export จะถูกล็อกจนกว่าจะแก้ blocker ให้ครบ</span>
+					</div>
+					<ul>
+						{#each previewBlockers as blocker}
+							<li>{blocker}</li>
+						{/each}
+						{#if projectBlockers.length > previewBlockers.length}
+							<li>และอีก {projectBlockers.length - previewBlockers.length} blocker</li>
+						{/if}
+					</ul>
+				</section>
+			{:else}
+				<section class="preview-modal-blockers preview-modal-blockers--ready">
+					<div class="preview-modal-blockers-copy">
+						<strong>พร้อม export แล้ว</strong>
+						<span>ทุกสไลด์ผ่าน readiness check และใช้ export flow เดิมได้ทันที</span>
+					</div>
+				</section>
+			{/if}
+
+			<div class="preview-modal-grid">
+				{#each slides as slide}
+					<article class="preview-modal-slide">
+						<div class="preview-modal-slide-top">
+							<div class="preview-modal-slide-copy">
+								<span>{previewSlideLabel(slide)}</span>
+								<strong>{slide.headline?.trim() || 'Untitled slide'}</strong>
+							</div>
+							<span class:preview-slide-state--ready={slideReadiness(slide).isReady} class="preview-slide-state">
+								{slideReadiness(slide).isReady ? 'Ready' : 'Draft'}
+							</span>
+						</div>
+
+						<CarouselSlidePreview
+							slide={slide}
+							fontPreset={project.font_preset}
+							textLetterSpacingEm={project.text_letter_spacing_em}
+							fallbackAssetUrl={previewAssetForSlide(slide)}
+							contentMode={contentMode}
+							accountDisplayName={project.account_display_name}
+							accountHandle={project.account_handle}
+							accountAvatarUrl={project.account_avatar_url}
+							accountIsVerified={project.account_is_verified}
+							quoteFontScale={project.quote_font_scale}
+							exportId={null}
+						/>
+					</article>
+				{/each}
+			</div>
+		</div>
+
+		{#snippet footer()}
+			<Button variant="secondary" onclick={closePreview}>Close</Button>
+			<Button variant="primary" onclick={exportPackage} loading={exporting} disabled={!readyToExport}>
+				{exporting ? 'Exporting...' : 'Export Package'}
+			</Button>
+		{/snippet}
+	</Modal>
+{/if}
 
 <style>
 	.page {
@@ -1417,6 +1574,185 @@
 		gap: var(--space-5);
 	}
 
+	.preview-modal {
+		display: grid;
+		gap: var(--space-5);
+	}
+
+	.preview-modal-hero {
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+		gap: var(--space-4);
+		padding: var(--space-5);
+		border-radius: 1.4rem;
+		background:
+			radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 34%),
+			radial-gradient(circle at right center, rgba(249, 115, 22, 0.12), transparent 28%),
+			linear-gradient(155deg, #0f172a 0%, #1d4ed8 52%, #111827 100%);
+		color: #fff;
+	}
+
+	.preview-modal-copy {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.preview-modal-copy h3,
+	.preview-modal-copy p {
+		margin: 0;
+	}
+
+	.preview-modal-copy h3 {
+		font-family: var(--font-heading);
+		font-size: clamp(1.6rem, 3vw, 2.2rem);
+		line-height: 1.05;
+		max-width: 16ch;
+	}
+
+	.preview-modal-copy p {
+		line-height: 1.6;
+		color: rgba(255, 255, 255, 0.82);
+		max-width: 70ch;
+	}
+
+	.preview-modal-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+
+	.preview-modal-stats {
+		display: grid;
+		gap: var(--space-3);
+		align-content: start;
+	}
+
+	.preview-stat-card {
+		display: grid;
+		gap: 0.35rem;
+		padding: 1rem 1.1rem;
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.12);
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		backdrop-filter: blur(10px);
+	}
+
+	.preview-stat-card span {
+		font-size: 0.74rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: rgba(255, 255, 255, 0.68);
+	}
+
+	.preview-stat-card strong {
+		font-size: 1rem;
+		color: #fff;
+	}
+
+	.preview-modal-blockers {
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		border-radius: 1.15rem;
+		background: rgba(234, 88, 12, 0.08);
+		border: 1px solid rgba(234, 88, 12, 0.16);
+	}
+
+	.preview-modal-blockers--ready {
+		background: rgba(22, 163, 74, 0.08);
+		border-color: rgba(22, 163, 74, 0.16);
+	}
+
+	.preview-modal-blockers-copy {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	.preview-modal-blockers-copy strong,
+	.preview-modal-blockers-copy span,
+	.preview-modal-blockers li {
+		margin: 0;
+	}
+
+	.preview-modal-blockers-copy strong {
+		font-size: 0.92rem;
+		color: var(--color-slate-900);
+	}
+
+	.preview-modal-blockers-copy span,
+	.preview-modal-blockers li {
+		font-size: 0.82rem;
+		line-height: 1.5;
+		color: var(--color-slate-600);
+	}
+
+	.preview-modal-blockers ul {
+		margin: 0;
+		padding-left: 1.1rem;
+		display: grid;
+		gap: 0.35rem;
+	}
+
+	.preview-modal-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-4);
+		align-items: start;
+	}
+
+	.preview-modal-slide {
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		border-radius: 1.2rem;
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.preview-modal-slide-top {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.preview-modal-slide-copy {
+		display: grid;
+		gap: 0.22rem;
+	}
+
+	.preview-modal-slide-copy span {
+		font-size: 0.72rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-slate-500);
+	}
+
+	.preview-modal-slide-copy strong {
+		font-size: 0.92rem;
+		line-height: 1.45;
+		color: var(--color-slate-900);
+	}
+
+	.preview-slide-state {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.32rem 0.72rem;
+		border-radius: 999px;
+		background: rgba(148, 163, 184, 0.14);
+		color: var(--color-slate-600);
+		font-size: 0.74rem;
+		font-weight: 800;
+		letter-spacing: 0.04em;
+	}
+
+	.preview-slide-state--ready {
+		background: rgba(22, 163, 74, 0.12);
+		color: var(--color-green-700);
+	}
+
 	.slide-row {
 		display: grid;
 		grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
@@ -1522,6 +1858,67 @@
 		gap: var(--space-3);
 	}
 
+	.asset-toolbar {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+		padding: 0.9rem 1rem;
+		border-radius: 1rem;
+		background: rgba(29, 78, 216, 0.06);
+		border: 1px solid rgba(29, 78, 216, 0.14);
+	}
+
+	.asset-toolbar-copy {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	.asset-toolbar-copy strong,
+	.asset-toolbar-copy span {
+		margin: 0;
+	}
+
+	.asset-toolbar-copy strong {
+		font-size: 0.82rem;
+		color: var(--color-slate-900);
+	}
+
+	.asset-toolbar-copy span {
+		font-size: 0.75rem;
+		line-height: 1.5;
+		color: var(--color-slate-600);
+	}
+
+	.asset-upload-button {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.72rem 1rem;
+		border-radius: 999px;
+		background: #fff;
+		border: 1px solid rgba(29, 78, 216, 0.18);
+		color: var(--color-primary);
+		font-size: 0.82rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+
+	.asset-upload-button input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.asset-upload-button.loading {
+		opacity: 0.7;
+		cursor: wait;
+	}
+
 	.asset-warning {
 		grid-column: 1 / -1;
 		display: grid;
@@ -1620,6 +2017,8 @@
 	}
 
 	@media (max-width: 1024px) {
+		.preview-modal-hero,
+		.preview-modal-grid,
 		.studio-hero,
 		.studio-grid,
 		.slide-row {
