@@ -645,7 +645,7 @@
 								<div class="field-grid">
 									<label>
 										<span>Headline</span>
-										<input bind:value={slide.headline} placeholder="ข้อความหลักบน slide" />
+										<textarea bind:value={slide.headline} rows={3} placeholder="ข้อความหลักบน slide"></textarea>
 									</label>
 
 									<label>

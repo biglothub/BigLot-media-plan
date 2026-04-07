@@ -105,12 +105,20 @@
 		margin: auto 0;
 	}
 
+	h3,
+	.slide-preview-body,
+	.slide-preview-cta,
+	.slide-preview-cta-note {
+		white-space: break-spaces;
+		overflow-wrap: anywhere;
+		text-wrap: wrap;
+	}
+
 	h3 {
 		margin: 0;
 		font-family: var(--carousel-font-heading);
 		font-size: clamp(1.45rem, 2.7vw, 2.4rem);
 		line-height: 1.02;
-		text-wrap: balance;
 	}
 
 	.slide-preview-body {
