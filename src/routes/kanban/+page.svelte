@@ -141,7 +141,9 @@
 		loading = true;
 		const { data, error } = await supabase
 			.from('production_calendar')
-			.select('id, backlog_id, shoot_date, publish_deadline, status, notes, created_at, idea_backlog(*), calendar_assignments(*)')
+			.select(
+				'id, backlog_id, carousel_project_id, handoff_source, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, idea_backlog(*), calendar_assignments(*)'
+			)
 			.order('shoot_date', { ascending: true })
 			.order('created_at', { ascending: true });
 		loading = false;
@@ -225,6 +227,10 @@
 	function closePreview() {
 		previewItem = null;
 		previewAnchorEl = null;
+	}
+
+	function getCarouselStudioHref(item: ProductionCalendarRow | null | undefined): string | null {
+		return item?.carousel_project_id ? `/carousel/${item.carousel_project_id}` : null;
 	}
 
 	// ── Detail modal ──────────────────────────────────────────────────────────
@@ -456,6 +462,9 @@
 					<div class="preview-actions">
 						{#if previewUrl}
 							<a class="btn-ghost" href={previewUrl} target="_blank" rel="noopener noreferrer">เปิด</a>
+						{/if}
+						{#if getCarouselStudioHref(previewItem)}
+							<a class="btn-ghost" href={getCarouselStudioHref(previewItem) ?? '#'}>Carousel</a>
 						{/if}
 						<button class="btn-ghost" onclick={closePreview}>✕</button>
 					</div>

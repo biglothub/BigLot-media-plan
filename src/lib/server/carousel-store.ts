@@ -12,8 +12,12 @@ import type {
 	CarouselFontPreset,
 	CarouselProjectRow,
 	CarouselProjectStatus,
+	CarouselReviewStatus,
 	CarouselSlideRow,
-	IdeaBacklogRow
+	IdeaBacklogRow,
+	ProducedContentKind,
+	ProducedVideoRow,
+	ProductionCalendarRow
 } from '$lib/types';
 
 type JsonRecord = Record<string, unknown>;
@@ -35,6 +39,22 @@ function normalizeCarouselContentMode(value: unknown): CarouselContentMode {
 	return value === 'quote' ? 'quote' : 'standard';
 }
 
+function normalizeCarouselReviewStatus(value: unknown): CarouselReviewStatus {
+	if (value === 'pending_review' || value === 'approved' || value === 'changes_requested') {
+		return value;
+	}
+	return 'draft';
+}
+
+function normalizeProducedContentKind(value: unknown): ProducedContentKind {
+	if (value === 'carousel' || value === 'post') return value;
+	return 'video';
+}
+
+function normalizeHandoffSource(value: unknown): ProductionCalendarRow['handoff_source'] {
+	return value === 'carousel_handoff' ? 'carousel_handoff' : 'manual';
+}
+
 function normalizeTextOrNull(value: unknown): string | null {
 	if (typeof value !== 'string') return null;
 	const normalized = value.trim();
@@ -53,6 +73,12 @@ function normalizeRelation<T>(value: unknown): T | null {
 		return (value[0] ?? null) as T | null;
 	}
 	return (value as T | null) ?? null;
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+	if (value === null || value === undefined || value === '') return null;
+	const parsed = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeCarouselAssetList(value: unknown): CarouselAsset[] | null {
@@ -89,6 +115,52 @@ function normalizeCarouselSlide(row: JsonRecord): CarouselSlideRow {
 	};
 }
 
+function normalizeProductionCalendar(row: JsonRecord): ProductionCalendarRow {
+	return {
+		id: row.id as string,
+		backlog_id: row.backlog_id as string,
+		carousel_project_id: typeof row.carousel_project_id === 'string' ? row.carousel_project_id : null,
+		handoff_source: normalizeHandoffSource(row.handoff_source),
+		shoot_date: row.shoot_date as string,
+		publish_deadline: typeof row.publish_deadline === 'string' ? row.publish_deadline : null,
+		status: (row.status as string) ?? 'planned',
+		revision_count: Number(row.revision_count ?? 0),
+		approval_status:
+			row.approval_status === 'pending_review' || row.approval_status === 'approved' || row.approval_status === 'rejected'
+				? row.approval_status
+				: 'draft',
+		submitted_at: typeof row.submitted_at === 'string' ? row.submitted_at : null,
+		notes: normalizeTextOrNull(row.notes),
+		created_at: row.created_at as string,
+		idea_backlog: normalizeRelation<IdeaBacklogRow>(row.idea_backlog),
+		calendar_assignments: Array.isArray(row.calendar_assignments)
+			? (row.calendar_assignments as ProductionCalendarRow['calendar_assignments'])
+			: [],
+		carousel_project: null
+	};
+}
+
+function normalizeProducedVideo(row: JsonRecord): ProducedVideoRow {
+	return {
+		id: row.id as string,
+		calendar_id: row.calendar_id as string,
+		carousel_project_id: typeof row.carousel_project_id === 'string' ? row.carousel_project_id : null,
+		content_kind: normalizeProducedContentKind(row.content_kind),
+		url: typeof row.url === 'string' ? row.url : '',
+		platform: row.platform as ProducedVideoRow['platform'],
+		title: normalizeTextOrNull(row.title),
+		thumbnail_url: normalizeTextOrNull(row.thumbnail_url),
+		published_at: typeof row.published_at === 'string' ? row.published_at : null,
+		view_count: normalizeNullableNumber(row.view_count),
+		like_count: normalizeNullableNumber(row.like_count),
+		comment_count: normalizeNullableNumber(row.comment_count),
+		share_count: normalizeNullableNumber(row.share_count),
+		save_count: normalizeNullableNumber(row.save_count),
+		notes: normalizeTextOrNull(row.notes),
+		created_at: row.created_at as string
+	};
+}
+
 function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 	return {
 		id: row.id as string,
@@ -103,6 +175,10 @@ function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 		visual_direction: normalizeTextOrNull(row.visual_direction),
 		caption: normalizeTextOrNull(row.caption),
 		hashtags_json: normalizeHashtags(row.hashtags_json as string[] | null),
+		review_status: normalizeCarouselReviewStatus(row.review_status),
+		review_notes: normalizeTextOrNull(row.review_notes),
+		reviewed_by: normalizeTextOrNull(row.reviewed_by),
+		reviewed_at: typeof row.reviewed_at === 'string' ? row.reviewed_at : null,
 		account_display_name: normalizeTextOrNull(row.account_display_name),
 		account_handle: normalizeAccountHandle(row.account_handle),
 		account_avatar_url: normalizeTextOrNull(row.account_avatar_url),
@@ -113,7 +189,9 @@ function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 		last_exported_at: typeof row.last_exported_at === 'string' ? row.last_exported_at : null,
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string,
-		idea_backlog: normalizeRelation<IdeaBacklogRow>(row.idea_backlog)
+		idea_backlog: normalizeRelation<IdeaBacklogRow>(row.idea_backlog),
+		linked_schedule: row.linked_schedule && typeof row.linked_schedule === 'object' ? normalizeProductionCalendar(row.linked_schedule as JsonRecord) : null,
+		published_record: row.published_record && typeof row.published_record === 'object' ? normalizeProducedVideo(row.published_record as JsonRecord) : null
 	};
 }
 
@@ -206,6 +284,10 @@ export async function ensureCarouselProject(
 		account_avatar_url: null,
 		account_avatar_storage_path: null,
 		account_is_verified: false,
+		review_status: 'draft',
+		review_notes: null,
+		reviewed_by: null,
+		reviewed_at: null,
 		slide_count: 0
 	};
 
@@ -216,6 +298,10 @@ export async function ensureCarouselProject(
 			'content_mode',
 			'font_preset',
 			'quote_font_scale',
+			'review_status',
+			'review_notes',
+			'reviewed_by',
+			'reviewed_at',
 			'account_display_name',
 			'account_handle',
 			'account_avatar_url',
@@ -240,6 +326,54 @@ export async function ensureCarouselProject(
 
 	if (error) throw new Error(error.message);
 	return normalizeCarouselProject(data as JsonRecord);
+}
+
+export async function getCarouselWorkflow(project: Pick<CarouselProjectRow, 'id' | 'backlog_id'>): Promise<{
+	linked_schedule: ProductionCalendarRow | null;
+	published_record: ProducedVideoRow | null;
+}> {
+	if (!supabase) throw new Error('Supabase not configured');
+
+	const { data: scheduleData, error: scheduleError } = await supabase
+		.from('production_calendar')
+		.select('*, idea_backlog(*), calendar_assignments(*)')
+		.eq('backlog_id', project.backlog_id)
+		.maybeSingle();
+
+	if (scheduleError) throw new Error(scheduleError.message);
+
+	const linkedSchedule = scheduleData ? normalizeProductionCalendar(scheduleData as JsonRecord) : null;
+
+	let publicationData: JsonRecord | null = null;
+	const { data: byProject, error: byProjectError } = await supabase
+		.from('produced_videos')
+		.select('*')
+		.eq('carousel_project_id', project.id)
+		.maybeSingle();
+
+	if (byProjectError && byProjectError.code !== 'PGRST116') {
+		throw new Error(byProjectError.message);
+	}
+	publicationData = (byProject as JsonRecord | null) ?? null;
+
+	if (!publicationData && linkedSchedule) {
+		const { data: byCalendar, error: byCalendarError } = await supabase
+			.from('produced_videos')
+			.select('*')
+			.eq('calendar_id', linkedSchedule.id)
+			.eq('platform', 'instagram')
+			.maybeSingle();
+
+		if (byCalendarError && byCalendarError.code !== 'PGRST116') {
+			throw new Error(byCalendarError.message);
+		}
+		publicationData = (byCalendar as JsonRecord | null) ?? null;
+	}
+
+	return {
+		linked_schedule: linkedSchedule,
+		published_record: publicationData ? normalizeProducedVideo(publicationData) : null
+	};
 }
 
 export async function recomputeCarouselStatus(

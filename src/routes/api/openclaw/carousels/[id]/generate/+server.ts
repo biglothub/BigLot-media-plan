@@ -4,7 +4,7 @@ import { supabase } from '$lib/supabase';
 import type { CarouselAsset, CarouselContentMode } from '$lib/types';
 import { generateCarouselDraft } from '$lib/server/carousel-ai';
 import { downloadAndStorePexelsAsset, searchPexelsResources, hasPexelsConfig } from '$lib/server/pexels';
-import { getCarouselBundle, getCarouselProjectById, recomputeCarouselStatus } from '$lib/server/carousel-store';
+import { getCarouselBundle, getCarouselProjectById, getCarouselWorkflow, recomputeCarouselStatus } from '$lib/server/carousel-store';
 
 function resolveContentMode(value: unknown): CarouselContentMode {
 	return value === 'quote' ? 'quote' : 'standard';
@@ -134,9 +134,12 @@ export const POST: RequestHandler = async ({ params }) => {
 
 		await recomputeCarouselStatus(params.id);
 		const bundle = await getCarouselBundle(params.id);
+		const workflow = await getCarouselWorkflow(bundle.project);
 		return json({
 			...bundle.project,
-			carousel_slides: bundle.slides
+			carousel_slides: bundle.slides,
+			linked_schedule: workflow.linked_schedule,
+			published_record: workflow.published_record
 		});
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

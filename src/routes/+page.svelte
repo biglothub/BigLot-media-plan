@@ -282,7 +282,7 @@
 
 		const { data, error } = await supabase
 			.from("production_calendar")
-			.select("id, backlog_id, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, calendar_assignments(*)");
+			.select("id, backlog_id, carousel_project_id, handoff_source, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, calendar_assignments(*)");
 		if (error) {
 			toast.error(`โหลดสถานะ schedule ไม่ได้: ${error.message}`);
 			return;
@@ -295,6 +295,8 @@
 					row.backlog_id as string,
 					{
 						...row,
+						carousel_project_id: typeof row.carousel_project_id === 'string' ? row.carousel_project_id : null,
+						handoff_source: row.handoff_source === 'carousel_handoff' ? 'carousel_handoff' : 'manual',
 						calendar_assignments: Array.isArray(row.calendar_assignments) ? row.calendar_assignments : [],
 					} as ProductionCalendarRow,
 				];

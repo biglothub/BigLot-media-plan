@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
+	import { TEAM_MEMBERS } from '$lib/team';
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
 	import {
 		CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX,
@@ -37,10 +38,18 @@
 		CarouselQuoteIdentityRow,
 		CarouselProjectRow,
 		CarouselProjectStatus,
-		CarouselSlideRow
+		CarouselReviewStatus,
+		CarouselSlideRow,
+		ProducedVideoRow,
+		ProductionCalendarRow,
+		TeamMember
 	} from '$lib/types';
 
-	type ProjectResponse = CarouselProjectRow & { carousel_slides?: CarouselSlideRow[] };
+	type ProjectResponse = CarouselProjectRow & {
+		carousel_slides?: CarouselSlideRow[];
+		linked_schedule?: ProductionCalendarRow | null;
+		published_record?: ProducedVideoRow | null;
+	};
 	type CarouselExportMode = 'full_package' | 'slides_only' | 'copy_bundle';
 
 	const EXPORT_MODE_OPTIONS: Array<{ value: CarouselExportMode; label: string; description: string }> = [
@@ -60,6 +69,26 @@
 			description: 'Export caption, hashtags, and posting checklist only'
 		}
 	];
+
+	const CAROUSEL_REVIEW_STATUS_LABEL: Record<CarouselReviewStatus, string> = {
+		draft: 'Draft',
+		pending_review: 'Pending Review',
+		approved: 'Approved',
+		changes_requested: 'Changes Requested'
+	};
+
+	const CAROUSEL_REVIEW_STATUS_HINT: Record<CarouselReviewStatus, string> = {
+		draft: 'ยังเป็น working draft อยู่ใน Studio',
+		pending_review: 'พร้อมให้หัวหน้าหรือ owner ตรวจงานก่อน handoff / publish',
+		approved: 'carousel ชุดนี้ผ่าน review แล้ว พร้อมส่งต่อไป publish workflow',
+		changes_requested: 'มี feedback ให้กลับไปแก้ก่อน export หรือ publish'
+	};
+
+	function createEmptyAssignmentDraft(): Record<TeamMember, { enabled: boolean; role_detail: string }> {
+		return Object.fromEntries(
+			TEAM_MEMBERS.map((member) => [member, { enabled: false, role_detail: '' }])
+		) as Record<TeamMember, { enabled: boolean; role_detail: string }>;
+	}
 
 	let project = $state<CarouselProjectRow | null>(null);
 	let slides = $state<CarouselSlideRow[]>([]);
@@ -84,6 +113,27 @@
 	let deletingQuoteIdentityId = $state<string | null>(null);
 	let selectedQuoteIdentityId = $state('');
 	let quoteIdentityName = $state('');
+	let linkedSchedule = $state<ProductionCalendarRow | null>(null);
+	let publishedRecord = $state<ProducedVideoRow | null>(null);
+	let savingReview = $state(false);
+	let handoffSaving = $state(false);
+	let publishSaving = $state(false);
+	let reviewNotes = $state('');
+	let reviewOwner = $state('');
+	let handoffShootDate = $state('');
+	let handoffPublishDeadline = $state('');
+	let handoffNotes = $state('');
+	let handoffAssignments = $state<Record<TeamMember, { enabled: boolean; role_detail: string }>>(createEmptyAssignmentDraft());
+	let publishUrl = $state('');
+	let publishTitle = $state('');
+	let publishThumbnailUrl = $state('');
+	let publishAt = $state('');
+	let publishNotes = $state('');
+	let publishViews = $state<number | null>(null);
+	let publishLikes = $state<number | null>(null);
+	let publishComments = $state<number | null>(null);
+	let publishShares = $state<number | null>(null);
+	let publishSaves = $state<number | null>(null);
 
 	const projectId = $derived(page.params.id);
 	const contentMode = $derived(project?.content_mode ?? 'standard');
@@ -94,12 +144,96 @@
 	const readySlidesCount = $derived(slides.filter((slide) => getCarouselSlideReadiness(slide, contentMode).isReady).length);
 	const selectedExportMode = $derived(EXPORT_MODE_OPTIONS.find((option) => option.value === exportMode) ?? EXPORT_MODE_OPTIONS[0]);
 	const canExportSelectedMode = $derived(exportMode === 'copy_bundle' ? Boolean(project) : readyToExport);
+	const reviewStatus = $derived(project?.review_status ?? 'draft');
+	const reviewStatusLabel = $derived(CAROUSEL_REVIEW_STATUS_LABEL[reviewStatus]);
+	const reviewStatusHint = $derived(CAROUSEL_REVIEW_STATUS_HINT[reviewStatus]);
+	const hasLinkedSchedule = $derived(Boolean(linkedSchedule?.id));
+	const hasPublishedRecord = $derived(Boolean(publishedRecord?.id));
 
 	function statusVariant(status: CarouselProjectStatus | undefined): 'warning' | 'success' | 'info' | 'neutral' {
 		if (status === 'ready') return 'success';
 		if (status === 'exported') return 'info';
 		if (status === 'draft') return 'warning';
 		return 'neutral';
+	}
+
+	function reviewStatusVariant(status: CarouselReviewStatus): 'warning' | 'success' | 'info' | 'neutral' {
+		if (status === 'approved') return 'success';
+		if (status === 'pending_review') return 'info';
+		if (status === 'changes_requested') return 'warning';
+		return 'neutral';
+	}
+
+	function isoToDateInput(value: string | null | undefined): string {
+		if (!value) return '';
+		return value.slice(0, 10);
+	}
+
+	function isoToDateTimeInput(value: string | null | undefined): string {
+		if (!value) return '';
+		return new Date(value).toISOString().slice(0, 16);
+	}
+
+	function normalizeScheduleResponse(value: ProductionCalendarRow | null | undefined): ProductionCalendarRow | null {
+		if (!value) return null;
+		return {
+			...value,
+			carousel_project_id: value.carousel_project_id ?? null,
+			handoff_source: value.handoff_source ?? 'manual',
+			publish_deadline: value.publish_deadline ?? null,
+			revision_count: value.revision_count ?? 0,
+			approval_status: value.approval_status ?? 'draft',
+			submitted_at: value.submitted_at ?? null,
+			notes: value.notes ?? null,
+			calendar_assignments: value.calendar_assignments ?? []
+		};
+	}
+
+	function normalizePublishedRecord(value: ProducedVideoRow | null | undefined): ProducedVideoRow | null {
+		if (!value) return null;
+		return {
+			...value,
+			carousel_project_id: value.carousel_project_id ?? null,
+			content_kind: value.content_kind ?? 'carousel',
+			title: value.title ?? null,
+			thumbnail_url: value.thumbnail_url ?? null,
+			published_at: value.published_at ?? null,
+			view_count: value.view_count ?? null,
+			like_count: value.like_count ?? null,
+			comment_count: value.comment_count ?? null,
+			share_count: value.share_count ?? null,
+			save_count: value.save_count ?? null,
+			notes: value.notes ?? null
+		};
+	}
+
+	function applyScheduleDraft(value: ProductionCalendarRow | null) {
+		linkedSchedule = value;
+		handoffShootDate = value?.shoot_date ?? '';
+		handoffPublishDeadline = value?.publish_deadline ?? '';
+		handoffNotes = value?.notes ?? '';
+		const draft = createEmptyAssignmentDraft();
+		for (const assignment of value?.calendar_assignments ?? []) {
+			draft[assignment.member_name] = {
+				enabled: true,
+				role_detail: assignment.role_detail ?? ''
+			};
+		}
+		handoffAssignments = draft;
+	}
+
+	function applyPublishDraft(value: ProducedVideoRow | null) {
+		publishedRecord = value;
+		publishUrl = value?.url ?? '';
+		publishTitle = value?.title ?? project?.title ?? '';
+		publishThumbnailUrl = value?.thumbnail_url ?? '';
+		publishAt = isoToDateTimeInput(value?.published_at);
+		publishNotes = value?.notes ?? '';
+		publishViews = value?.view_count ?? null;
+		publishLikes = value?.like_count ?? null;
+		publishComments = value?.comment_count ?? null;
+		publishShares = value?.share_count ?? null;
+		publishSaves = value?.save_count ?? null;
 	}
 
 	function normalizeProjectResponse(body: ProjectResponse) {
@@ -114,11 +248,17 @@
 			visual_direction: body.visual_direction ?? '',
 			caption: body.caption ?? '',
 			hashtags_json: body.hashtags_json ?? [],
+			review_status: body.review_status ?? 'draft',
+			review_notes: body.review_notes ?? '',
+			reviewed_by: body.reviewed_by ?? '',
+			reviewed_at: body.reviewed_at ?? null,
 			account_display_name: body.account_display_name ?? '',
 			account_handle: normalizeAccountHandle(body.account_handle),
 			account_avatar_url: body.account_avatar_url ?? '',
 			account_avatar_storage_path: body.account_avatar_storage_path ?? '',
-			account_is_verified: Boolean(body.account_is_verified)
+			account_is_verified: Boolean(body.account_is_verified),
+			linked_schedule: undefined,
+			published_record: undefined
 		};
 		slides = (body.carousel_slides ?? [])
 			.map((slide) => ({
@@ -138,6 +278,10 @@
 			}))
 			.sort((a, b) => a.position - b.position);
 		hashtagsInput = (body.hashtags_json ?? []).join(' ');
+		reviewNotes = body.review_notes ?? '';
+		reviewOwner = body.reviewed_by ?? '';
+		applyScheduleDraft(normalizeScheduleResponse(body.linked_schedule));
+		applyPublishDraft(normalizePublishedRecord(body.published_record));
 	}
 
 	function formatTimestamp(value: string | null): string {
@@ -412,6 +556,112 @@
 			toast.error('บันทึก project ไม่สำเร็จ');
 		} finally {
 			savingProject = false;
+		}
+	}
+
+	async function saveReviewStatus(nextStatus?: CarouselReviewStatus) {
+		if (!project) return;
+
+		savingReview = true;
+		try {
+			const resolvedStatus = nextStatus ?? project.review_status ?? 'draft';
+			const response = await fetch(`/api/openclaw/carousels/${projectId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					review_status: resolvedStatus,
+					review_notes: reviewNotes,
+					reviewed_by: reviewOwner,
+					reviewed_at: resolvedStatus === 'draft' ? null : new Date().toISOString()
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'บันทึก review state ไม่สำเร็จ');
+				return;
+			}
+
+			normalizeProjectResponse(body as ProjectResponse);
+			toast.success(`อัปเดต review เป็น ${CAROUSEL_REVIEW_STATUS_LABEL[resolvedStatus]} แล้ว`);
+		} catch {
+			toast.error('บันทึก review state ไม่สำเร็จ');
+		} finally {
+			savingReview = false;
+		}
+	}
+
+	async function handoffToSchedule() {
+		if (!project) return;
+
+		const hadLinkedSchedule = Boolean(linkedSchedule);
+		handoffSaving = true;
+		try {
+			const assignments = TEAM_MEMBERS.filter((member) => handoffAssignments[member].enabled).map((member) => ({
+				member_name: member,
+				role_detail: handoffAssignments[member].role_detail.trim()
+			}));
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/handoff`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					shoot_date: handoffShootDate || null,
+					publish_deadline: handoffPublishDeadline || null,
+					notes: handoffNotes,
+					assignments
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'ส่งต่อเข้า schedule ไม่สำเร็จ');
+				return;
+			}
+
+			applyScheduleDraft(normalizeScheduleResponse(body.schedule));
+			applyPublishDraft(normalizePublishedRecord(body.published_record));
+			toast.success(hadLinkedSchedule ? 'อัปเดต schedule handoff แล้ว' : 'สร้าง schedule handoff แล้ว');
+			await loadProject();
+		} catch {
+			toast.error('ส่งต่อเข้า schedule ไม่สำเร็จ');
+		} finally {
+			handoffSaving = false;
+		}
+	}
+
+	async function savePublishedRecord() {
+		if (!project) return;
+
+		publishSaving = true;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/publish`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					url: publishUrl,
+					title: publishTitle,
+					thumbnail_url: publishThumbnailUrl,
+					published_at: publishAt ? new Date(publishAt).toISOString() : null,
+					view_count: publishViews,
+					like_count: publishLikes,
+					comment_count: publishComments,
+					share_count: publishShares,
+					save_count: publishSaves,
+					notes: publishNotes
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'บันทึก publish record ไม่สำเร็จ');
+				return;
+			}
+
+			applyScheduleDraft(normalizeScheduleResponse(body.schedule));
+			applyPublishDraft(normalizePublishedRecord(body.published_record));
+			toast.success('บันทึก publish record แล้ว');
+			await loadProject();
+		} catch {
+			toast.error('บันทึก publish record ไม่สำเร็จ');
+		} finally {
+			publishSaving = false;
 		}
 	}
 
@@ -797,9 +1047,16 @@
 			<div class="studio-title-block">
 				<div class="hero-badges">
 					<Badge variant={statusVariant(project.status)} label={carouselStatusLabel[project.status]} />
+					<Badge variant={reviewStatusVariant(reviewStatus)} label={reviewStatusLabel} />
 					<Badge variant="platform" value="instagram" />
 					<Badge variant="neutral" label={isQuoteMode ? 'Quote Mode' : 'Standard Mode'} />
 					<Badge variant="neutral" label={`${slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT} slides`} />
+					{#if linkedSchedule}
+						<Badge variant="neutral" label="Scheduled" />
+					{/if}
+					{#if publishedRecord}
+						<Badge variant="success" label="Published Record" />
+					{/if}
 				</div>
 				<h2>{project.title ?? 'Untitled carousel'}</h2>
 				<p>{project.caption?.trim() || project.visual_direction?.trim() || 'ยังไม่มี caption หรือ visual direction'}</p>
@@ -1124,6 +1381,186 @@
 							: 'Ready จะเกิดเมื่อทุก slide มี copy ครบ และมี asset ที่ cache เข้า Storage แล้ว'}
 					</p>
 				</div>
+
+				<section class="workflow-panel">
+					<div class="panel-headline">
+						<div>
+							<p class="panel-kicker">Review</p>
+							<h3>Approval gate</h3>
+						</div>
+						<Button variant="secondary" size="sm" onclick={() => { void saveReviewStatus(); }} loading={savingReview}>
+							Save Review
+						</Button>
+					</div>
+
+					<div class="workflow-summary">
+						<Badge variant={reviewStatusVariant(reviewStatus)} label={reviewStatusLabel} />
+						<p>{reviewStatusHint}</p>
+					</div>
+
+					<label>
+						<span>Reviewer / owner</span>
+						<input bind:value={reviewOwner} placeholder="เช่น โฟน หรือ Head of Content" />
+					</label>
+
+					<label>
+						<span>Review notes</span>
+						<textarea bind:value={reviewNotes} rows={4} placeholder="สรุป feedback, positioning, หรือเหตุผลที่ approve/reject"></textarea>
+					</label>
+
+					<div class="workflow-actions">
+						<Button variant="ghost" size="sm" onclick={() => { void saveReviewStatus('draft'); }} disabled={savingReview}>
+							Back to Draft
+						</Button>
+						<Button variant="secondary" size="sm" onclick={() => { void saveReviewStatus('pending_review'); }} disabled={savingReview}>
+							Send for Review
+						</Button>
+						<Button variant="primary" size="sm" onclick={() => { void saveReviewStatus('approved'); }} disabled={savingReview}>
+							Approve
+						</Button>
+						<Button variant="danger" size="sm" onclick={() => { void saveReviewStatus('changes_requested'); }} disabled={savingReview}>
+							Request Changes
+						</Button>
+					</div>
+				</section>
+
+				<section class="workflow-panel">
+					<div class="panel-headline">
+						<div>
+							<p class="panel-kicker">Handoff</p>
+							<h3>Export to schedule</h3>
+						</div>
+						<Button variant="primary" size="sm" onclick={handoffToSchedule} loading={handoffSaving}>
+							{linkedSchedule ? 'Update Schedule' : 'Create Schedule'}
+						</Button>
+					</div>
+
+					<div class="workflow-summary">
+						<Badge variant={hasLinkedSchedule ? 'success' : 'warning'} label={hasLinkedSchedule ? 'Scheduled' : 'Not Scheduled'} />
+						<p>
+							{#if linkedSchedule}
+								ผูกกับ shoot date {linkedSchedule.shoot_date}
+								{#if linkedSchedule.publish_deadline}
+									และ deadline {linkedSchedule.publish_deadline}
+								{/if}
+							{:else}
+								สร้างรายการใน Shoot Calendar และ Kanban จาก carousel project นี้โดยตรง
+							{/if}
+						</p>
+					</div>
+
+					<div class="field-grid">
+						<label>
+							<span>Shoot date</span>
+							<input type="date" bind:value={handoffShootDate} />
+						</label>
+
+						<label>
+							<span>Publish deadline</span>
+							<input type="date" bind:value={handoffPublishDeadline} />
+						</label>
+					</div>
+
+					<label>
+						<span>Handoff notes</span>
+						<textarea bind:value={handoffNotes} rows={3} placeholder="เช่น priority, CTA nuance, หรือสิ่งที่ทีม production ต้องระวัง"></textarea>
+					</label>
+
+					<div class="assignment-grid">
+						{#each TEAM_MEMBERS as member}
+							<div class="assignment-card">
+								<label class="assignment-toggle">
+									<input type="checkbox" bind:checked={handoffAssignments[member].enabled} />
+									<span>{member}</span>
+								</label>
+								{#if handoffAssignments[member].enabled}
+									<input type="text" bind:value={handoffAssignments[member].role_detail} placeholder="บทบาท/หน้าที่" />
+								{/if}
+							</div>
+						{/each}
+					</div>
+
+					<div class="workflow-links">
+						<Button variant="ghost" size="sm" href="/calendar">Open Calendar</Button>
+						<Button variant="ghost" size="sm" href="/kanban">Open Kanban</Button>
+						{#if linkedSchedule}
+							<span class="workflow-meta">Source: {linkedSchedule.handoff_source}</span>
+						{/if}
+					</div>
+				</section>
+
+				<section class="workflow-panel">
+					<div class="panel-headline">
+						<div>
+							<p class="panel-kicker">Publish</p>
+							<h3>Performance tracking</h3>
+						</div>
+						<Button variant="primary" size="sm" onclick={savePublishedRecord} loading={publishSaving}>
+							{publishedRecord ? 'Update Publish Record' : 'Mark as Published'}
+						</Button>
+					</div>
+
+					<div class="workflow-summary">
+						<Badge variant={hasPublishedRecord ? 'success' : 'warning'} label={hasPublishedRecord ? 'Published' : 'Awaiting Publish'} />
+						<p>
+							{#if publishedRecord?.published_at}
+								โพสต์ล่าสุดเมื่อ {formatTimestamp(publishedRecord.published_at)}
+							{:else}
+								เก็บลิงก์โพสต์และ metrics ของ Instagram carousel เพื่อปิด feedback loop
+							{/if}
+						</p>
+					</div>
+
+					<label>
+						<span>Instagram URL</span>
+						<input bind:value={publishUrl} type="url" placeholder="https://www.instagram.com/p/..." />
+					</label>
+
+					<div class="field-grid">
+						<label>
+							<span>Published at</span>
+							<input bind:value={publishAt} type="datetime-local" />
+						</label>
+
+						<label>
+							<span>Published title</span>
+							<input bind:value={publishTitle} placeholder="ชื่อที่ใช้ตอนโพสต์จริง" />
+						</label>
+					</div>
+
+					<label>
+						<span>Thumbnail URL</span>
+						<input bind:value={publishThumbnailUrl} type="url" placeholder="https://..." />
+					</label>
+
+					<div class="publish-metrics-grid">
+						<label>
+							<span>Views</span>
+							<input bind:value={publishViews} type="number" min="0" placeholder="0" />
+						</label>
+						<label>
+							<span>Likes</span>
+							<input bind:value={publishLikes} type="number" min="0" placeholder="0" />
+						</label>
+						<label>
+							<span>Comments</span>
+							<input bind:value={publishComments} type="number" min="0" placeholder="0" />
+						</label>
+						<label>
+							<span>Shares</span>
+							<input bind:value={publishShares} type="number" min="0" placeholder="0" />
+						</label>
+						<label>
+							<span>Saves</span>
+							<input bind:value={publishSaves} type="number" min="0" placeholder="0" />
+						</label>
+					</div>
+
+					<label>
+						<span>Publish notes</span>
+						<textarea bind:value={publishNotes} rows={3} placeholder="เช่น observation หลังโพสต์, creative note, audience reaction"></textarea>
+					</label>
+				</section>
 			</aside>
 		</div>
 
@@ -1663,6 +2100,70 @@
 	.context-card strong {
 		font-size: 1rem;
 		color: var(--color-slate-900);
+	}
+
+	.workflow-panel {
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		border-radius: 1rem;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+		border: 1px solid var(--color-border);
+	}
+
+	.workflow-summary {
+		display: grid;
+		gap: 0.45rem;
+		padding: 0.9rem 1rem;
+		border-radius: 0.95rem;
+		background: var(--color-slate-50);
+		border: 1px solid rgba(148, 163, 184, 0.18);
+	}
+
+	.workflow-summary p,
+	.workflow-meta {
+		margin: 0;
+		font-size: 0.78rem;
+		line-height: 1.55;
+		color: var(--color-slate-600);
+	}
+
+	.workflow-actions,
+	.workflow-links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: center;
+	}
+
+	.assignment-grid,
+	.publish-metrics-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		gap: var(--space-3);
+	}
+
+	.assignment-card {
+		display: grid;
+		gap: 0.55rem;
+		padding: 0.85rem;
+		border-radius: 0.95rem;
+		border: 1px solid var(--color-border);
+		background: #fff;
+	}
+
+	.assignment-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		font-size: 0.86rem;
+		font-weight: 700;
+		color: var(--color-slate-800);
+	}
+
+	.assignment-toggle input {
+		width: auto;
+		margin: 0;
 	}
 
 	.font-preview-card {

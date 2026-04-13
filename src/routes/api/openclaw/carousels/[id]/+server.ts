@@ -2,8 +2,13 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { normalizeCarouselQuoteFontScale, normalizeCarouselTextLetterSpacingEm, normalizeHashtags } from '$lib/carousel';
 import { supabase } from '$lib/supabase';
-import { getCarouselBundle, isMissingCarouselProjectColumnError, recomputeCarouselStatus } from '$lib/server/carousel-store';
-import type { CarouselContentMode, CarouselFontPreset, CarouselProjectStatus } from '$lib/types';
+import {
+	getCarouselBundle,
+	getCarouselWorkflow,
+	isMissingCarouselProjectColumnError,
+	recomputeCarouselStatus
+} from '$lib/server/carousel-store';
+import type { CarouselContentMode, CarouselFontPreset, CarouselProjectStatus, CarouselReviewStatus } from '$lib/types';
 
 function normalizeContentMode(value: unknown): CarouselContentMode {
 	return value === 'quote' ? 'quote' : 'standard';
@@ -22,12 +27,22 @@ function normalizeAccountHandle(value: unknown): string | null {
 	return stripped ? stripped : null;
 }
 
+function normalizeReviewStatus(value: unknown): CarouselReviewStatus {
+	if (value === 'pending_review' || value === 'approved' || value === 'changes_requested') {
+		return value;
+	}
+	return 'draft';
+}
+
 export const GET: RequestHandler = async ({ params }) => {
 	try {
 		const bundle = await getCarouselBundle(params.id);
+		const workflow = await getCarouselWorkflow(bundle.project);
 		return json({
 			...bundle.project,
-			carousel_slides: bundle.slides
+			carousel_slides: bundle.slides,
+			linked_schedule: workflow.linked_schedule,
+			published_record: workflow.published_record
 		});
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : String(error) }, { status: 404 });
@@ -58,6 +73,18 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		if (body.caption !== undefined) updates.caption = normalizeTextOrNull(body.caption);
 		if (body.hashtags_json !== undefined) {
 			updates.hashtags_json = normalizeHashtags(Array.isArray(body.hashtags_json) ? body.hashtags_json : []);
+		}
+		if (body.review_status !== undefined) {
+			updates.review_status = normalizeReviewStatus(body.review_status);
+		}
+		if (body.review_notes !== undefined) {
+			updates.review_notes = normalizeTextOrNull(body.review_notes);
+		}
+		if (body.reviewed_by !== undefined) {
+			updates.reviewed_by = normalizeTextOrNull(body.reviewed_by);
+		}
+		if (body.reviewed_at !== undefined) {
+			updates.reviewed_at = typeof body.reviewed_at === 'string' ? body.reviewed_at : null;
 		}
 		if (body.account_display_name !== undefined) {
 			updates.account_display_name = normalizeTextOrNull(body.account_display_name);
@@ -94,6 +121,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 				'font_preset',
 				'text_letter_spacing_em',
 				'quote_font_scale',
+				'review_status',
+				'review_notes',
+				'reviewed_by',
+				'reviewed_at',
 				'account_display_name',
 				'account_handle',
 				'account_avatar_url',
@@ -120,9 +151,12 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 
 		await recomputeCarouselStatus(params.id, body.status as CarouselProjectStatus | undefined);
 		const bundle = await getCarouselBundle(params.id);
+		const workflow = await getCarouselWorkflow(bundle.project);
 		return json({
 			...bundle.project,
-			carousel_slides: bundle.slides
+			carousel_slides: bundle.slides,
+			linked_schedule: workflow.linked_schedule,
+			published_record: workflow.published_record
 		});
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

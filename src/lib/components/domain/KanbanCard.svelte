@@ -86,6 +86,9 @@
         {#if bl.content_category}
           <span class="chip chip--category">{contentCategoryLabel[bl.content_category]}</span>
         {/if}
+        {#if item.carousel_project_id}
+          <span class="chip chip--carousel">Carousel</span>
+        {/if}
       </div>
 
       <!-- Code + Title -->
@@ -252,6 +255,11 @@
   .chip--category {
     background: rgba(99, 102, 241, 0.12);
     color: var(--color-indigo-600);
+  }
+
+  .chip--carousel {
+    background: rgba(15, 23, 42, 0.08);
+    color: var(--color-slate-700);
   }
 
   .chip--member {

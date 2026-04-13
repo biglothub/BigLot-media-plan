@@ -76,6 +76,9 @@ export interface AIIdeaSuggestion {
 
 export type ProductionStage = 'planned' | 'scripting' | 'shooting' | 'editing' | 'review' | 'published';
 export type ApprovalStatus = 'draft' | 'pending_review' | 'approved' | 'rejected';
+export type CarouselReviewStatus = 'draft' | 'pending_review' | 'approved' | 'changes_requested';
+export type HandoffSource = 'manual' | 'carousel_handoff';
+export type ProducedContentKind = 'video' | 'carousel' | 'post';
 
 export interface CalendarAssignmentRow {
 	id: string;
@@ -88,6 +91,8 @@ export interface CalendarAssignmentRow {
 export interface ProductionCalendarRow {
 	id: string;
 	backlog_id: string;
+	carousel_project_id: string | null;
+	handoff_source: HandoffSource;
 	shoot_date: string;
 	publish_deadline: string | null;
 	status: string;
@@ -97,12 +102,15 @@ export interface ProductionCalendarRow {
 	notes: string | null;
 	created_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
+	carousel_project?: CarouselProjectRow | null;
 	calendar_assignments?: CalendarAssignmentRow[];
 }
 
 export interface ProducedVideoRow {
 	id: string;
 	calendar_id: string;
+	carousel_project_id: string | null;
+	content_kind: ProducedContentKind;
 	url: string;
 	platform: SupportedPlatform;
 	title: string | null;
@@ -174,6 +182,10 @@ export interface CarouselProjectRow {
 	visual_direction: string | null;
 	caption: string | null;
 	hashtags_json: string[] | null;
+	review_status: CarouselReviewStatus;
+	review_notes: string | null;
+	reviewed_by: string | null;
+	reviewed_at: string | null;
 	account_display_name: string | null;
 	account_handle: string | null;
 	account_avatar_url: string | null;
@@ -186,6 +198,8 @@ export interface CarouselProjectRow {
 	updated_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
 	carousel_slides?: CarouselSlideRow[];
+	linked_schedule?: ProductionCalendarRow | null;
+	published_record?: ProducedVideoRow | null;
 }
 
 export interface CarouselQuoteIdentityRow {

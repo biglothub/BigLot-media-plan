@@ -48,7 +48,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const { data, error } = await supabase
 		.from('production_calendar')
-		.insert({ backlog_id: body.backlog_id, shoot_date: body.shoot_date, notes: body.notes ?? null, status: 'planned' })
+		.insert({
+			backlog_id: body.backlog_id,
+			carousel_project_id: body.carousel_project_id ?? null,
+			handoff_source: body.handoff_source ?? 'manual',
+			shoot_date: body.shoot_date,
+			publish_deadline: body.publish_deadline ?? null,
+			notes: body.notes ?? null,
+			status: 'planned'
+		})
 		.select()
 		.single();
 

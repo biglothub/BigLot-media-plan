@@ -117,7 +117,7 @@
 		const { data, error } = await supabase
 			.from("production_calendar")
 			.select(
-				"id, backlog_id, shoot_date, publish_deadline, status, notes, created_at, idea_backlog(*), calendar_assignments(*)",
+				"id, backlog_id, carousel_project_id, handoff_source, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, idea_backlog(*), calendar_assignments(*)",
 			)
 			.order("shoot_date", { ascending: true })
 			.order("created_at", { ascending: true });
@@ -225,6 +225,10 @@
 
 	function openDetail(item: ProductionCalendarRow) {
 		void goto(`/?edit=${item.backlog_id}`, { keepFocus: true, noScroll: false });
+	}
+
+	function getCarouselStudioHref(item: ProductionCalendarRow): string | null {
+		return item.carousel_project_id ? `/carousel/${item.carousel_project_id}` : null;
 	}
 
 	async function updateStatus(calendarId: string, newStatus: ProductionStage) {
@@ -346,6 +350,9 @@
 												</div>
 												<p class="calendar-title">{item.idea_backlog?.title ?? "Untitled idea"}</p>
 												<div class="calendar-item-meta">
+													{#if item.carousel_project_id}
+														<span class="meta-chip carousel-chip">Carousel Studio</span>
+													{/if}
 													{#if item.publish_deadline}
 														<span class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}>
 															Deadline {formatCalendarDayMeta(item.publish_deadline)}
@@ -369,6 +376,9 @@
 												</select>
 												<div class="calendar-item-actions">
 													<button class="tiny-detail" onclick={() => openDetail(item)}>Detail</button>
+													{#if getCarouselStudioHref(item)}
+														<a class="tiny-link" href={getCarouselStudioHref(item) ?? '#'}>Carousel</a>
+													{/if}
 													<button class="tiny-danger" onclick={() => unscheduleIdea(item.backlog_id)}>Unschedule</button>
 												</div>
 											</article>
@@ -512,6 +522,9 @@
 												<p class="calendar-title">{item.idea_backlog?.title ?? "Untitled idea"}</p>
 											</a>
 											<div class="calendar-item-meta">
+												{#if item.carousel_project_id}
+													<span class="meta-chip carousel-chip">Carousel Studio</span>
+												{/if}
 												{#if item.publish_deadline}
 													<span class={`meta-chip deadline-chip ${item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? "overdue" : ""}`}>
 														Deadline {formatCalendarDayMeta(item.publish_deadline)}
@@ -554,6 +567,15 @@
 												>
 													Detail
 												</button>
+												{#if getCarouselStudioHref(item)}
+													<a
+														class="tiny-link"
+														href={getCarouselStudioHref(item) ?? '#'}
+														onclick={(event) => event.stopPropagation()}
+													>
+														Carousel
+													</a>
+												{/if}
 												<button
 													class="tiny-danger"
 													onclick={(event) => {
@@ -986,6 +1008,11 @@
 		color: var(--color-primary);
 	}
 
+	.carousel-chip {
+		background: rgba(15, 23, 42, 0.08);
+		color: var(--color-slate-700);
+	}
+
 	.calendar-item p {
 		margin: 0;
 		font-size: 0.76rem;
@@ -1037,6 +1064,21 @@
 		padding: 0.2rem 0.35rem;
 		cursor: pointer;
 		width: 100%;
+	}
+
+	.tiny-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		text-decoration: none;
+		border-radius: 0.5rem;
+		font-size: 0.7rem;
+		font-weight: 700;
+		padding: 0.2rem 0.35rem;
+		background: rgba(15, 23, 42, 0.08);
+		color: var(--color-slate-700);
+		width: 100%;
+		box-sizing: border-box;
 	}
 
 	.tiny-danger {

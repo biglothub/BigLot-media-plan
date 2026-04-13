@@ -8,7 +8,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	const platform = url.searchParams.get('platform');
 	let query = supabase
 		.from('produced_videos')
-		.select('*, production_calendar(shoot_date, status, idea_backlog(title, idea_code))')
+		.select('*, production_calendar(shoot_date, status, idea_backlog(title, idea_code)), carousel_projects(title, content_mode, review_status)')
 		.order('created_at', { ascending: false })
 		.limit(50);
 
@@ -29,6 +29,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const row = {
 		calendar_id: body.calendar_id,
+		carousel_project_id: body.carousel_project_id ?? null,
+		content_kind: body.content_kind ?? 'video',
 		url: body.url,
 		platform: body.platform,
 		title: body.title ?? null,
