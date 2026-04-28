@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
 	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
 	import { TEAM_MEMBERS } from '$lib/team';
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
@@ -32,6 +31,7 @@
 	} from '$lib/carousel';
 	import { buildCarouselExportEntries, buildCarouselExportManifest, buildPostingChecklist } from '$lib/carousel-export';
 	import { hasSupabaseConfig } from '$lib/supabase';
+	import type { PageData } from './$types';
 	import type {
 		CarouselAsset,
 		CarouselContentMode,
@@ -90,6 +90,8 @@
 		) as Record<TeamMember, { enabled: boolean; role_detail: string }>;
 	}
 
+	let { data }: { data: PageData } = $props();
+
 	let project = $state<CarouselProjectRow | null>(null);
 	let slides = $state<CarouselSlideRow[]>([]);
 	let loading = $state(false);
@@ -100,7 +102,14 @@
 	let exporting = $state(false);
 	let autoPickingAssets = $state(false);
 	let savingSlideId = $state<string | null>(null);
+	let regeneratingSlideId = $state<string | null>(null);
 	let rerollingSlideId = $state<string | null>(null);
+	let draggingSlideId = $state<string | null>(null);
+	let dragOverSlideId = $state<string | null>(null);
+	let reordering = $state(false);
+	let undoingSlideId = $state<string | null>(null);
+	let regeneratingAllSlides = $state(false);
+	let regenerateAllProgress = $state<{ done: number; total: number } | null>(null);
 	let selectingAssetSlideId = $state<string | null>(null);
 	let uploadingAssetSlideId = $state<string | null>(null);
 	let projectError = $state('');
@@ -134,6 +143,7 @@
 	let publishComments = $state<number | null>(null);
 	let publishShares = $state<number | null>(null);
 	let publishSaves = $state<number | null>(null);
+	let initializedFromData = false;
 
 	const projectId = $derived(page.params.id);
 	const contentMode = $derived(project?.content_mode ?? 'standard');
@@ -149,6 +159,17 @@
 	const reviewStatusHint = $derived(CAROUSEL_REVIEW_STATUS_HINT[reviewStatus]);
 	const hasLinkedSchedule = $derived(Boolean(linkedSchedule?.id));
 	const hasPublishedRecord = $derived(Boolean(publishedRecord?.id));
+
+	const INSTAGRAM_CAPTION_LIMIT = 2200;
+	const captionCharCount = $derived((project?.caption ?? '').length);
+	const hashtagsParsed = $derived(parseHashtagsInput(hashtagsInput));
+	const hashtagsText = $derived(hashtagsParsed.join(' '));
+	const hashtagsCharCount = $derived(hashtagsText.length);
+	const combinedCharCount = $derived(captionCharCount + (hashtagsCharCount > 0 ? 1 + hashtagsCharCount : 0));
+	const captionCountState = $derived(
+		combinedCharCount >= INSTAGRAM_CAPTION_LIMIT ? 'over' :
+		combinedCharCount >= INSTAGRAM_CAPTION_LIMIT * 0.9 ? 'warning' : 'ok'
+	);
 
 	function statusVariant(status: CarouselProjectStatus | undefined): 'warning' | 'success' | 'info' | 'neutral' {
 		if (status === 'ready') return 'success';
@@ -260,29 +281,50 @@
 			linked_schedule: undefined,
 			published_record: undefined
 		};
-		slides = (body.carousel_slides ?? [])
-			.map((slide) => ({
-				...slide,
-				headline: slide.headline ?? '',
-				body: slide.body ?? '',
-				cta: slide.cta ?? '',
-				visual_brief: slide.visual_brief ?? '',
-				freepik_query: slide.freepik_query ?? '',
-				quote_font_scale_override:
-					slide.quote_font_scale_override === null || slide.quote_font_scale_override === undefined
-						? null
-						: normalizeCarouselQuoteFontScale(slide.quote_font_scale_override),
-				quote_text_offset_x_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_x_px),
-				quote_text_offset_y_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_y_px),
-				candidate_assets_json: slide.candidate_assets_json ?? []
-			}))
-			.sort((a, b) => a.position - b.position);
+		slides = (body.carousel_slides ?? []).map(normalizeSlideResponse).sort((a, b) => a.position - b.position);
 		hashtagsInput = (body.hashtags_json ?? []).join(' ');
 		reviewNotes = body.review_notes ?? '';
 		reviewOwner = body.reviewed_by ?? '';
 		applyScheduleDraft(normalizeScheduleResponse(body.linked_schedule));
 		applyPublishDraft(normalizePublishedRecord(body.published_record));
 	}
+
+	function normalizeSlideResponse(slide: CarouselSlideRow): CarouselSlideRow {
+		return {
+			...slide,
+			headline: slide.headline ?? '',
+			body: slide.body ?? '',
+			cta: slide.cta ?? '',
+			visual_brief: slide.visual_brief ?? '',
+			freepik_query: slide.freepik_query ?? '',
+			quote_font_scale_override:
+				slide.quote_font_scale_override === null || slide.quote_font_scale_override === undefined
+					? null
+					: normalizeCarouselQuoteFontScale(slide.quote_font_scale_override),
+			quote_text_offset_x_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_x_px),
+			quote_text_offset_y_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_y_px),
+			candidate_assets_json: slide.candidate_assets_json ?? [],
+			history_json: Array.isArray(slide.history_json) ? slide.history_json : []
+		};
+	}
+
+	function replaceSlide(updatedSlide: CarouselSlideRow) {
+		const normalized = normalizeSlideResponse(updatedSlide);
+		slides = slides
+			.map((slide) => (slide.id === normalized.id ? normalized : slide))
+			.sort((a, b) => a.position - b.position);
+	}
+
+	$effect(() => {
+		if (initializedFromData) return;
+		quoteIdentities = data.quoteIdentities ?? [];
+		projectError = data.projectError ?? '';
+		if (data.project) {
+			normalizeProjectResponse(data.project as ProjectResponse);
+		}
+		selectedQuoteIdentityId = quoteIdentities[0]?.id ?? '';
+		initializedFromData = true;
+	});
 
 	function formatTimestamp(value: string | null): string {
 		if (!value) return 'ยังไม่มี';
@@ -756,6 +798,68 @@
 		}
 	}
 
+	async function regenerateSlide(slide: CarouselSlideRow) {
+		regeneratingSlideId = slide.id;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/${slide.id}/regenerate`, {
+				method: 'POST'
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'Regenerate slide ไม่สำเร็จ');
+				return;
+			}
+
+			if (body.slide) {
+				replaceSlide(body.slide as CarouselSlideRow);
+			}
+			if (project && typeof body.project_status === 'string') {
+				project.status = body.project_status as CarouselProjectStatus;
+			}
+			toast.success(`Regenerate slide ${slide.position} แล้ว`);
+		} catch {
+			toast.error('Regenerate slide ไม่สำเร็จ');
+		} finally {
+			regeneratingSlideId = null;
+		}
+	}
+
+	async function undoSlideRegenerate(slide: CarouselSlideRow) {
+		const lastVersion = slide.history_json?.[0];
+		if (!lastVersion) {
+			toast.error('ไม่มี version ก่อนหน้า');
+			return;
+		}
+		undoingSlideId = slide.id;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/${slide.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					headline: lastVersion.headline,
+					body: lastVersion.body,
+					cta: lastVersion.cta,
+					visual_brief: lastVersion.visual_brief,
+					freepik_query: lastVersion.freepik_query
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'Undo ไม่สำเร็จ');
+				return;
+			}
+			if (body.slide) replaceSlide(body.slide as CarouselSlideRow);
+			if (project && typeof body.project_status === 'string') {
+				project.status = body.project_status as CarouselProjectStatus;
+			}
+			toast.success(`Undo slide ${slide.position} แล้ว`);
+		} catch {
+			toast.error('Undo ไม่สำเร็จ');
+		} finally {
+			undoingSlideId = null;
+		}
+	}
+
 	async function rerollAssets(slide: CarouselSlideRow) {
 		rerollingSlideId = slide.id;
 		try {
@@ -904,6 +1008,104 @@
 		}
 	}
 
+	function handleSlidesDragStart(event: DragEvent, slideId: string) {
+		draggingSlideId = slideId;
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData('text/plain', slideId);
+		}
+	}
+
+	function handleSlidesDragOver(event: DragEvent, slideId: string) {
+		event.preventDefault();
+		if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+		if (slideId !== draggingSlideId) dragOverSlideId = slideId;
+	}
+
+	function handleSlidesDragEnd() {
+		draggingSlideId = null;
+		dragOverSlideId = null;
+	}
+
+	async function handleSlidesDrop(event: DragEvent, targetSlideId: string) {
+		event.preventDefault();
+		dragOverSlideId = null;
+
+		const sourceId = draggingSlideId;
+		draggingSlideId = null;
+
+		if (!sourceId || sourceId === targetSlideId) return;
+
+		const sourceIndex = slides.findIndex((s) => s.id === sourceId);
+		const targetIndex = slides.findIndex((s) => s.id === targetSlideId);
+		if (sourceIndex === -1 || targetIndex === -1) return;
+
+		// Build new order by moving source to target position
+		const reordered = [...slides];
+		const [moved] = reordered.splice(sourceIndex, 1);
+		reordered.splice(targetIndex, 0, moved);
+
+		// Assign new positions (1-indexed)
+		const newPositions = reordered.map((slide, index) => ({ ...slide, position: index + 1 }));
+
+		// Optimistic update
+		slides = newPositions;
+
+		await reorderSlides(newPositions.map((s) => ({ id: s.id, position: s.position })));
+	}
+
+	async function reorderSlides(positions: { id: string; position: number }[]) {
+		reordering = true;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/reorder`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ positions })
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'เรียงลำดับ slide ไม่สำเร็จ');
+				await loadProject();
+				return;
+			}
+			toast.success('เรียงลำดับ slides แล้ว');
+		} catch {
+			toast.error('เรียงลำดับ slide ไม่สำเร็จ');
+			await loadProject();
+		} finally {
+			reordering = false;
+		}
+	}
+
+	async function regenerateAllCopy() {
+		if (slides.length === 0) return;
+		regeneratingAllSlides = true;
+		regenerateAllProgress = { done: 0, total: slides.length };
+		try {
+			for (const slide of slides) {
+				const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/${slide.id}/regenerate`, {
+					method: 'POST'
+				});
+				const body = await response.json();
+				if (!response.ok) {
+					toast.error(body.error ?? `Regenerate slide ${slide.position} ไม่สำเร็จ`);
+					return;
+				}
+				if (body.slide) replaceSlide(body.slide as CarouselSlideRow);
+				if (project && typeof body.project_status === 'string') {
+					project.status = body.project_status as CarouselProjectStatus;
+				}
+				regenerateAllProgress = { done: regenerateAllProgress!.done + 1, total: slides.length };
+			}
+			toast.success(`Regenerate copy ครบ ${slides.length} slides แล้ว`);
+		} catch {
+			toast.error('Regenerate all copy ไม่สำเร็จ');
+		} finally {
+			regeneratingAllSlides = false;
+			regenerateAllProgress = null;
+		}
+	}
+
 	async function exportPackage() {
 		if (!project) return;
 		if (exportMode !== 'copy_bundle' && !readyToExport) {
@@ -996,13 +1198,10 @@
 		}
 	}
 
-	onMount(async () => {
-		await Promise.all([loadProject(), loadQuoteIdentities()]);
-	});
 </script>
 
 <main class="page">
-		<PageHeader
+	<PageHeader
 		eyebrow="Carousel Studio"
 		title={project?.title ?? 'Carousel project'}
 		subtitle={
@@ -1016,14 +1215,6 @@
 			<Button variant="ai" onclick={generateDraft} loading={generating} disabled={!hasSupabaseConfig}>
 				{generating ? 'Generating...' : slides.length > 0 ? 'Regenerate Draft' : 'Generate Draft'}
 			</Button>
-			<label class="export-mode-picker">
-				<span>Export mode</span>
-				<select bind:value={exportMode}>
-					{#each EXPORT_MODE_OPTIONS as option}
-						<option value={option.value}>{option.label}</option>
-					{/each}
-				</select>
-			</label>
 			<Button variant="primary" onclick={exportPackage} loading={exporting} disabled={!canExportSelectedMode}>
 				{exporting ? 'Exporting...' : `Export ${selectedExportMode.label}`}
 			</Button>
@@ -1043,11 +1234,11 @@
 			<Button variant="primary" onclick={() => { void loadProject(); }}>Try Again</Button>
 		</div>
 	{:else if project}
-			<section class="studio-hero">
-			<div class="studio-title-block">
+		<section class="summary-strip">
+			<div class="summary-strip-top">
 				<div class="hero-badges">
 					<Badge variant={statusVariant(project.status)} label={carouselStatusLabel[project.status]} />
-					<Badge variant={reviewStatusVariant(reviewStatus)} label={reviewStatusLabel} />
+					<Badge variant={reviewStatusVariant(reviewStatus)} label={`Review ${reviewStatusLabel}`} />
 					<Badge variant="platform" value="instagram" />
 					<Badge variant="neutral" label={isQuoteMode ? 'Quote Mode' : 'Standard Mode'} />
 					<Badge variant="neutral" label={`${slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT} slides`} />
@@ -1055,333 +1246,673 @@
 						<Badge variant="neutral" label="Scheduled" />
 					{/if}
 					{#if publishedRecord}
-						<Badge variant="success" label="Published Record" />
+						<Badge variant="success" label="Published" />
 					{/if}
 				</div>
-				<h2>{project.title ?? 'Untitled carousel'}</h2>
-				<p>{project.caption?.trim() || project.visual_direction?.trim() || 'ยังไม่มี caption หรือ visual direction'}</p>
+				<p class="summary-copy">{project.caption?.trim() || project.visual_direction?.trim() || 'ยังไม่มี caption หรือ visual direction'}</p>
 			</div>
 
-			<div class="studio-metrics">
-				<div class="metric-card">
+			<div class="summary-grid">
+				<div class="summary-card">
+					<span>Readiness</span>
+					<strong>{readySlidesCount}/{slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT}</strong>
+					<small>{projectBlockers.length > 0 ? `${projectBlockers.length} blockers` : 'พร้อม export'}</small>
+				</div>
+				<div class="summary-card">
 					<span>Last generated</span>
 					<strong>{formatTimestamp(project.last_generated_at)}</strong>
 				</div>
-				<div class="metric-card">
+				<div class="summary-card">
 					<span>Last exported</span>
 					<strong>{formatTimestamp(project.last_exported_at)}</strong>
 				</div>
+				<div class="summary-card">
+					<span>Project ref</span>
+					<strong>{project.id.slice(0, 8)}</strong>
+				</div>
 			</div>
-			</section>
+
+			<div class="summary-toolbar">
+				<label class="summary-select">
+					<span>Export mode</span>
+					<select bind:value={exportMode}>
+						{#each EXPORT_MODE_OPTIONS as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</label>
+				<div class="summary-toolbar-actions">
+					<Button
+						variant="ghost"
+						onclick={() => { void regenerateAllCopy(); }}
+						loading={regeneratingAllSlides}
+						disabled={slides.length === 0 || autoPickingAssets}
+					>
+						{regeneratingAllSlides && regenerateAllProgress
+							? `Regenerating ${regenerateAllProgress.done}/${regenerateAllProgress.total}...`
+							: 'Regenerate All Copy'}
+					</Button>
+					<Button
+						variant="secondary"
+						onclick={autoPickMissingAssets}
+						loading={autoPickingAssets}
+						disabled={slides.length === 0 || regeneratingAllSlides}
+					>
+						{autoPickingAssets ? 'Auto-picking...' : 'Auto-pick missing assets'}
+					</Button>
+				</div>
+			</div>
 
 			{#if projectBlockers.length > 0}
-				<section class="blocker-card">
-					<div class="blocker-copy">
-						<p class="panel-kicker">Export blockers</p>
-						<h3>ยัง export ไม่ได้</h3>
-						<p>
-							{#if isQuoteMode}
-								Quote mode พร้อมแล้ว {readySlidesCount}/{slides.length} slides แต่ยังต้องเติม account header หรือเคลียร์ blocker ด้านล่างก่อน
-							{:else}
-								ตอนนี้พร้อมแล้ว {readySlidesCount}/{slides.length} slides ต้องเคลียร์รายการด้านล่างให้ครบก่อน
-							{/if}
-						</p>
-					</div>
-					<div class="blocker-actions">
-						<Button
-							variant="secondary"
-							onclick={autoPickMissingAssets}
-							loading={autoPickingAssets}
-							disabled={slides.length === 0}
-						>
-							{autoPickingAssets ? 'Auto-picking...' : 'Auto-pick missing assets'}
-						</Button>
-					</div>
+				<div class="summary-blockers">
+					<strong>ยัง export ไม่ได้</strong>
 					<ul class="blocker-list">
 						{#each projectBlockers as blocker}
 							<li>{blocker}</li>
 						{/each}
 					</ul>
-				</section>
+				</div>
 			{:else}
-				<section class="blocker-card blocker-card--ready">
-					<div class="blocker-copy">
-						<p class="panel-kicker">Export ready</p>
-						<h3>พร้อม export แล้ว</h3>
+				<p class="summary-ready">
+					{isQuoteMode
+						? 'quote slides พร้อม copy และ CTA slide มี asset ครบ รวมถึง account header พร้อม export แล้ว'
+						: 'ทุก slide มี copy และ asset ครบ สามารถ export package ได้ทันที'}
+				</p>
+			{/if}
+		</section>
+
+		<details class="section-card section-card--open" open>
+			<summary class="section-summary">
+				<div class="section-summary-copy">
+					<p class="panel-kicker">Slides</p>
+					<h3>Storyboard + asset picker</h3>
+				</div>
+				<span class="section-summary-meta">{readySlidesCount}/{slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT} ready</span>
+			</summary>
+
+			<div class="section-body">
+				{#if slides.length === 0}
+					<div class="empty-card">
+						<h4>ยังไม่มี slide draft</h4>
 						<p>
 							{isQuoteMode
-								? 'quote slides พร้อม copy และ CTA slide มี asset ครบ รวมถึง account header พร้อม export แล้ว'
-								: 'ทุก slide มี copy และ asset ครบ สามารถกด Export Package ได้ทันที'}
+								? 'กด Generate Draft เพื่อให้ AI สร้าง quote-first storyboard แบบ 5 quote slides + 1 CTA'
+								: 'กด Generate Draft เพื่อให้ AI สร้างโครง carousel และค้น candidate asset จาก Pexels'}
 						</p>
 					</div>
-				</section>
-			{/if}
+				{:else}
+					<div class="slide-list">
+						{#each slides as slide}
+							<article
+								class="slide-row"
+								class:slide-row--dragging={draggingSlideId === slide.id}
+								class:slide-row--drag-over={dragOverSlideId === slide.id}
+								draggable="true"
+								ondragstart={(e) => handleSlidesDragStart(e, slide.id)}
+								ondragover={(e) => handleSlidesDragOver(e, slide.id)}
+								ondrop={(e) => void handleSlidesDrop(e, slide.id)}
+								ondragend={handleSlidesDragEnd}
+							>
+								<div class="slide-preview-col">
+									<div class="drag-handle" title="ลากเพื่อเรียงลำดับ">⠿</div>
+									<CarouselSlidePreview
+										slide={slide}
+										fontPreset={project.font_preset}
+										textLetterSpacingEm={project.text_letter_spacing_em}
+										fallbackAssetUrl={previewAssetForSlide(slide)}
+										contentMode={contentMode}
+										quoteFontScale={resolvedSlideQuoteFontScale(slide)}
+										accountDisplayName={project.account_display_name}
+										accountHandle={project.account_handle}
+										accountAvatarUrl={project.account_avatar_url}
+										accountIsVerified={project.account_is_verified}
+										quoteTextOffsetXPx={slide.quote_text_offset_x_px}
+										quoteTextOffsetYPx={slide.quote_text_offset_y_px}
+										exportId={slide.id}
+									/>
+								</div>
 
-			<div class="studio-grid">
-				<section class="meta-panel">
-				<div class="panel-headline">
-					<div>
-						<p class="panel-kicker">Project meta</p>
-						<h3>Caption package</h3>
-					</div>
-					<Button variant="secondary" onclick={saveProjectMeta} loading={savingProject}>Save Meta</Button>
-				</div>
+								<div class="slide-editor-col">
+								<div class="slide-topline">
+									<div>
+										<p class="slide-kicker">Slide {slide.position}</p>
+											<h4>{slide.role}</h4>
+											<div class="slide-state-row">
+												{#if slideReadiness(slide).isReady}
+													<span class="slide-state slide-state--ready">Ready</span>
+												{:else}
+													{#if !isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
+														<span class="slide-state slide-state--warn">Missing asset</span>
+													{/if}
+													{#if !slideReadiness(slide).hasCopy}
+														<span class="slide-state slide-state--muted">Incomplete copy</span>
+													{/if}
+											{/if}
+										</div>
+									</div>
+									<div class="slide-actions">
+										{#if slide.history_json && slide.history_json.length > 0}
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => { void undoSlideRegenerate(slide); }}
+												loading={undoingSlideId === slide.id}
+												disabled={regeneratingSlideId === slide.id || savingSlideId === slide.id}
+											>
+												Undo Regen
+											</Button>
+										{/if}
+										<Button
+											variant="ghost"
+											size="sm"
+											onclick={() => { void regenerateSlide(slide); }}
+											loading={regeneratingSlideId === slide.id}
+											disabled={savingSlideId === slide.id || undoingSlideId === slide.id}
+										>
+											Regenerate Slide
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											onclick={() => { void saveSlide(slide); }}
+											loading={savingSlideId === slide.id}
+											disabled={regeneratingSlideId === slide.id || undoingSlideId === slide.id}
+										>
+											Save Slide
+										</Button>
+									</div>
+								</div>
 
-				<label>
-					<span>Content mode</span>
-					<select bind:value={project.content_mode}>
-						<option value="standard">standard</option>
-						<option value="quote">quote</option>
-					</select>
-					<small>Quote mode uses a text-first layout with an account header on every non-CTA slide.</small>
-				</label>
+									<div class="field-grid" class:field-grid--headline-only={isQuoteNonCtaSlide(slide)}>
+										<label>
+											<span>Headline</span>
+											<textarea bind:value={slide.headline} rows={3} placeholder="ข้อความหลักบน slide"></textarea>
+										</label>
 
-				<label>
-					<span>Carousel title</span>
-					<input bind:value={project.title} placeholder="ชื่อ carousel" />
-				</label>
+										{#if !isQuoteNonCtaSlide(slide)}
+											<label>
+												<span>Layout</span>
+												<select bind:value={slide.layout_variant}>
+													<option value="cover">cover</option>
+													<option value="content">content</option>
+													<option value="cta">cta</option>
+												</select>
+											</label>
+										{/if}
+									</div>
 
-				<label>
-					<span>Font preset</span>
-					<select bind:value={project.font_preset}>
-						{#each CAROUSEL_FONT_PRESETS as preset}
-							<option value={preset.value}>{preset.label} · {preset.description}</option>
+									{#if isQuoteNonCtaSlide(slide)}
+										<div class="quote-mode-note">
+											<strong>Quote Mode</strong>
+											<span>สไลด์นี้จะใช้ headline เป็นข้อความหลัก ไม่ต้องมี body copy หรือ layout selector แต่เลือก background image เพิ่มได้ถ้าต้องการ</span>
+										</div>
+
+										<div class="quote-position-grid">
+											<label>
+												<span>Slide font size</span>
+												<div class="letter-spacing-field">
+													<input
+														type="range"
+														min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+														max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+														step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+														value={resolvedSlideQuoteFontScale(slide)}
+														oninput={(event) => {
+															updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
+														}}
+													/>
+													<div class="letter-spacing-input">
+														<input
+															type="number"
+															min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+															max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+															step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+															value={resolvedSlideQuoteFontScale(slide)}
+															oninput={(event) => {
+																updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
+															}}
+														/>
+														<span>x</span>
+													</div>
+												</div>
+												<small>
+													{#if slide.quote_font_scale_override === null}
+														Using project default: {selectedQuoteFontScaleLabel}
+													{:else}
+														Override for this slide: {resolvedSlideQuoteFontScale(slide).toFixed(2)}x
+													{/if}
+												</small>
+											</label>
+
+											<label>
+												<span>Quote X position</span>
+												<div class="letter-spacing-field">
+													<input
+														type="range"
+														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+														bind:value={slide.quote_text_offset_x_px}
+													/>
+													<div class="letter-spacing-input">
+														<input
+															type="number"
+															min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+															max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+															step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+															bind:value={slide.quote_text_offset_x_px}
+														/>
+														<span>px</span>
+													</div>
+												</div>
+											</label>
+
+											<label>
+												<span>Quote Y position</span>
+												<div class="letter-spacing-field">
+													<input
+														type="range"
+														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+														bind:value={slide.quote_text_offset_y_px}
+													/>
+													<div class="letter-spacing-input">
+														<input
+															type="number"
+															min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+															max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+															step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+															bind:value={slide.quote_text_offset_y_px}
+														/>
+														<span>px</span>
+													</div>
+												</div>
+											</label>
+										</div>
+										<div class="quote-position-actions">
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => {
+													clearSlideQuoteFontScale(slide);
+												}}
+												disabled={slide.quote_font_scale_override === null}
+											>
+												Use Project Font Size
+											</Button>
+										</div>
+									{/if}
+
+									{#if slide.role === 'cta'}
+										<label>
+											<span>CTA</span>
+											<textarea bind:value={slide.cta} rows={2} placeholder="ข้อความปิดท้าย"></textarea>
+										</label>
+									{:else if !isQuoteNonCtaSlide(slide)}
+										<label>
+											<span>Body copy</span>
+											<textarea bind:value={slide.body} rows={4} placeholder="ข้อความเสริมของ slide"></textarea>
+										</label>
+									{/if}
+
+									<label>
+										<span>Visual brief</span>
+										<textarea bind:value={slide.visual_brief} rows={3} placeholder="Mood, subject, composition, text overlay direction"></textarea>
+									</label>
+
+									{#if !isQuoteNonCtaSlide(slide) || isQuoteMode}
+										<div class="field-grid field-grid--query">
+											<label>
+												<span>{isQuoteNonCtaSlide(slide) ? 'Background image query' : 'Pexels query'}</span>
+												<input
+													bind:value={slide.freepik_query}
+													placeholder={isQuoteNonCtaSlide(slide) ? 'english background image query' : 'english pexels photo query'}
+												/>
+											</label>
+											<Button
+												variant="ghost"
+												size="sm"
+												onclick={() => { void rerollAssets(slide); }}
+												loading={rerollingSlideId === slide.id}
+											>
+												{isQuoteNonCtaSlide(slide) ? 'Search Backgrounds' : 'Reroll Assets'}
+											</Button>
+										</div>
+
+										<div class="asset-grid" class:asset-grid--optional={isQuoteNonCtaSlide(slide)}>
+											<div class="asset-toolbar">
+												<div class="asset-toolbar-copy">
+													<strong>{isQuoteNonCtaSlide(slide) ? 'อยากมี background image?' : 'ไม่ชอบรูปนี้?'}</strong>
+													<span>
+														{isQuoteNonCtaSlide(slide)
+															? 'เลือกภาพจาก Pexels หรืออัปโหลดจากเครื่องเพื่อใช้เป็น background ของ quote slide นี้ได้'
+															: 'อัปโหลดภาพจากเครื่องเพื่อใช้แทน asset เดิมของ slide นี้ได้ทันที'}
+													</span>
+												</div>
+												<label class="asset-upload-button" class:loading={uploadingAssetSlideId === slide.id}>
+													<input
+														type="file"
+														accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+														onchange={(event) => {
+															void uploadReplacementAsset(slide, event);
+														}}
+														disabled={uploadingAssetSlideId === slide.id}
+													/>
+													<span>{uploadingAssetSlideId === slide.id ? 'Uploading...' : isQuoteNonCtaSlide(slide) ? 'Upload Background' : 'Upload New Image'}</span>
+												</label>
+											</div>
+											{#if !isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
+												<div class="asset-warning">
+													<strong>ยังไม่ได้เลือก asset สำหรับ slide นี้</strong>
+													<span>กดเลือกรูปด้านล่าง หรือใช้ Auto-pick missing assets เพื่อเติมให้เร็วขึ้น</span>
+												</div>
+											{:else if isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
+												<div class="asset-optional-note">
+													<strong>Background image เป็น optional</strong>
+													<span>ปล่อยว่างได้ถ้าต้องการให้ quote slide ใช้พื้นหลังทึบแบบ text-first</span>
+												</div>
+											{/if}
+											{#if slide.candidate_assets_json && slide.candidate_assets_json.length > 0}
+												{#each slide.candidate_assets_json as asset}
+													<button
+														type="button"
+														class="asset-card"
+														class:selected={slide.selected_asset_json?.id === asset.id}
+														onclick={() => { void selectAsset(slide, asset); }}
+														disabled={selectingAssetSlideId === slide.id || uploadingAssetSlideId === slide.id}
+													>
+														{#if asset.preview_url}
+															<img src={asset.preview_url} alt={asset.title} loading="lazy" />
+														{/if}
+														<div class="asset-copy">
+															<strong>{asset.title}</strong>
+															<span>{asset.author_name ?? (asset.source_query === 'uploaded' ? 'Uploaded image' : 'Pexels asset')}</span>
+														</div>
+													</button>
+												{/each}
+											{:else}
+												<div class="asset-empty">
+													<p>{isQuoteNonCtaSlide(slide) ? 'ยังไม่มี background candidates' : 'ยังไม่มี candidate assets'}</p>
+													<span>{isQuoteNonCtaSlide(slide) ? 'กด Search Backgrounds หลังจากใส่ query หรืออัปโหลดรูปเอง' : 'กด Reroll Assets หลังจากแก้ Pexels query'}</span>
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</article>
 						{/each}
-					</select>
-				</label>
+					</div>
+				{/if}
+			</div>
+		</details>
 
-				<div class="font-preview-card">
-					<p class="context-label">Active font</p>
-					<strong
-						style:font-family={selectedFontPreset.headingFont}
-						style:letter-spacing={selectedLetterSpacingLabel}
-					>
-						{selectedFontPreset.label}
-					</strong>
-					<p
-						style:font-family={selectedFontPreset.bodyFont}
-						style:letter-spacing={selectedLetterSpacingLabel}
-					>
-						{selectedFontPreset.description}
-					</p>
+		<details class="section-card">
+			<summary class="section-summary">
+				<div class="section-summary-copy">
+					<p class="panel-kicker">Setup</p>
+					<h3>Basic setup</h3>
 				</div>
+				<span class="section-summary-meta">title, caption, fonts, account header</span>
+			</summary>
 
-				<label>
-					<span>Letter spacing</span>
-					<div class="letter-spacing-field">
-						<input
-							type="range"
-							min={CAROUSEL_TEXT_LETTER_SPACING_MIN_EM}
-							max={CAROUSEL_TEXT_LETTER_SPACING_MAX_EM}
-							step={CAROUSEL_TEXT_LETTER_SPACING_STEP_EM}
-							bind:value={project.text_letter_spacing_em}
-						/>
-						<div class="letter-spacing-input">
+			<div class="section-body">
+				<section class="meta-panel">
+					<div class="panel-headline">
+						<div>
+							<p class="panel-kicker">Project meta</p>
+							<h3>Caption package</h3>
+						</div>
+						<Button variant="secondary" onclick={saveProjectMeta} loading={savingProject}>Save Meta</Button>
+					</div>
+
+					<label>
+						<span>Content mode</span>
+						<select bind:value={project.content_mode}>
+							<option value="standard">standard</option>
+							<option value="quote">quote</option>
+						</select>
+						<small>Quote mode uses a text-first layout with an account header on every non-CTA slide.</small>
+					</label>
+
+					<label>
+						<span>Carousel title</span>
+						<input bind:value={project.title} placeholder="ชื่อ carousel" />
+					</label>
+
+					<label>
+						<span>Font preset</span>
+						<select bind:value={project.font_preset}>
+							{#each CAROUSEL_FONT_PRESETS as preset}
+								<option value={preset.value}>{preset.label} · {preset.description}</option>
+							{/each}
+						</select>
+					</label>
+
+					<div class="font-preview-card">
+						<p class="context-label">Active font</p>
+						<strong
+							style:font-family={selectedFontPreset.headingFont}
+							style:letter-spacing={selectedLetterSpacingLabel}
+						>
+							{selectedFontPreset.label}
+						</strong>
+						<p
+							style:font-family={selectedFontPreset.bodyFont}
+							style:letter-spacing={selectedLetterSpacingLabel}
+						>
+							{selectedFontPreset.description}
+						</p>
+					</div>
+
+					<label>
+						<span>Letter spacing</span>
+						<div class="letter-spacing-field">
 							<input
-								type="number"
+								type="range"
 								min={CAROUSEL_TEXT_LETTER_SPACING_MIN_EM}
 								max={CAROUSEL_TEXT_LETTER_SPACING_MAX_EM}
 								step={CAROUSEL_TEXT_LETTER_SPACING_STEP_EM}
 								bind:value={project.text_letter_spacing_em}
 							/>
-							<span>em</span>
-						</div>
-					</div>
-					<small>ค่าลบทำให้ตัวอักษรชิดขึ้น ค่าบวกทำให้ช่องไฟกว้างขึ้น</small>
-				</label>
-
-				{#if isQuoteMode}
-					<label>
-						<span>Quote font size</span>
-						<div class="letter-spacing-field">
-							<input
-								type="range"
-								min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
-								max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
-								step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
-								bind:value={project.quote_font_scale}
-							/>
 							<div class="letter-spacing-input">
 								<input
 									type="number"
+									min={CAROUSEL_TEXT_LETTER_SPACING_MIN_EM}
+									max={CAROUSEL_TEXT_LETTER_SPACING_MAX_EM}
+									step={CAROUSEL_TEXT_LETTER_SPACING_STEP_EM}
+									bind:value={project.text_letter_spacing_em}
+								/>
+								<span>em</span>
+							</div>
+						</div>
+						<small>ค่าลบทำให้ตัวอักษรชิดขึ้น ค่าบวกทำให้ช่องไฟกว้างขึ้น</small>
+					</label>
+
+					{#if isQuoteMode}
+						<label>
+							<span>Quote font size</span>
+							<div class="letter-spacing-field">
+								<input
+									type="range"
 									min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
 									max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
 									step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
 									bind:value={project.quote_font_scale}
 								/>
-								<span>x</span>
+								<div class="letter-spacing-input">
+									<input
+										type="number"
+										min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+										max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+										step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+										bind:value={project.quote_font_scale}
+									/>
+									<span>x</span>
+								</div>
 							</div>
-						</div>
-						<small>ปรับขนาดชื่อ account, handle และข้อความคำคมใน Quote Mode ตอนนี้: {selectedQuoteFontScaleLabel}</small>
+							<small>ปรับขนาดชื่อ account, handle และข้อความคำคมใน Quote Mode ตอนนี้: {selectedQuoteFontScaleLabel}</small>
+						</label>
+					{/if}
+
+					<label>
+						<span>Visual direction</span>
+						<textarea bind:value={project.visual_direction} rows={4} placeholder="กำหนด mood, color, framing, text overlay direction"></textarea>
 					</label>
-				{/if}
 
-				<label>
-					<span>Visual direction</span>
-					<textarea bind:value={project.visual_direction} rows={4} placeholder="กำหนด mood, color, framing, text overlay direction"></textarea>
-				</label>
+					<label>
+						<span>Caption</span>
+						<textarea bind:value={project.caption} rows={7} placeholder="Caption พร้อมโพสต์จริง"></textarea>
+					</label>
+					<div class="caption-counter" class:caption-counter--warn={captionCountState === 'warning'} class:caption-counter--over={captionCountState === 'over'}>
+						<span class="caption-counter-total">{combinedCharCount} / {INSTAGRAM_CAPTION_LIMIT}</span>
+						<span class="caption-counter-breakdown">Caption {captionCharCount} + Hashtags {hashtagsCharCount}</span>
+					</div>
 
-				<label>
-					<span>Caption</span>
-					<textarea bind:value={project.caption} rows={7} placeholder="Caption พร้อมโพสต์จริง"></textarea>
-				</label>
+					<label>
+						<span>Hashtags</span>
+						<textarea bind:value={hashtagsInput} rows={3} placeholder="#xauusd #biglot #tradingtips"></textarea>
+					</label>
+					<div class="hashtag-counter">{hashtagsParsed.length} hashtags · {hashtagsCharCount} chars</div>
 
-				<label>
-					<span>Hashtags</span>
-					<textarea bind:value={hashtagsInput} rows={3} placeholder="#xauusd #biglot #tradingtips"></textarea>
-				</label>
-
-				{#if isQuoteMode}
-					<section class="account-panel">
-						<div class="panel-headline">
-							<div>
-								<p class="panel-kicker">Account header</p>
-								<h3>Quote identity</h3>
-							</div>
-							<span class="account-panel-note">Shown on every non-CTA slide</span>
-						</div>
-
-						<div class="quote-identity-presets">
-							<label>
-								<span>Saved identities</span>
-								<select bind:value={selectedQuoteIdentityId} disabled={loadingQuoteIdentities || quoteIdentities.length === 0}>
-									<option value="">Select saved identity</option>
-									{#each quoteIdentities as identity}
-										<option value={identity.id}>
-											{identity.name}{identity.account_handle ? ` · @${identity.account_handle}` : ''}
-										</option>
-									{/each}
-								</select>
-								<small>
-									{#if loadingQuoteIdentities}
-										Loading saved identities...
-									{:else if quoteIdentities.length === 0}
-										ยังไม่มี saved identity
-									{:else}
-										เลือก preset ที่เคยบันทึกไว้แล้ว apply เข้า project นี้ได้ทันที
-									{/if}
-								</small>
-							</label>
-
-							<div class="quote-identity-actions">
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={applySelectedQuoteIdentity}
-									disabled={!selectedQuoteIdentityId || applyingQuoteIdentityId !== null}
-								>
-									{applyingQuoteIdentityId ? 'Applying...' : 'Apply Saved Identity'}
-								</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={deleteSelectedQuoteIdentity}
-									disabled={!selectedQuoteIdentityId || deletingQuoteIdentityId !== null}
-								>
-									{deletingQuoteIdentityId ? 'Deleting...' : 'Delete Saved Identity'}
-								</Button>
+					{#if isQuoteMode}
+						<section class="account-panel">
+							<div class="panel-headline">
+								<div>
+									<p class="panel-kicker">Account header</p>
+									<h3>Quote identity</h3>
+								</div>
+								<span class="account-panel-note">Shown on every non-CTA slide</span>
 							</div>
 
-							<div class="quote-identity-save">
+							<div class="quote-identity-presets">
 								<label>
-									<span>Save current as</span>
-									<input bind:value={quoteIdentityName} placeholder="เช่น BigLot Trader Verified" />
-								</label>
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={saveCurrentQuoteIdentity}
-									loading={savingQuoteIdentity}
-								>
-									{savingQuoteIdentity ? 'Saving...' : 'Save Current Identity'}
-								</Button>
-							</div>
-						</div>
-
-						<div class="account-card">
-							<div class="account-avatar">
-								{#if project.account_avatar_url}
-									<img src={project.account_avatar_url} alt={project.account_display_name?.trim() || 'Account avatar'} loading="lazy" />
-								{:else}
-									<span>{getAccountInitials(project.account_display_name)}</span>
-								{/if}
-							</div>
-
-							<div class="account-fields">
-								<label>
-									<span>Account display name</span>
-									<input bind:value={project.account_display_name} placeholder="BigLot Trader" />
-								</label>
-
-								<label>
-									<span>Account handle</span>
-									<input bind:value={project.account_handle} placeholder="biglot.ai" />
+									<span>Saved identities</span>
+									<select bind:value={selectedQuoteIdentityId} disabled={loadingQuoteIdentities || quoteIdentities.length === 0}>
+										<option value="">Select saved identity</option>
+										{#each quoteIdentities as identity}
+											<option value={identity.id}>
+												{identity.name}{identity.account_handle ? ` · @${identity.account_handle}` : ''}
+											</option>
+										{/each}
+									</select>
 									<small>
-										พิมพ์ได้ทั้งแบบมีหรือไม่มี `@` ระบบจะเก็บแบบไม่มี `@`
-										{#if formatAccountHandle(project.account_handle)}
-											Current: {formatAccountHandle(project.account_handle)}
+										{#if loadingQuoteIdentities}
+											Loading saved identities...
+										{:else if quoteIdentities.length === 0}
+											ยังไม่มี saved identity
+										{:else}
+											เลือก preset ที่เคยบันทึกไว้แล้ว apply เข้า project นี้ได้ทันที
 										{/if}
 									</small>
 								</label>
 
-								<label class="verified-toggle">
-									<input type="checkbox" bind:checked={project.account_is_verified} />
-									<span>Show verified badge</span>
-								</label>
+								<div class="quote-identity-actions">
+									<Button
+										variant="secondary"
+										size="sm"
+										onclick={applySelectedQuoteIdentity}
+										disabled={!selectedQuoteIdentityId || applyingQuoteIdentityId !== null}
+									>
+										{applyingQuoteIdentityId ? 'Applying...' : 'Apply Saved Identity'}
+									</Button>
+									<Button
+										variant="ghost"
+										size="sm"
+										onclick={deleteSelectedQuoteIdentity}
+										disabled={!selectedQuoteIdentityId || deletingQuoteIdentityId !== null}
+									>
+										{deletingQuoteIdentityId ? 'Deleting...' : 'Delete Saved Identity'}
+									</Button>
+								</div>
+
+								<div class="quote-identity-save">
+									<label>
+										<span>Save current as</span>
+										<input bind:value={quoteIdentityName} placeholder="เช่น BigLot Trader Verified" />
+									</label>
+									<Button
+										variant="secondary"
+										size="sm"
+										onclick={saveCurrentQuoteIdentity}
+										loading={savingQuoteIdentity}
+									>
+										{savingQuoteIdentity ? 'Saving...' : 'Save Current Identity'}
+									</Button>
+								</div>
 							</div>
 
-							<div class="account-actions">
-								<label class="account-upload-button" class:loading={updatingAccountAvatar}>
-									<input
-										type="file"
-										accept="image/jpeg,image/png,image/webp"
-										onchange={(event) => {
-											void uploadAccountAvatar(event);
-										}}
-										disabled={updatingAccountAvatar}
-									/>
-									<span>{updatingAccountAvatar ? 'Uploading...' : project.account_avatar_url ? 'Replace avatar' : 'Upload avatar'}</span>
-								</label>
+							<div class="account-card">
+								<div class="account-avatar">
+									{#if project.account_avatar_url}
+										<img src={project.account_avatar_url} alt={project.account_display_name?.trim() || 'Account avatar'} loading="lazy" />
+									{:else}
+										<span>{getAccountInitials(project.account_display_name)}</span>
+									{/if}
+								</div>
 
-								<Button
-									variant="secondary"
-									size="sm"
-									onclick={removeAccountAvatar}
-									disabled={!project.account_avatar_url || removingAccountAvatar}
-								>
-									{removingAccountAvatar ? 'Removing...' : 'Remove avatar'}
-								</Button>
+								<div class="account-fields">
+									<label>
+										<span>Account display name</span>
+										<input bind:value={project.account_display_name} placeholder="BigLot Trader" />
+									</label>
+
+									<label>
+										<span>Account handle</span>
+										<input bind:value={project.account_handle} placeholder="biglot.ai" />
+										<small>
+											พิมพ์ได้ทั้งแบบมีหรือไม่มี `@` ระบบจะเก็บแบบไม่มี `@`
+											{#if formatAccountHandle(project.account_handle)}
+												Current: {formatAccountHandle(project.account_handle)}
+											{/if}
+										</small>
+									</label>
+
+									<label class="verified-toggle">
+										<input type="checkbox" bind:checked={project.account_is_verified} />
+										<span>Show verified badge</span>
+									</label>
+								</div>
+
+								<div class="account-actions">
+									<label class="account-upload-button" class:loading={updatingAccountAvatar}>
+										<input
+											type="file"
+											accept="image/jpeg,image/png,image/webp"
+											onchange={(event) => {
+												void uploadAccountAvatar(event);
+											}}
+											disabled={updatingAccountAvatar}
+										/>
+										<span>{updatingAccountAvatar ? 'Uploading...' : project.account_avatar_url ? 'Replace avatar' : 'Upload avatar'}</span>
+									</label>
+
+									<Button
+										variant="secondary"
+										size="sm"
+										onclick={removeAccountAvatar}
+										disabled={!project.account_avatar_url || removingAccountAvatar}
+									>
+										{removingAccountAvatar ? 'Removing...' : 'Remove avatar'}
+									</Button>
+								</div>
 							</div>
-						</div>
-					</section>
-				{/if}
-			</section>
+						</section>
+					{/if}
+				</section>
+			</div>
+		</details>
 
-			<aside class="context-panel">
-				<div class="panel-headline">
-					<div>
-						<p class="panel-kicker">Project context</p>
-						<h3>Studio status</h3>
-					</div>
+		<details class="section-card">
+			<summary class="section-summary">
+				<div class="section-summary-copy">
+					<p class="panel-kicker">Workflow</p>
+					<h3>Review, schedule, publish</h3>
 				</div>
+				<span class="section-summary-meta">review state, handoff, performance tracking</span>
+			</summary>
 
-				<div class="context-card">
-					<p class="context-label">Project ref</p>
-					<strong>{project.id.slice(0, 8)}</strong>
-				</div>
-				<div class="context-card">
-					<p class="context-label">Visual direction</p>
-					<p>{project.visual_direction?.trim() || 'ยังไม่มี visual direction'}</p>
-				</div>
-				<div class="context-card">
-					<p class="context-label">Readiness</p>
-					<p>
-						{isQuoteMode
-							? 'Quote projects ต้องมี account name + avatar, quote slides ต้องมี copy และ CTA slide ต้องมี asset ก่อน export'
-							: 'Ready จะเกิดเมื่อทุก slide มี copy ครบ และมี asset ที่ cache เข้า Storage แล้ว'}
-					</p>
-				</div>
-
+			<div class="section-body workflow-stack">
 				<section class="workflow-panel">
 					<div class="panel-headline">
 						<div>
@@ -1561,298 +2092,8 @@
 						<textarea bind:value={publishNotes} rows={3} placeholder="เช่น observation หลังโพสต์, creative note, audience reaction"></textarea>
 					</label>
 				</section>
-			</aside>
-		</div>
-
-		<section class="slides-panel">
-			<div class="panel-headline">
-				<div>
-					<p class="panel-kicker">Slides</p>
-					<h3>Storyboard + asset picker</h3>
-				</div>
 			</div>
-
-			{#if slides.length === 0}
-				<div class="empty-card">
-					<h4>ยังไม่มี slide draft</h4>
-					<p>
-						{isQuoteMode
-							? 'กด Generate Draft เพื่อให้ AI สร้าง quote-first storyboard แบบ 5 quote slides + 1 CTA'
-							: 'กด Generate Draft เพื่อให้ AI สร้างโครง carousel และค้น candidate asset จาก Pexels'}
-					</p>
-				</div>
-			{:else}
-				<div class="slide-list">
-					{#each slides as slide}
-						<article class="slide-row">
-							<div class="slide-preview-col">
-								<CarouselSlidePreview
-									slide={slide}
-									fontPreset={project.font_preset}
-									textLetterSpacingEm={project.text_letter_spacing_em}
-									fallbackAssetUrl={previewAssetForSlide(slide)}
-									contentMode={contentMode}
-									quoteFontScale={resolvedSlideQuoteFontScale(slide)}
-									accountDisplayName={project.account_display_name}
-									accountHandle={project.account_handle}
-									accountAvatarUrl={project.account_avatar_url}
-									accountIsVerified={project.account_is_verified}
-									quoteTextOffsetXPx={slide.quote_text_offset_x_px}
-									quoteTextOffsetYPx={slide.quote_text_offset_y_px}
-									exportId={slide.id}
-								/>
-							</div>
-
-							<div class="slide-editor-col">
-								<div class="slide-topline">
-									<div>
-										<p class="slide-kicker">Slide {slide.position}</p>
-										<h4>{slide.role}</h4>
-										<div class="slide-state-row">
-											{#if slideReadiness(slide).isReady}
-												<span class="slide-state slide-state--ready">Ready</span>
-											{:else}
-												{#if !isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
-													<span class="slide-state slide-state--warn">Missing asset</span>
-												{/if}
-												{#if !slideReadiness(slide).hasCopy}
-													<span class="slide-state slide-state--muted">Incomplete copy</span>
-												{/if}
-											{/if}
-										</div>
-									</div>
-									<Button
-										variant="secondary"
-										size="sm"
-										onclick={() => { void saveSlide(slide); }}
-										loading={savingSlideId === slide.id}
-									>
-										Save Slide
-									</Button>
-								</div>
-
-								<div class="field-grid" class:field-grid--headline-only={isQuoteNonCtaSlide(slide)}>
-									<label>
-										<span>Headline</span>
-										<textarea bind:value={slide.headline} rows={3} placeholder="ข้อความหลักบน slide"></textarea>
-									</label>
-
-									{#if !isQuoteNonCtaSlide(slide)}
-										<label>
-											<span>Layout</span>
-											<select bind:value={slide.layout_variant}>
-												<option value="cover">cover</option>
-												<option value="content">content</option>
-												<option value="cta">cta</option>
-											</select>
-										</label>
-									{/if}
-								</div>
-
-								{#if isQuoteNonCtaSlide(slide)}
-									<div class="quote-mode-note">
-										<strong>Quote Mode</strong>
-										<span>สไลด์นี้จะใช้ headline เป็นข้อความหลัก ไม่ต้องมี body copy หรือ layout selector แต่เลือก background image เพิ่มได้ถ้าต้องการ</span>
-									</div>
-
-									<div class="quote-position-grid">
-										<label>
-											<span>Slide font size</span>
-											<div class="letter-spacing-field">
-												<input
-													type="range"
-													min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
-													max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
-													step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
-													value={resolvedSlideQuoteFontScale(slide)}
-													oninput={(event) => {
-														updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
-													}}
-												/>
-												<div class="letter-spacing-input">
-													<input
-														type="number"
-														min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
-														max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
-														step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
-														value={resolvedSlideQuoteFontScale(slide)}
-														oninput={(event) => {
-															updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
-														}}
-													/>
-													<span>x</span>
-												</div>
-											</div>
-											<small>
-												{#if slide.quote_font_scale_override === null}
-													Using project default: {selectedQuoteFontScaleLabel}
-												{:else}
-													Override for this slide: {resolvedSlideQuoteFontScale(slide).toFixed(2)}x
-												{/if}
-											</small>
-										</label>
-
-										<label>
-											<span>Quote X position</span>
-											<div class="letter-spacing-field">
-												<input
-													type="range"
-													min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
-													max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
-													step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
-													bind:value={slide.quote_text_offset_x_px}
-												/>
-												<div class="letter-spacing-input">
-													<input
-														type="number"
-														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
-														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
-														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
-														bind:value={slide.quote_text_offset_x_px}
-													/>
-													<span>px</span>
-												</div>
-											</div>
-										</label>
-
-										<label>
-											<span>Quote Y position</span>
-											<div class="letter-spacing-field">
-												<input
-													type="range"
-													min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
-													max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
-													step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
-													bind:value={slide.quote_text_offset_y_px}
-												/>
-												<div class="letter-spacing-input">
-													<input
-														type="number"
-														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
-														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
-														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
-														bind:value={slide.quote_text_offset_y_px}
-													/>
-													<span>px</span>
-												</div>
-											</div>
-										</label>
-									</div>
-									<div class="quote-position-actions">
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => {
-												clearSlideQuoteFontScale(slide);
-											}}
-											disabled={slide.quote_font_scale_override === null}
-										>
-											Use Project Font Size
-										</Button>
-									</div>
-								{/if}
-
-								{#if slide.role === 'cta'}
-									<label>
-										<span>CTA</span>
-										<textarea bind:value={slide.cta} rows={2} placeholder="ข้อความปิดท้าย"></textarea>
-									</label>
-								{:else if !isQuoteNonCtaSlide(slide)}
-									<label>
-										<span>Body copy</span>
-										<textarea bind:value={slide.body} rows={4} placeholder="ข้อความเสริมของ slide"></textarea>
-									</label>
-								{/if}
-
-								<label>
-									<span>Visual brief</span>
-									<textarea bind:value={slide.visual_brief} rows={3} placeholder="Mood, subject, composition, text overlay direction"></textarea>
-								</label>
-
-								{#if !isQuoteNonCtaSlide(slide) || isQuoteMode}
-									<div class="field-grid field-grid--query">
-										<label>
-											<span>{isQuoteNonCtaSlide(slide) ? 'Background image query' : 'Pexels query'}</span>
-											<input
-												bind:value={slide.freepik_query}
-												placeholder={isQuoteNonCtaSlide(slide) ? 'english background image query' : 'english pexels photo query'}
-											/>
-										</label>
-										<Button
-											variant="ghost"
-											size="sm"
-											onclick={() => { void rerollAssets(slide); }}
-											loading={rerollingSlideId === slide.id}
-										>
-											{isQuoteNonCtaSlide(slide) ? 'Search Backgrounds' : 'Reroll Assets'}
-										</Button>
-									</div>
-
-									<div class="asset-grid" class:asset-grid--optional={isQuoteNonCtaSlide(slide)}>
-										<div class="asset-toolbar">
-											<div class="asset-toolbar-copy">
-												<strong>{isQuoteNonCtaSlide(slide) ? 'อยากมี background image?' : 'ไม่ชอบรูปนี้?'}</strong>
-												<span>
-													{isQuoteNonCtaSlide(slide)
-														? 'เลือกภาพจาก Pexels หรืออัปโหลดจากเครื่องเพื่อใช้เป็น background ของ quote slide นี้ได้'
-														: 'อัปโหลดภาพจากเครื่องเพื่อใช้แทน asset เดิมของ slide นี้ได้ทันที'}
-												</span>
-											</div>
-											<label class="asset-upload-button" class:loading={uploadingAssetSlideId === slide.id}>
-												<input
-													type="file"
-													accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
-													onchange={(event) => {
-														void uploadReplacementAsset(slide, event);
-													}}
-													disabled={uploadingAssetSlideId === slide.id}
-												/>
-												<span>{uploadingAssetSlideId === slide.id ? 'Uploading...' : isQuoteNonCtaSlide(slide) ? 'Upload Background' : 'Upload New Image'}</span>
-											</label>
-										</div>
-										{#if !isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
-											<div class="asset-warning">
-												<strong>ยังไม่ได้เลือก asset สำหรับ slide นี้</strong>
-												<span>กดเลือกรูปด้านล่าง หรือใช้ Auto-pick missing assets เพื่อเติมให้เร็วขึ้น</span>
-											</div>
-										{:else if isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
-											<div class="asset-optional-note">
-												<strong>Background image เป็น optional</strong>
-												<span>ปล่อยว่างได้ถ้าต้องการให้ quote slide ใช้พื้นหลังทึบแบบ text-first</span>
-											</div>
-										{/if}
-										{#if slide.candidate_assets_json && slide.candidate_assets_json.length > 0}
-											{#each slide.candidate_assets_json as asset}
-												<button
-													type="button"
-													class="asset-card"
-													class:selected={slide.selected_asset_json?.id === asset.id}
-													onclick={() => { void selectAsset(slide, asset); }}
-													disabled={selectingAssetSlideId === slide.id || uploadingAssetSlideId === slide.id}
-												>
-													{#if asset.preview_url}
-														<img src={asset.preview_url} alt={asset.title} loading="lazy" />
-													{/if}
-													<div class="asset-copy">
-														<strong>{asset.title}</strong>
-														<span>{asset.author_name ?? (asset.source_query === 'uploaded' ? 'Uploaded image' : 'Pexels asset')}</span>
-													</div>
-												</button>
-											{/each}
-										{:else}
-											<div class="asset-empty">
-												<p>{isQuoteNonCtaSlide(slide) ? 'ยังไม่มี background candidates' : 'ยังไม่มี candidate assets'}</p>
-												<span>{isQuoteNonCtaSlide(slide) ? 'กด Search Backgrounds หลังจากใส่ query หรืออัปโหลดรูปเอง' : 'กด Reroll Assets หลังจากแก้ Pexels query'}</span>
-											</div>
-										{/if}
-									</div>
-								{/if}
-							</div>
-						</article>
-					{/each}
-				</div>
-			{/if}
-		</section>
+		</details>
 	{/if}
 </main>
 
@@ -1877,48 +2118,152 @@
 		border-color: rgba(220, 38, 38, 0.14);
 	}
 
-	.blocker-card {
+	.summary-strip,
+	.section-card {
+		border-radius: 1.35rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.summary-strip {
 		display: grid;
 		gap: var(--space-4);
 		padding: var(--space-5);
-		border-radius: 1.35rem;
-		border: 1px solid rgba(234, 88, 12, 0.18);
 		background:
-			radial-gradient(circle at top left, rgba(249, 115, 22, 0.12), transparent 30%),
-			linear-gradient(180deg, rgba(255, 247, 237, 0.94), rgba(255, 255, 255, 1));
+			radial-gradient(circle at top left, rgba(245, 158, 11, 0.12), transparent 28%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
 	}
 
-	.blocker-card--ready {
-		border-color: rgba(22, 163, 74, 0.16);
-		background:
-			radial-gradient(circle at top left, rgba(34, 197, 94, 0.12), transparent 30%),
-			linear-gradient(180deg, rgba(240, 253, 244, 0.94), rgba(255, 255, 255, 1));
+	.summary-strip-top {
+		display: grid;
+		gap: var(--space-3);
 	}
 
-	.blocker-copy {
+	.summary-copy,
+	.summary-ready {
+		margin: 0;
+		line-height: 1.6;
+		color: var(--color-slate-600);
+	}
+
+	.summary-grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: var(--space-3);
+	}
+
+	.summary-card {
+		display: grid;
+		gap: 0.35rem;
+		padding: 1rem;
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.84);
+		border: 1px solid rgba(148, 163, 184, 0.18);
+	}
+
+	.summary-card span,
+	.summary-select span,
+	.section-summary-meta {
+		display: block;
+		font-size: 0.76rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-slate-500);
+	}
+
+	.summary-card strong {
+		font-family: var(--font-heading);
+	}
+
+	.caption-counter {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-3);
+		font-size: var(--text-xs);
+		color: var(--color-slate-500);
+		margin-top: -0.5rem;
+	}
+	.caption-counter--warn { color: var(--color-yellow-600); }
+	.caption-counter--over { color: var(--color-red-600); }
+	.caption-counter--over .caption-counter-total { font-weight: var(--fw-semibold); }
+	.caption-counter-breakdown { opacity: 0.75; }
+	.hashtag-counter {
+		font-size: var(--text-xs);
+		color: var(--color-slate-500);
+		margin-top: -0.5rem;
+	}
+
+	.summary-toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: end;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+	}
+
+	.summary-toolbar-actions {
+		display: flex;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+	}
+
+	.summary-select {
 		display: grid;
 		gap: 0.4rem;
+		min-width: 240px;
 	}
 
-	.blocker-copy h3,
-	.blocker-copy p {
-		margin: 0;
+	.summary-blockers {
+		display: grid;
+		gap: 0.75rem;
+		padding: 1rem 1.1rem;
+		border-radius: 1rem;
+		border: 1px solid rgba(234, 88, 12, 0.16);
+		background: rgba(255, 247, 237, 0.9);
 	}
 
-	.blocker-copy h3 {
-		font-family: var(--font-heading);
-		font-size: 1.2rem;
+	.section-card {
+		overflow: hidden;
 	}
 
-	.blocker-copy p {
-		color: var(--color-slate-600);
-		line-height: 1.55;
-	}
-
-	.blocker-actions {
+	.section-summary {
 		display: flex;
-		flex-wrap: wrap;
-		gap: var(--space-2);
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding: var(--space-4) var(--space-5);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.section-summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.section-summary-copy {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	.section-summary-copy h3 {
+		margin: 0;
+		font-family: var(--font-heading);
+	}
+
+	.section-body {
+		padding: 0 var(--space-5) var(--space-5);
+		display: grid;
+		gap: var(--space-4);
+	}
+
+	.section-card--open .section-body {
+		padding-top: var(--space-2);
+	}
+
+	.workflow-stack {
+		grid-template-columns: 1fr;
 	}
 
 	.blocker-list {
@@ -1932,8 +2277,7 @@
 	.error-card h2,
 	.empty-card h4,
 	.panel-headline h3,
-	.slide-topline h4,
-	.studio-title-block h2 {
+	.slide-topline h4 {
 		margin: 0;
 		font-family: var(--font-heading);
 	}
@@ -1945,79 +2289,13 @@
 		gap: var(--space-3);
 	}
 
-	.studio-hero {
-		display: grid;
-		grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
-		gap: var(--space-5);
-		padding: var(--space-6);
-		border-radius: 1.75rem;
-		background:
-			radial-gradient(circle at top left, rgba(245, 158, 11, 0.2), transparent 36%),
-			radial-gradient(circle at right center, rgba(29, 78, 216, 0.18), transparent 33%),
-			linear-gradient(150deg, #0f172a 0%, #1e40af 54%, #431407 100%);
-		color: #fff;
-	}
-
-	.studio-title-block {
-		display: grid;
-		gap: var(--space-3);
-	}
-
 	.hero-badges {
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
 	}
 
-	.studio-title-block h2 {
-		font-size: clamp(1.8rem, 4vw, 2.7rem);
-		line-height: 1.05;
-		max-width: 14ch;
-	}
-
-	.studio-title-block p,
-	.context-card p {
-		margin: 0;
-		line-height: 1.6;
-	}
-
-	.studio-metrics {
-		display: grid;
-		gap: var(--space-3);
-		align-content: start;
-	}
-
-	.metric-card {
-		display: grid;
-		gap: 0.4rem;
-		padding: var(--space-4);
-		border-radius: 1.2rem;
-		background: rgba(255, 255, 255, 0.12);
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		backdrop-filter: blur(12px);
-	}
-
-	.metric-card span {
-		font-size: 0.74rem;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: rgba(255, 255, 255, 0.7);
-	}
-
-	.metric-card strong {
-		font-size: 1rem;
-	}
-
-	.studio-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-		gap: var(--space-5);
-		align-items: start;
-	}
-
-	.meta-panel,
-	.context-panel,
-	.slides-panel {
+	.meta-panel {
 		display: grid;
 		gap: var(--space-4);
 		padding: var(--space-5);
@@ -2052,19 +2330,6 @@
 		gap: 0.45rem;
 	}
 
-	.export-mode-picker {
-		min-width: 220px;
-	}
-
-	.export-mode-picker span {
-		display: block;
-		font-size: 0.72rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.1em;
-		color: var(--color-slate-500);
-	}
-
 	small {
 		font-size: 0.74rem;
 		line-height: 1.5;
@@ -2081,24 +2346,6 @@
 		border: 1px solid var(--color-border-strong);
 		background: var(--color-bg-elevated);
 		font: inherit;
-		color: var(--color-slate-900);
-	}
-
-	.context-panel {
-		align-content: start;
-	}
-
-	.context-card {
-		display: grid;
-		gap: 0.35rem;
-		padding: 1rem;
-		border-radius: 1rem;
-		background: var(--color-slate-50);
-		border: 1px solid var(--color-border);
-	}
-
-	.context-card strong {
-		font-size: 1rem;
 		color: var(--color-slate-900);
 	}
 
@@ -2377,7 +2624,33 @@
 		border-radius: 1.3rem;
 		background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), #fff);
 		border: 1px solid var(--color-border);
+		transition: opacity 160ms ease, border-color 160ms ease;
+		cursor: default;
 	}
+	.slide-row--dragging {
+		opacity: 0.45;
+	}
+	.slide-row--drag-over {
+		border-color: var(--color-blue-400, #60a5fa);
+		box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+	}
+
+	.drag-handle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		margin-bottom: var(--space-2);
+		font-size: 1.1rem;
+		color: var(--color-slate-400, #94a3b8);
+		cursor: grab;
+		user-select: none;
+		border-radius: 0.4rem;
+		transition: color 120ms ease;
+	}
+	.drag-handle:hover { color: var(--color-slate-600, #475569); }
+	.drag-handle:active { cursor: grabbing; }
 
 	.slide-preview-col {
 		align-self: start;
@@ -2394,6 +2667,13 @@
 		justify-content: space-between;
 		gap: var(--space-3);
 		flex-wrap: wrap;
+	}
+
+	.slide-actions {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: 0.65rem;
+		align-items: center;
 	}
 
 	.slide-state-row {
@@ -2674,14 +2954,23 @@
 	}
 
 	@media (max-width: 1024px) {
-		.studio-hero,
-		.studio-grid,
+		.summary-grid,
 		.slide-row {
 			grid-template-columns: 1fr;
 		}
 	}
 
 	@media (max-width: 720px) {
+		.summary-toolbar,
+		.section-summary {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.summary-select {
+			min-width: 0;
+		}
+
 		.account-card {
 			grid-template-columns: 1fr;
 		}
@@ -2694,6 +2983,10 @@
 		.field-grid--query,
 		.letter-spacing-field {
 			grid-template-columns: 1fr;
+		}
+
+		.summary-toolbar :global(button) {
+			width: 100%;
 		}
 	}
 </style>

@@ -25,6 +25,30 @@ export interface GeneratedCarouselDraft {
 	slides: GeneratedCarouselSlide[];
 }
 
+export interface RegenerateCarouselSlideInput {
+	projectTitle: string;
+	projectDescription?: string | null;
+	projectVisualDirection?: string | null;
+	notes?: string | null;
+	contentCategory?: BacklogContentCategory | null;
+	contentMode?: CarouselContentMode;
+	slideCount: number;
+	targetSlide: Pick<GeneratedCarouselSlide, 'position' | 'role' | 'layout_variant'> & {
+		headline?: string | null;
+		body?: string | null;
+		cta?: string | null;
+		visual_brief?: string | null;
+		freepik_query?: string | null;
+	};
+	existingSlides: Array<
+		Pick<GeneratedCarouselSlide, 'position' | 'role'> & {
+			headline?: string | null;
+			body?: string | null;
+			cta?: string | null;
+		}
+	>;
+}
+
 function clampSlideCount(value: number | null | undefined): number {
 	if (!value || !Number.isFinite(value)) return DEFAULT_CAROUSEL_SLIDE_COUNT;
 	return Math.min(Math.max(Math.round(value), 4), 8);
@@ -210,11 +234,173 @@ function validateSlides(
 				: null,
 			visual_brief: ensureNonEmptyString(slide.visual_brief, `slides[${index}].visual_brief`),
 			freepik_query:
-				isQuoteSlide
+				isQuoteSlide || role === 'cta'
 					? null
 					: ensureNonEmptyString(slide.freepik_query, `slides[${index}].freepik_query`)
 		};
 	}).slice(0, slideCount);
+}
+
+function describeExistingSlides(
+	slides: RegenerateCarouselSlideInput['existingSlides'],
+	targetPosition: number
+): string {
+	return slides
+		.slice()
+		.sort((a, b) => a.position - b.position)
+		.map((slide) => {
+			const status = slide.position === targetPosition ? 'TARGET' : 'LOCKED';
+			const parts = [
+				`${slide.position}. [${status}] role=${slide.role}`,
+				slide.headline?.trim() ? `headline="${slide.headline.trim()}"` : null,
+				slide.body?.trim() ? `body="${slide.body.trim()}"` : null,
+				slide.cta?.trim() ? `cta="${slide.cta.trim()}"` : null
+			].filter((part): part is string => Boolean(part));
+			return parts.join(' | ');
+		})
+		.join('\n');
+}
+
+function buildRegenerateSlidePrompt(input: RegenerateCarouselSlideInput): { systemPrompt: string; userPrompt: string } {
+	const contentMode = normalizeContentMode(input.contentMode);
+	const targetRole = input.targetSlide.role;
+	const isQuoteNonCtaSlide = contentMode === 'quote' && targetRole !== 'cta';
+	const existingSlides = describeExistingSlides(input.existingSlides, input.targetSlide.position);
+
+	if (isQuoteNonCtaSlide) {
+		return {
+			systemPrompt: `${CREATOR_SYSTEM_PROMPT}
+
+คุณกำลัง regenerate Instagram carousel แค่ 1 slide สำหรับทีม BigLot โดยต้องตอบเป็น JSON เท่านั้น ไม่มี markdown wrapper ไม่มีคำอธิบายเพิ่ม
+
+กติกา:
+- regenerate เฉพาะ slide เป้าหมายเท่านั้น
+- ห้ามเปลี่ยน role, layout หรือ position ของ slide เป้าหมาย
+- งานนี้เป็น quote-first carousel
+- ถ้า slide เป้าหมายไม่ใช่ CTA ต้องตอบเป็น quote slide เท่านั้น
+- headline ต้องสั้น คม หยุดสายตา และอ่านแล้วต่อเนื่องกับ slide อื่น
+- body ต้องเป็น null
+- cta ต้องเป็น null
+- freepik_query ต้องเป็น null
+- visual_brief ต้องอธิบาย mood, subject, composition และ text overlay direction สำหรับ quote slide
+- ภาษาไทยเป็นหลัก กระชับ และพร้อมใช้จริง
+
+ตอบในรูปแบบนี้เท่านั้น:
+{
+  "headline": "ข้อความหลักบน slide",
+  "body": null,
+  "cta": null,
+  "visual_brief": "brief สำหรับ visual",
+  "freepik_query": null
+}`,
+			userPrompt: `Regenerate slide ที่ตำแหน่ง ${input.targetSlide.position} จาก carousel นี้:
+
+Project title: ${input.projectTitle}
+Project description: ${input.projectDescription?.trim() || 'ไม่มี'}
+Visual direction: ${input.projectVisualDirection?.trim() || 'ไม่มี'}
+Category: ${input.contentCategory ?? 'ไม่ระบุ'}
+Notes: ${input.notes?.trim() || 'ไม่มี'}
+Total slides: ${input.slideCount}
+
+Current slide:
+- position: ${input.targetSlide.position}
+- role: ${input.targetSlide.role}
+- layout: ${input.targetSlide.layout_variant}
+- current headline: ${input.targetSlide.headline?.trim() || 'ไม่มี'}
+- current visual brief: ${input.targetSlide.visual_brief?.trim() || 'ไม่มี'}
+
+Slide map:
+${existingSlides}
+
+ข้อกำหนดเพิ่มเติม:
+- ต้องรักษา mood และ message arc ของ carousel เดิม
+- ห้ามซ้ำใจความกับ slide อื่นแบบตรง ๆ
+- หลีกเลี่ยงประโยคยาวหรืออธิบายเยิ่นเย้อ`
+		};
+	}
+
+	return {
+		systemPrompt: `${CREATOR_SYSTEM_PROMPT}
+
+คุณกำลัง regenerate Instagram carousel แค่ 1 slide สำหรับทีม BigLot โดยต้องตอบเป็น JSON เท่านั้น ไม่มี markdown wrapper ไม่มีคำอธิบายเพิ่ม
+
+กติกา:
+- regenerate เฉพาะ slide เป้าหมายเท่านั้น
+- ห้ามเปลี่ยน role, layout หรือ position ของ slide เป้าหมาย
+- ต้องรักษา theme และ flow ของ carousel เดิมให้ต่อเนื่องกับ slide อื่น
+- headline ต้องชัดและพร้อมใช้จริง
+- ถ้า role เป็น body ต้องมี body ที่อ่านง่าย กระชับ และช่วยขยายจาก headline
+- ถ้า role เป็น cta ต้องมี cta ที่พร้อมใช้งานจริง ถ้าไม่ชัดให้ใช้การชวนเข้า Line OA @biglot.ai
+- freepik_query ต้องเป็นภาษาอังกฤษ 1 บรรทัด สำหรับค้นภาพบน Pexels
+- visual_brief ต้องอธิบาย mood, subject, composition และ text overlay direction
+- ภาษาไทยเป็นหลัก อ่านง่าย กระชับ และเหมาะกับ Instagram
+
+ตอบในรูปแบบนี้เท่านั้น:
+{
+  "headline": "ข้อความหลักบน slide",
+  "body": "ข้อความเสริมหรือ null",
+  "cta": "ข้อความ CTA หรือ null",
+  "visual_brief": "brief สำหรับ visual",
+  "freepik_query": "english pexels photo search query"
+}`,
+		userPrompt: `Regenerate slide ที่ตำแหน่ง ${input.targetSlide.position} จาก carousel นี้:
+
+Project title: ${input.projectTitle}
+Project description: ${input.projectDescription?.trim() || 'ไม่มี'}
+Visual direction: ${input.projectVisualDirection?.trim() || 'ไม่มี'}
+Category: ${input.contentCategory ?? 'ไม่ระบุ'}
+Notes: ${input.notes?.trim() || 'ไม่มี'}
+Content mode: ${contentMode}
+Total slides: ${input.slideCount}
+
+Current slide:
+- position: ${input.targetSlide.position}
+- role: ${input.targetSlide.role}
+- layout: ${input.targetSlide.layout_variant}
+- current headline: ${input.targetSlide.headline?.trim() || 'ไม่มี'}
+- current body: ${input.targetSlide.body?.trim() || 'ไม่มี'}
+- current cta: ${input.targetSlide.cta?.trim() || 'ไม่มี'}
+- current visual brief: ${input.targetSlide.visual_brief?.trim() || 'ไม่มี'}
+- current freepik query: ${input.targetSlide.freepik_query?.trim() || 'ไม่มี'}
+
+Slide map:
+${existingSlides}
+
+ข้อกำหนดเพิ่มเติม:
+- slide cover ต้องเด่นและเปิดเรื่องชัด
+- slide body ต้องต่อ narrative กับ slide ก่อนหน้าและหลังจากนั้น
+- slide cta ต้องปิดเรื่องและพาไป action เดียวที่ชัด`
+	};
+}
+
+function validateRegeneratedSlide(input: RegenerateCarouselSlideInput, value: unknown): GeneratedCarouselSlide {
+	if (!value || typeof value !== 'object') {
+		throw new Error('AI response is missing slide object');
+	}
+
+	const slide = value as Record<string, unknown>;
+	const contentMode = normalizeContentMode(input.contentMode);
+	const role = input.targetSlide.role;
+	const isQuoteNonCtaSlide = contentMode === 'quote' && role !== 'cta';
+	const headline = ensureNonEmptyString(slide.headline, 'headline');
+	const visualBrief = ensureNonEmptyString(slide.visual_brief, 'visual_brief');
+	const bodyValue = typeof slide.body === 'string' && slide.body.trim() ? slide.body.trim() : null;
+	const ctaValue = typeof slide.cta === 'string' && slide.cta.trim() ? slide.cta.trim() : null;
+
+	if (!isQuoteNonCtaSlide && role === 'body' && !bodyValue) {
+		throw new Error('AI response is missing body for body slide');
+	}
+
+	return {
+		position: input.targetSlide.position,
+		role,
+		layout_variant: input.targetSlide.layout_variant,
+		headline,
+		body: isQuoteNonCtaSlide ? null : bodyValue,
+		cta: role === 'cta' ? ctaValue ?? DEFAULT_LINE_OA_CTA : null,
+		visual_brief: visualBrief,
+		freepik_query: isQuoteNonCtaSlide ? null : ensureNonEmptyString(slide.freepik_query, 'freepik_query')
+	};
 }
 
 export async function generateCarouselDraft(input: {
@@ -254,4 +440,19 @@ export async function generateCarouselDraft(input: {
 		hashtags: normalizeHashtags(parsed.hashtags),
 		slides
 	};
+}
+
+export async function regenerateCarouselSlide(input: RegenerateCarouselSlideInput): Promise<GeneratedCarouselSlide> {
+	const { systemPrompt, userPrompt } = buildRegenerateSlidePrompt(input);
+
+	const raw = await chat(
+		[
+			{ role: 'system', content: systemPrompt },
+			{ role: 'user', content: userPrompt }
+		],
+		{ temperature: 0.75, max_tokens: 1200, timeout_ms: 300_000 }
+	);
+
+	const parsed = JSON.parse(cleanJsonResponse(raw)) as Record<string, unknown>;
+	return validateRegeneratedSlide(input, parsed);
 }

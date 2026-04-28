@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
 	import { carouselStatusLabel } from '$lib/carousel';
 	import { CONTENT_CATEGORY_OPTIONS } from '$lib/media-plan';
 	import { hasSupabaseConfig } from '$lib/supabase';
+	import type { PageData } from './$types';
 	import type {
 		AIIdeaSuggestion,
 		BacklogContentCategory,
@@ -21,30 +21,14 @@
 		{
 			value: 'standard',
 			label: 'Standard',
-			description: 'ใช้ workflow เดิมสำหรับ carousel แบบ knowledge / trading content'
+			description: 'knowledge / trading content พร้อม asset-led workflow'
 		},
 		{
 			value: 'quote',
-			label: 'Quote Mode',
-			description: 'ใช้ layout แบบ quote-first พร้อม account header สำหรับสไลด์ที่ไม่ใช่ CTA'
+			label: 'Quote',
+			description: 'text-first workflow พร้อม account header สำหรับ non-CTA slides'
 		}
 	];
-
-	let projects = $state<CarouselProjectRow[]>([]);
-	let loadingProjects = $state(false);
-	let search = $state('');
-	let creatingStandalone = $state(false);
-	let deletingProjectId = $state<string | null>(null);
-	let contentMode = $state<CarouselContentMode>('standard');
-	let newIdeaTitle = $state('');
-	let newIdeaDescription = $state('');
-	let newIdeaNotes = $state('');
-	let newIdeaCategory = $state<BacklogContentCategory | ''>('');
-	let aiSuggestLoading = $state(false);
-	let aiSuggestError = $state('');
-	let aiSuggestions = $state<AIIdeaSuggestion[]>([]);
-	let aiCustomPrompt = $state('');
-	let activeAiPreset = $state('');
 
 	const AI_IDEA_FOCUS_PRESETS = [
 		{
@@ -80,43 +64,30 @@
 		conversion: 'Conversion'
 	};
 
+	let { data }: { data: PageData } = $props();
+
+	let projects = $state<CarouselProjectRow[]>([]);
+	let loadingProjects = $state(false);
+	let search = $state('');
+	let creatingStandalone = $state(false);
+	let deletingProjectId = $state<string | null>(null);
+	let duplicatingProjectId = $state<string | null>(null);
+	let contentMode = $state<CarouselContentMode>('standard');
+	let newIdeaTitle = $state('');
+	let newIdeaDescription = $state('');
+	let newIdeaNotes = $state('');
+	let newIdeaCategory = $state<BacklogContentCategory | ''>('');
+	let aiSuggestLoading = $state(false);
+	let aiSuggestError = $state('');
+	let aiSuggestions = $state<AIIdeaSuggestion[]>([]);
+	let aiCustomPrompt = $state('');
+	let activeAiPreset = $state('');
+	let initialLoadError = $state('');
+	let initializedFromData = false;
+
 	const carouselCategoryOptions = CONTENT_CATEGORY_OPTIONS.filter((option) => option.value !== 'pin');
-	const activeAiPresetPrompt = $derived(AI_IDEA_FOCUS_PRESETS.find((preset) => preset.id === activeAiPreset)?.prompt ?? '');
-	const heroHeadline = $derived(
-		contentMode === 'quote'
-			? 'Quote-first brief, then Studio'
-			: 'AI draft, Pexels asset search, แล้วค่อย export เป็น package พร้อมโพสต์'
-	);
-	const heroBody = $derived(
-		contentMode === 'quote'
-			? 'หน้านี้เป็น entry point สำหรับ Carousel Studio โดยตรง สร้าง quote-first project ได้เลยแล้วค่อยเข้า studio ไปจัดการ draft, avatar, copy และ export ต่อใน workflow ของ carousel เอง'
-			: 'หน้านี้เป็น entry point สำหรับ Carousel Studio โดยตรง สร้าง project ใหม่ได้เลยแล้วค่อยเข้า studio ไปจัดการ draft, asset และ export ต่อใน workflow ของ carousel เอง'
-	);
-	const studioSubtitle = $derived(
-		contentMode === 'quote'
-			? 'สร้าง quote-first carousel project พร้อม account header, avatar workflow และ export package'
-			: 'สร้าง Instagram carousel project พร้อม asset, caption และ export package'
-	);
-	const panelCopy = $derived(
-		contentMode === 'quote'
-			? 'โหมดนี้เหมาะกับ carousel ที่ใช้ข้อความนำภาพ แสดง account header ทุกสไลด์ที่ไม่ใช่ CTA และให้ AI ช่วยคิด quote-led brief ก่อนเข้า Studio'
-			: 'ให้ AI ช่วยตั้งต้นไอเดียที่เกี่ยวกับการเทรด แล้วค่อยแตกต่อเป็น carousel brief ก่อนเข้า Studio'
-	);
-	const aiAssistTitle = $derived(contentMode === 'quote' ? 'Quote-led Carousel Assist' : 'Trading AI Assist');
-	const aiAssistDescription = $derived(
-		contentMode === 'quote'
-			? 'กดครั้งเดียวแล้วได้ idea แบบ quote-first ที่พร้อมแตกเป็น 5 quote slides + 1 CTA สำหรับเข้า Studio'
-			: 'กดครั้งเดียวแล้วได้ idea แบบ carousel-ready'
-	);
-	const aiAssistBodyCopy = $derived(
-		contentMode === 'quote'
-			? 'ระบบจะคิดหัวข้อให้พร้อม hook, audience, quote flow และ CTA ที่เหมาะกับ quote carousel / community funnel'
-			: 'ระบบจะคิดหัวข้อให้พร้อม hook, audience, slide flow และ CTA ที่เหมาะกับ XAUUSD / IB funnel'
-	);
-	const aiPromptPlaceholder = $derived(
-		contentMode === 'quote'
-			? 'เช่น อยากได้ quote carousel สำหรับคนที่กำลังกลัวเข้าออเดอร์ตอนทองวิ่งแรง'
-			: 'เช่น อยากได้ content สำหรับมือใหม่ที่ชอบ overtrade ตอนทองวิ่งแรง'
+	const activeAiPresetPrompt = $derived(
+		AI_IDEA_FOCUS_PRESETS.find((preset) => preset.id === activeAiPreset)?.prompt ?? ''
 	);
 	const titlePlaceholder = $derived(
 		contentMode === 'quote'
@@ -133,22 +104,23 @@
 			? 'ใส่ quote mood, audience, slide flow, CTA หรือใช้ AI ช่วยเติมให้'
 			: 'ใส่ hook, audience, slide flow, CTA หรือใช้ AI ช่วยเติมให้'
 	);
-	const createButtonLabel = $derived(contentMode === 'quote' ? 'Create Quote Project' : 'Create Carousel Project');
-	const modeSelectorHint = $derived(
+	const aiPromptPlaceholder = $derived(
 		contentMode === 'quote'
-			? 'Quote Mode จะสร้าง project แบบ text-first และไม่เปลี่ยน workflow ของ standard project เดิม'
-			: 'Standard mode จะใช้ workflow เดิมสำหรับ carousel ที่มี asset-led slides'
+			? 'เช่น อยากได้ quote carousel สำหรับคนที่กำลังกลัวเข้าออเดอร์ตอนทองวิ่งแรง'
+			: 'เช่น อยากได้ content สำหรับมือใหม่ที่ชอบ overtrade ตอนทองวิ่งแรง'
 	);
 
 	const filteredProjects = $derived.by(() => {
 		const query = search.trim().toLowerCase();
 		if (!query) return projects;
+
 		return projects.filter((project) => {
 			const projectTitle = (project.title ?? '').toLowerCase();
 			const caption = (project.caption ?? '').toLowerCase();
 			const visualDirection = (project.visual_direction ?? '').toLowerCase();
 			const status = project.status.toLowerCase();
 			const mode = (project.content_mode ?? 'standard').toLowerCase();
+
 			return (
 				projectTitle.includes(query) ||
 				caption.includes(query) ||
@@ -159,13 +131,6 @@
 		});
 	});
 
-	const stats = $derived({
-		total: projects.length,
-		ready: projects.filter((project) => project.status === 'ready').length,
-		exported: projects.filter((project) => project.status === 'exported').length,
-		draft: projects.filter((project) => project.status === 'draft').length
-	});
-
 	function badgeVariant(status: CarouselProjectRow['status']): 'warning' | 'success' | 'info' | 'neutral' {
 		if (status === 'ready') return 'success';
 		if (status === 'exported') return 'info';
@@ -173,13 +138,25 @@
 		return 'neutral';
 	}
 
-	function formatDate(value: string | null): string {
-		if (!value) return 'ยังไม่เคย generate';
+	function formatCompactDate(value: string | null): string {
+		if (!value) return 'ยังไม่มี';
 		return new Date(value).toLocaleString('th-TH', {
-			dateStyle: 'medium',
-			timeStyle: 'short'
+			dateStyle: 'medium'
 		});
 	}
+
+	function latestActivityLabel(project: CarouselProjectRow): string {
+		if (project.last_exported_at) return `Exported ${formatCompactDate(project.last_exported_at)}`;
+		if (project.last_generated_at) return `Generated ${formatCompactDate(project.last_generated_at)}`;
+		return 'ยังไม่เคย generate';
+	}
+
+	$effect(() => {
+		if (initializedFromData) return;
+		projects = data.projects ?? [];
+		initialLoadError = data.loadError ?? '';
+		initializedFromData = true;
+	});
 
 	function focusIdeaTitleInput() {
 		requestAnimationFrame(() => {
@@ -242,9 +219,11 @@
 				prompt: prompt || undefined,
 				count: 4
 			};
+
 			if (contentMode === 'quote') {
 				requestBody.content_mode = 'quote';
 			}
+
 			const response = await fetch('/api/openclaw/ai/suggest-ideas', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -269,15 +248,19 @@
 
 	async function loadProjects() {
 		loadingProjects = true;
+		initialLoadError = '';
 		try {
 			const response = await fetch('/api/openclaw/carousels');
 			const body = await response.json();
 			if (!response.ok) {
-				toast.error(body.error ?? 'โหลด carousel projects ไม่สำเร็จ');
+				const message = body.error ?? 'โหลด carousel projects ไม่สำเร็จ';
+				initialLoadError = message;
+				toast.error(message);
 				return;
 			}
 			projects = body as CarouselProjectRow[];
 		} catch {
+			initialLoadError = 'โหลด carousel projects ไม่สำเร็จ';
 			toast.error('โหลด carousel projects ไม่สำเร็จ');
 		} finally {
 			loadingProjects = false;
@@ -322,6 +305,25 @@
 		}
 	}
 
+	async function duplicateProject(project: CarouselProjectRow) {
+		duplicatingProjectId = project.id;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${project.id}/duplicate`, {
+				method: 'POST'
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'Duplicate project ไม่สำเร็จ');
+				return;
+			}
+			await goto(`/carousel/${body.project.id}`);
+		} catch {
+			toast.error('Duplicate project ไม่สำเร็จ');
+		} finally {
+			duplicatingProjectId = null;
+		}
+	}
+
 	async function deleteProject(project: CarouselProjectRow) {
 		const confirmed = window.confirm(
 			`ลบ carousel project นี้ใช่ไหม?\n${project.title ?? project.id}\n\nระบบจะลบเฉพาะ project และ slides`
@@ -355,16 +357,13 @@
 		}
 	}
 
-	onMount(async () => {
-		await loadProjects();
-	});
 </script>
 
 <main class="page">
 	<PageHeader
 		eyebrow="Instagram automation"
-		title="Carousel Studio"
-		subtitle={studioSubtitle}
+		title="Carousel"
+		subtitle="สร้างโปรเจกต์เร็ว แล้วค่อยไปจัดรายละเอียดต่อใน Studio"
 	>
 		{#snippet actions()}
 			<Button variant="secondary" onclick={() => { void loadProjects(); }} loading={loadingProjects}>
@@ -376,130 +375,87 @@
 	{#if !hasSupabaseConfig}
 		<p class="alert">ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ <code>PUBLIC_SUPABASE_ANON_KEY</code></p>
 	{:else}
-		<section class="hero">
-			<div class="hero-copy">
-				<p class="hero-kicker">Instagram-first workflow</p>
-				<h2>{heroHeadline}</h2>
-				<p>{heroBody}</p>
+		{#if initialLoadError}
+			<p class="alert">{initialLoadError}</p>
+		{/if}
+
+		<section class="quick-create-card">
+			<div class="section-head">
+				<p class="section-kicker">Quick Create</p>
+				<h2>เริ่มจาก title แล้วเข้า Studio เลย</h2>
+				<p class="section-copy">ฟอร์มหลักเหลือแค่ชื่อกับโหมด ส่วน brief, category และ AI assist ถูกย้ายไปไว้ใน Advanced</p>
 			</div>
 
-			<div class="hero-stats">
-				<div class="stat-card">
-					<span>Total</span>
-					<strong>{stats.total}</strong>
-				</div>
-				<div class="stat-card">
-					<span>Ready</span>
-					<strong>{stats.ready}</strong>
-				</div>
-				<div class="stat-card">
-					<span>Exported</span>
-					<strong>{stats.exported}</strong>
-				</div>
-				<div class="stat-card">
-					<span>Draft</span>
-					<strong>{stats.draft}</strong>
-				</div>
-			</div>
-		</section>
+			<div class="quick-create-grid">
+				<label class="field field--title">
+					<span>Project title</span>
+					<input id="carousel-idea-title" bind:value={newIdeaTitle} placeholder={titlePlaceholder} />
+				</label>
 
-		<div class="workspace">
-			<section class="projects-panel">
-				<div class="panel-head">
-					<div>
-						<p class="panel-kicker">Projects</p>
-						<h3>Carousel projects</h3>
-					</div>
-					<input bind:value={search} placeholder="ค้นหา project หรือ status..." />
-				</div>
-
-				{#if loadingProjects}
-					<div class="loading-state">
-						<Spinner label="Loading carousel projects..." />
-					</div>
-				{:else if filteredProjects.length === 0}
-					<div class="empty-card">
-						<h4>ยังไม่มี carousel project</h4>
-						<p>เริ่มจากสร้าง project ใหม่ด้านขวา แล้วกด Create Carousel Project เพื่อเปิด Studio ครั้งแรก</p>
-					</div>
-				{:else}
-					<div class="project-grid">
-						{#each filteredProjects as project}
-							<article class="project-card">
-								<div class="project-top">
-									<Badge variant={badgeVariant(project.status)} label={carouselStatusLabel[project.status]} />
-									<Badge variant="platform" value="instagram" />
-									<Badge variant="neutral" label={project.content_mode === 'quote' ? 'Quote Mode' : 'Standard Mode'} />
-								</div>
-								<h4>{project.title ?? 'Untitled carousel'}</h4>
-								<p class="project-caption">{project.caption ?? project.visual_direction ?? 'ยังไม่มี caption หรือ visual direction'}</p>
-								<div class="project-meta">
-									<span>{project.slide_count} slides</span>
-									<span>Generated {formatDate(project.last_generated_at)}</span>
-								</div>
-								<div class="project-actions">
-									<Button variant="primary" href={`/carousel/${project.id}`}>Open Studio</Button>
-									<Button
-										variant="danger"
-										size="sm"
-										onclick={() => { void deleteProject(project); }}
-										loading={deletingProjectId === project.id}
-									>
-										{deletingProjectId === project.id ? 'Deleting...' : 'Delete Project'}
-									</Button>
-								</div>
-							</article>
+				<div class="field">
+					<span>Mode</span>
+					<div class="mode-row">
+						{#each PROJECT_MODE_OPTIONS as option}
+							<button
+								type="button"
+								class:selected={contentMode === option.value}
+								onclick={() => {
+									setContentMode(option.value);
+								}}
+							>
+								<strong>{option.label}</strong>
+								<small>{option.description}</small>
+							</button>
 						{/each}
 					</div>
-				{/if}
-			</section>
+				</div>
+			</div>
 
-			<aside class="ideas-panel">
-					<div class="panel-head">
-						<div>
-							<p class="panel-kicker">Studio entry point</p>
-							<h3>Create idea here</h3>
-							<p class="panel-copy">{panelCopy}</p>
-						</div>
+			<div class="quick-create-actions">
+				<Button variant="primary" onclick={() => { void createStandaloneProject(); }} loading={creatingStandalone}>
+					{creatingStandalone ? 'Creating...' : contentMode === 'quote' ? 'Create Quote Project' : 'Create Carousel Project'}
+				</Button>
+				<Button variant="ghost" onclick={resetIdeaDraft}>Clear</Button>
+			</div>
+
+			<details class="advanced-panel">
+				<summary>
+					<div>
+						<strong>Advanced</strong>
+						<span>description, category, studio brief และ AI assist</span>
+					</div>
+				</summary>
+
+				<div class="advanced-body">
+					<div class="advanced-grid">
+						<label class="field">
+							<span>Description</span>
+							<textarea bind:value={newIdeaDescription} rows={4} placeholder={descriptionPlaceholder}></textarea>
+						</label>
+
+						<label class="field">
+							<span>Category</span>
+							<select bind:value={newIdeaCategory}>
+								{#each carouselCategoryOptions as option}
+									<option value={option.value}>{option.label}</option>
+								{/each}
+							</select>
+						</label>
+
+						<label class="field field--full">
+							<span>Studio brief</span>
+							<textarea bind:value={newIdeaNotes} rows={6} placeholder={studioBriefPlaceholder}></textarea>
+							<small>brief นี้จะถูกเก็บใน backlog notes และส่งต่อให้ AI ตอน generate carousel</small>
+						</label>
 					</div>
 
-				<div class="create-card">
-					<label class="mode-selector">
-						<span>Project mode</span>
-						<div class="mode-row">
-							{#each PROJECT_MODE_OPTIONS as option}
-								<button
-									type="button"
-									class:selected={contentMode === option.value}
-									onclick={() => {
-										setContentMode(option.value);
-									}}
-								>
-									<strong>{option.label}</strong>
-									<small>{option.description}</small>
-								</button>
-							{/each}
-						</div>
-						<small>{modeSelectorHint}</small>
-					</label>
-
-					<section class="ai-assist">
-						<div class="ai-assist-head">
-							<div class="ai-assist-copy">
-								<p class="create-kicker" class:create-kicker--quote={contentMode === 'quote'}>
-									{contentMode === 'quote' ? 'Quote-led AI Assist' : 'Trading AI Assist'}
-								</p>
-								<h4>{aiAssistTitle}</h4>
-								<p>{aiAssistDescription}</p>
-								<p class="ai-assist-body">{aiAssistBodyCopy}</p>
+					<section class="ai-panel">
+						<div class="ai-panel-head">
+							<div>
+								<p class="section-kicker">{contentMode === 'quote' ? 'Quote AI Assist' : 'Trading AI Assist'}</p>
+								<h3>{contentMode === 'quote' ? 'ให้ AI ช่วยตั้งต้น quote-first brief' : 'ให้ AI ช่วยตั้งต้นหัวข้อ carousel'}</h3>
 							</div>
-
-							<Button
-								variant="secondary"
-								class="ai-trigger"
-								onclick={() => { void suggestTradingIdeas(); }}
-								loading={aiSuggestLoading}
-							>
+							<Button variant="secondary" onclick={() => { void suggestTradingIdeas(); }} loading={aiSuggestLoading}>
 								{aiSuggestLoading ? 'กำลังคิด...' : contentMode === 'quote' ? 'AI คิด quote ให้' : 'AI คิดให้'}
 							</Button>
 						</div>
@@ -518,13 +474,9 @@
 							{/each}
 						</div>
 
-						<label class="ai-prompt">
-							<span>โจทย์เพิ่ม (optional)</span>
-							<textarea
-								bind:value={aiCustomPrompt}
-								rows={3}
-								placeholder={aiPromptPlaceholder}
-							></textarea>
+						<label class="field field--full">
+							<span>โจทย์เพิ่ม</span>
+							<textarea bind:value={aiCustomPrompt} rows={3} placeholder={aiPromptPlaceholder}></textarea>
 						</label>
 
 						{#if aiSuggestError}
@@ -532,8 +484,8 @@
 						{/if}
 
 						{#if aiSuggestLoading}
-							<div class="ai-loading">
-								<Spinner label="AI กำลังร่าง trading ideas..." />
+							<div class="loading-state">
+								<Spinner label="AI กำลังร่าง ideas..." />
 							</div>
 						{:else if aiSuggestions.length > 0}
 							<div class="ai-suggestion-list">
@@ -588,51 +540,82 @@
 							</div>
 						{/if}
 					</section>
-
-					<div class="create-divider"></div>
-
-					<label>
-						<span>Idea title</span>
-						<input
-							id="carousel-idea-title"
-							bind:value={newIdeaTitle}
-							placeholder={titlePlaceholder}
-						/>
-					</label>
-
-					<label>
-						<span>Description</span>
-						<textarea bind:value={newIdeaDescription} rows={4} placeholder={descriptionPlaceholder}></textarea>
-					</label>
-
-					<label>
-						<span>Category</span>
-						<select bind:value={newIdeaCategory}>
-							{#each carouselCategoryOptions as option}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-					</label>
-
-					<label>
-						<span>Studio brief</span>
-						<textarea
-							bind:value={newIdeaNotes}
-							rows={7}
-							placeholder={studioBriefPlaceholder}
-						></textarea>
-						<small>brief นี้จะถูกเก็บใน backlog notes และส่งต่อให้ AI ตอน generate carousel</small>
-					</label>
-
-					<div class="create-actions">
-						<Button variant="primary" onclick={() => { void createStandaloneProject(); }} loading={creatingStandalone}>
-							{creatingStandalone ? 'Creating...' : createButtonLabel}
-						</Button>
-						<Button variant="ghost" onclick={resetIdeaDraft}>Clear</Button>
-					</div>
 				</div>
-			</aside>
-		</div>
+			</details>
+		</section>
+
+		<section class="projects-panel">
+			<div class="section-head section-head--inline">
+				<div>
+					<p class="section-kicker">Recent Projects</p>
+					<h2>เปิดงานเก่าต่อได้ทันที</h2>
+				</div>
+				<input bind:value={search} placeholder="ค้นหา project, status หรือ mode..." />
+			</div>
+
+			{#if loadingProjects}
+				<div class="loading-state">
+					<Spinner label="Loading carousel projects..." />
+				</div>
+			{:else if filteredProjects.length === 0}
+				<div class="empty-card">
+					<h4>ยังไม่มี carousel project</h4>
+					<p>เริ่มจากสร้าง project ใหม่ด้านบน แล้วระบบจะพาเข้า Studio ทันที</p>
+				</div>
+			{:else}
+				<div class="project-list">
+					{#each filteredProjects as project}
+						<article class="project-row">
+							{#if project.cover_thumbnail_url}
+								<div class="project-thumb">
+									<img src={project.cover_thumbnail_url} alt={project.title ?? 'Carousel cover'} loading="lazy" />
+								</div>
+							{:else}
+								<div class="project-thumb project-thumb--empty">
+									<span>{(project.title ?? 'C')[0].toUpperCase()}</span>
+								</div>
+							{/if}
+							<div class="project-main">
+								<div class="project-title-row">
+									<h3>{project.title ?? 'Untitled carousel'}</h3>
+									<div class="project-badges">
+										<Badge variant={badgeVariant(project.status)} label={carouselStatusLabel[project.status]} />
+										<Badge variant="neutral" label={project.content_mode === 'quote' ? 'Quote' : 'Standard'} />
+									</div>
+								</div>
+
+								<p class="project-secondary">{project.caption ?? project.visual_direction ?? 'ยังไม่มี caption หรือ visual direction'}</p>
+
+								<div class="project-meta">
+									<span>{project.slide_count} slides</span>
+									<span>{latestActivityLabel(project)}</span>
+								</div>
+							</div>
+
+							<div class="project-actions">
+								<Button variant="primary" href={`/carousel/${project.id}`}>Open</Button>
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={() => { void duplicateProject(project); }}
+									loading={duplicatingProjectId === project.id}
+								>
+									{duplicatingProjectId === project.id ? 'Duplicating...' : 'Duplicate'}
+								</Button>
+								<Button
+									variant="danger"
+									size="sm"
+									onclick={() => { void deleteProject(project); }}
+									loading={deletingProjectId === project.id}
+								>
+									{deletingProjectId === project.id ? 'Deleting...' : 'Delete'}
+								</Button>
+							</div>
+						</article>
+					{/each}
+				</div>
+			{/if}
+		</section>
 	{/if}
 </main>
 
@@ -651,91 +634,8 @@
 		border: 1px solid rgba(220, 38, 38, 0.14);
 	}
 
-	.hero {
-		display: grid;
-		grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
-		gap: var(--space-5);
-		padding: var(--space-6);
-		border-radius: 1.75rem;
-		background:
-			radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 38%),
-			radial-gradient(circle at bottom right, rgba(225, 48, 108, 0.16), transparent 28%),
-			linear-gradient(145deg, #0f172a 0%, #1d4ed8 100%);
-		color: #fff;
-		box-shadow: var(--shadow-lg);
-	}
-
-	.hero-copy {
-		display: grid;
-		gap: 0.9rem;
-	}
-
-	.hero-kicker,
-	.panel-kicker {
-		margin: 0;
-		font-size: 0.78rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-	}
-
-	.hero h2,
-	.panel-head h3 {
-		margin: 0;
-		font-family: var(--font-heading);
-	}
-
-	.hero h2 {
-		font-size: clamp(1.8rem, 4vw, 2.7rem);
-		line-height: 1.05;
-		max-width: 14ch;
-	}
-
-	.hero p {
-		margin: 0;
-		color: rgba(255, 255, 255, 0.86);
-		line-height: 1.65;
-		max-width: 62ch;
-	}
-
-	.hero-stats {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-3);
-		align-content: start;
-	}
-
-	.stat-card {
-		display: grid;
-		gap: 0.35rem;
-		padding: var(--space-4);
-		border-radius: 1.2rem;
-		background: rgba(255, 255, 255, 0.12);
-		backdrop-filter: blur(12px);
-		border: 1px solid rgba(255, 255, 255, 0.14);
-	}
-
-	.stat-card span {
-		font-size: 0.76rem;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: rgba(255, 255, 255, 0.72);
-	}
-
-	.stat-card strong {
-		font-family: var(--font-heading);
-		font-size: 1.6rem;
-	}
-
-	.workspace {
-		display: grid;
-		grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
-		gap: var(--space-5);
-		align-items: start;
-	}
-
-	.projects-panel,
-	.ideas-panel {
+	.quick-create-card,
+	.projects-panel {
 		display: grid;
 		gap: var(--space-4);
 		padding: var(--space-5);
@@ -745,461 +645,446 @@
 		box-shadow: var(--shadow-sm);
 	}
 
-	.create-card {
-		display: grid;
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border-radius: 1.2rem;
-		border: 1px solid rgba(79, 70, 229, 0.14);
+	.quick-create-card {
 		background:
-			radial-gradient(circle at top left, rgba(249, 115, 22, 0.08), transparent 38%),
-			linear-gradient(180deg, rgba(238, 242, 255, 0.88), rgba(255, 255, 255, 0.96));
+			radial-gradient(circle at top left, rgba(249, 115, 22, 0.08), transparent 32%),
+			linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
 	}
 
-	.mode-selector {
-		display: grid;
-		gap: 0.45rem;
-		padding: 0.95rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.84);
-		border: 1px solid rgba(148, 163, 184, 0.2);
-	}
-
-	.mode-selector > span,
-	.mode-selector > small {
-		font-size: 0.76rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-slate-500);
-	}
-
-	.mode-selector > small {
-		font-weight: 600;
-		text-transform: none;
-		letter-spacing: 0;
-		line-height: 1.5;
-	}
-
-	.mode-row {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.5rem;
-	}
-
-	.mode-row button {
-		display: grid;
-		gap: 0.25rem;
-		align-content: start;
-		text-align: left;
-		padding: 0.8rem 0.85rem;
-		border-radius: 0.95rem;
-		border: 1px solid rgba(148, 163, 184, 0.24);
-		background: #fff;
-		color: var(--color-slate-700);
-		font: inherit;
-		cursor: pointer;
-		transition:
-			background var(--transition-fast),
-			border-color var(--transition-fast),
-			color var(--transition-fast),
-			transform var(--transition-fast);
-	}
-
-	.mode-row button strong {
-		font-size: 0.88rem;
-		line-height: 1.2;
-	}
-
-	.mode-row button small {
-		display: block;
-		font-size: 0.72rem;
-		font-weight: 500;
-		line-height: 1.45;
-		color: var(--color-slate-500);
-	}
-
-	.mode-row button:hover,
-	.mode-row button.selected {
-		background: rgba(29, 78, 216, 0.08);
-		border-color: rgba(29, 78, 216, 0.24);
-		color: var(--color-blue-700);
-		transform: translateY(-1px);
-	}
-
-	.panel-head {
-		display: grid;
-		gap: var(--space-3);
-	}
-
-	.panel-copy {
-		margin: 0.55rem 0 0;
-		color: var(--color-slate-600);
-		line-height: 1.6;
-		max-width: 34ch;
-	}
-
-	.panel-head input {
-		width: 100%;
-		box-sizing: border-box;
-		padding: 0.8rem 0.95rem;
-		border-radius: 0.95rem;
-		border: 1px solid var(--color-border-strong);
-		font: inherit;
-	}
-
-	.create-card label {
+	.section-head {
 		display: grid;
 		gap: 0.45rem;
 	}
 
-	.create-card label > span,
-	.ai-prompt > span {
-		font-size: 0.76rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-slate-500);
-	}
-
-	.create-card textarea,
-	.create-card select,
-	.create-card input {
-		width: 100%;
-		box-sizing: border-box;
-		padding: 0.82rem 0.95rem;
-		border-radius: 0.95rem;
-		border: 1px solid var(--color-border-strong);
-		background: var(--color-bg-elevated);
-		font: inherit;
-	}
-
-	.ai-assist {
-		display: grid;
-		gap: var(--space-3);
-		padding: var(--space-4);
-		border-radius: 1rem;
-		background:
-			radial-gradient(circle at top left, rgba(249, 115, 22, 0.12), transparent 32%),
-			linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.68));
-		border: 1px solid rgba(251, 146, 60, 0.18);
-	}
-
-	.ai-assist-head {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: var(--space-3);
+	.section-head--inline {
+		grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
 		align-items: end;
+		gap: var(--space-4);
 	}
 
-	.ai-assist-copy {
-		display: grid;
-		gap: 0.45rem;
-	}
-
-	.create-kicker {
+	.section-kicker {
 		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 900;
+		font-size: 0.78rem;
+		font-weight: 800;
 		text-transform: uppercase;
-		letter-spacing: 0.16em;
-		color: var(--color-orange-600);
+		letter-spacing: 0.12em;
+		color: var(--color-text-soft);
 	}
 
-	.create-kicker--quote {
-		color: #be123c;
-	}
-
-	.ai-assist-copy h4,
+	.section-head h2,
+	.ai-panel-head h3,
+	.project-title-row h3,
+	.empty-card h4,
 	.ai-suggestion-card h4 {
 		margin: 0;
 		font-family: var(--font-heading);
 	}
 
-	.ai-assist-copy p {
+	.section-copy {
 		margin: 0;
-		color: var(--color-slate-600);
+		max-width: 62ch;
+		color: var(--color-text-soft);
 		line-height: 1.6;
 	}
 
-	.ai-assist-body {
-		font-size: 0.84rem;
-		color: var(--color-slate-500);
+	.quick-create-grid,
+	.advanced-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+		gap: var(--space-4);
 	}
 
-	:global(.ai-trigger) {
-		background: linear-gradient(135deg, #0f172a, #1d4ed8);
-		color: #fff;
-		border-color: transparent;
-		box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
+	.field {
+		display: grid;
+		gap: 0.55rem;
 	}
 
-	:global(.ai-trigger:hover:not(:disabled)) {
-		background: linear-gradient(135deg, #111827, #1e40af);
-		border-color: transparent;
+	.field--title {
+		min-width: 0;
+	}
+
+	.field--full {
+		grid-column: 1 / -1;
+	}
+
+	.field span {
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: var(--color-text-soft);
+	}
+
+	.field input,
+	.field textarea,
+	.field select,
+	.projects-panel input {
+		width: 100%;
+		padding: 0.85rem 1rem;
+		border-radius: 0.95rem;
+		border: 1px solid rgba(148, 163, 184, 0.28);
+		background: #fff;
+		font: inherit;
+		color: var(--color-text);
+	}
+
+	.field input:focus,
+	.field textarea:focus,
+	.field select:focus,
+	.projects-panel input:focus {
+		outline: 0;
+		border-color: rgba(37, 99, 235, 0.48);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+	}
+
+	.field small {
+		color: var(--color-text-soft);
+		line-height: 1.6;
+	}
+
+	.mode-row {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-3);
+	}
+
+	.mode-row button {
+		display: grid;
+		gap: 0.35rem;
+		padding: var(--space-4);
+		border-radius: 1rem;
+		border: 1px solid rgba(148, 163, 184, 0.3);
+		background: rgba(255, 255, 255, 0.88);
+		text-align: left;
+		cursor: pointer;
+		transition:
+			border-color 160ms ease,
+			transform 160ms ease,
+			box-shadow 160ms ease;
+	}
+
+	.mode-row button:hover,
+	.project-row:hover,
+	.preset-row button:hover {
+		transform: translateY(-1px);
+	}
+
+	.mode-row button.selected {
+		border-color: rgba(37, 99, 235, 0.45);
+		background: rgba(219, 234, 254, 0.95);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+	}
+
+	.mode-row strong {
+		font-family: var(--font-heading);
+	}
+
+	.mode-row strong,
+	.mode-row small {
+		margin: 0;
+	}
+
+	.mode-row small,
+	.project-secondary,
+	.project-meta,
+	.ai-suggestion-card p {
+		color: var(--color-text-soft);
+		line-height: 1.6;
+	}
+
+	.quick-create-actions,
+	.project-actions {
+		display: flex;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+	}
+
+	.advanced-panel {
+		border-radius: 1.2rem;
+		border: 1px solid rgba(148, 163, 184, 0.22);
+		background: rgba(255, 255, 255, 0.88);
+	}
+
+	.advanced-panel summary {
+		list-style: none;
+		padding: var(--space-4);
+		cursor: pointer;
+	}
+
+	.advanced-panel summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.advanced-panel summary div {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	.advanced-panel summary strong {
+		font-family: var(--font-heading);
+	}
+
+	.advanced-panel summary span {
+		color: var(--color-text-soft);
+	}
+
+	.advanced-body {
+		display: grid;
+		gap: var(--space-4);
+		padding: 0 var(--space-4) var(--space-4);
+	}
+
+	.ai-panel {
+		display: grid;
+		gap: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid rgba(148, 163, 184, 0.18);
+	}
+
+	.ai-panel-head,
+	.ai-suggestion-top {
+		display: flex;
+		justify-content: space-between;
+		gap: var(--space-3);
+		align-items: start;
+	}
+
+	.ai-panel-head p,
+	.ai-panel-head h3,
+	.project-secondary,
+	.empty-card p,
+	.ai-reason {
+		margin: 0;
 	}
 
 	.preset-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.55rem;
+		gap: 0.7rem;
+	}
+
+	.preset-row button,
+	.suggestion-apply {
+		border: 0;
+		cursor: pointer;
+		font: inherit;
 	}
 
 	.preset-row button {
-		border: 1px solid rgba(148, 163, 184, 0.28);
-		background: rgba(255, 255, 255, 0.84);
-		color: var(--color-slate-700);
-		padding: 0.48rem 0.8rem;
+		padding: 0.55rem 0.9rem;
 		border-radius: 999px;
-		font: inherit;
-		font-size: 0.82rem;
-		font-weight: 700;
-		cursor: pointer;
-		transition:
-			background var(--transition-fast),
-			border-color var(--transition-fast),
-			color var(--transition-fast),
-			transform var(--transition-fast);
+		background: rgba(226, 232, 240, 0.8);
+		color: var(--color-text-soft);
 	}
 
-	.preset-row button:hover,
 	.preset-row button.selected {
-		background: rgba(29, 78, 216, 0.08);
-		border-color: rgba(29, 78, 216, 0.24);
-		color: var(--color-blue-700);
-		transform: translateY(-1px);
+		background: rgba(37, 99, 235, 0.92);
+		color: #fff;
 	}
 
 	.ai-error {
 		margin: 0;
-		padding: 0.8rem 0.95rem;
+		padding: 0.9rem 1rem;
 		border-radius: 0.9rem;
-		background: #fff1f2;
-		border: 1px solid rgba(225, 29, 72, 0.14);
-		color: #be123c;
-		font-size: 0.92rem;
+		background: rgba(254, 242, 242, 0.96);
+		color: var(--color-red-700);
+		border: 1px solid rgba(248, 113, 113, 0.22);
 	}
 
-	.ai-loading {
-		display: flex;
-		justify-content: center;
-		padding: var(--space-3) 0;
-	}
-
-	.ai-suggestion-list {
+	.loading-state {
+		padding: var(--space-5);
 		display: grid;
-		gap: 0.9rem;
+		place-items: center;
+	}
+
+	.ai-suggestion-list,
+	.project-list {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.ai-suggestion-card,
+	.project-row,
+	.empty-card {
+		padding: var(--space-4);
+		border-radius: 1rem;
+		border: 1px solid rgba(148, 163, 184, 0.18);
+		background: rgba(255, 255, 255, 0.95);
+		box-shadow: var(--shadow-sm);
 	}
 
 	.ai-suggestion-card {
 		display: grid;
-		gap: 0.8rem;
-		padding: 1rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.92);
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+		gap: 0.85rem;
 	}
 
-	.ai-suggestion-top {
+	.ai-chip-row,
+	.project-badges {
 		display: flex;
-		gap: var(--space-2);
-		align-items: flex-start;
-		justify-content: space-between;
 		flex-wrap: wrap;
-	}
-
-	.ai-chip-row {
-		display: flex;
-		gap: 0.45rem;
-		flex-wrap: wrap;
+		gap: 0.55rem;
 	}
 
 	.journey-pill {
 		display: inline-flex;
 		align-items: center;
-		padding: 0.28rem 0.62rem;
+		padding: 0.35rem 0.7rem;
 		border-radius: 999px;
-		font-size: 0.7rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		border: 1px solid transparent;
+		font-size: 0.72rem;
+		font-weight: 700;
 	}
 
 	.journey-pill--awareness {
-		background: rgba(249, 115, 22, 0.12);
-		color: #c2410c;
-		border-color: rgba(249, 115, 22, 0.18);
+		background: rgba(253, 230, 138, 0.35);
+		color: #92400e;
 	}
 
 	.journey-pill--trust {
-		background: rgba(22, 163, 74, 0.12);
-		color: #15803d;
-		border-color: rgba(22, 163, 74, 0.18);
+		background: rgba(147, 197, 253, 0.24);
+		color: #1d4ed8;
 	}
 
 	.journey-pill--conversion {
-		background: rgba(29, 78, 216, 0.1);
-		color: #1d4ed8;
-		border-color: rgba(29, 78, 216, 0.18);
+		background: rgba(167, 243, 208, 0.32);
+		color: #047857;
 	}
 
 	.suggestion-apply {
-		border: 0;
+		padding: 0.45rem 0.8rem;
 		border-radius: 999px;
-		padding: 0.5rem 0.8rem;
-		background: #0f172a;
-		color: #fff;
-		font: inherit;
-		font-size: 0.82rem;
-		font-weight: 800;
-		cursor: pointer;
+		background: rgba(37, 99, 235, 0.1);
+		color: var(--color-blue-700);
+		font-weight: 700;
 	}
 
-	.ai-suggestion-desc,
-	.ai-reason,
-	.ai-cta,
-	.ai-outline ol,
-	.ai-suggestion-meta p {
+	.ai-suggestion-meta,
+	.ai-outline,
+	.ai-cta {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.ai-suggestion-meta p,
+	.ai-cta {
 		margin: 0;
-		color: var(--color-slate-600);
-		line-height: 1.6;
-	}
-
-	.ai-suggestion-meta {
-		display: grid;
-		gap: 0.45rem;
-	}
-
-	.ai-suggestion-meta p {
-		display: grid;
-		gap: 0.18rem;
 	}
 
 	.ai-suggestion-meta strong,
 	.ai-outline strong,
 	.ai-cta strong {
-		font-size: 0.78rem;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-slate-500);
-	}
-
-	.ai-outline {
-		display: grid;
-		gap: 0.45rem;
-		padding: 0.85rem 0.95rem;
-		border-radius: 0.9rem;
-		background: rgba(241, 245, 249, 0.78);
+		display: block;
+		margin-bottom: 0.2rem;
+		color: var(--color-text);
 	}
 
 	.ai-outline ol {
-		padding-left: 1.1rem;
-	}
-
-	.ai-outline li + li {
-		margin-top: 0.25rem;
-	}
-
-	.ai-reason {
-		padding-top: 0.75rem;
-		border-top: 1px solid rgba(148, 163, 184, 0.18);
-	}
-
-	.create-divider {
-		height: 1px;
-		background: linear-gradient(90deg, rgba(148, 163, 184, 0.1), rgba(148, 163, 184, 0.48), rgba(148, 163, 184, 0.1));
-	}
-
-	.create-card small {
-		color: var(--color-slate-500);
-		line-height: 1.55;
-	}
-
-	.create-actions {
-		display: flex;
-		gap: var(--space-2);
-		flex-wrap: wrap;
-	}
-
-	.project-grid {
+		margin: 0;
+		padding-left: 1.2rem;
 		display: grid;
-		gap: var(--space-3);
+		gap: 0.35rem;
+		color: var(--color-text-soft);
 	}
 
-	.project-card,
-	.empty-card {
-		border-radius: 1.2rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg);
-	}
-
-	.project-card {
+	.project-row {
 		display: grid;
-		gap: 0.8rem;
-		padding: var(--space-4);
-	}
-
-	.project-top,
-	.project-meta,
-	.project-actions {
-		display: flex;
-		gap: var(--space-2);
+		grid-template-columns: 56px minmax(0, 1fr) auto;
+		gap: var(--space-4);
 		align-items: center;
+		transition: transform 160ms ease;
+	}
+
+	.project-thumb {
+		width: 56px;
+		height: 56px;
+		border-radius: var(--radius-lg, 0.75rem);
+		overflow: hidden;
+		flex-shrink: 0;
+		background: var(--color-slate-100, #f1f5f9);
+	}
+	.project-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.project-thumb--empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.25rem;
+		font-weight: 700;
+		color: var(--color-slate-400, #94a3b8);
+	}
+
+	.project-main {
+		display: grid;
+		gap: 0.5rem;
+		min-width: 0;
+	}
+
+	.project-title-row {
+		display: flex;
 		justify-content: space-between;
+		gap: var(--space-3);
+		align-items: center;
 		flex-wrap: wrap;
 	}
 
-	.project-card h4,
-	.empty-card h4 {
-		margin: 0;
-		font-size: 1.15rem;
-		font-family: var(--font-heading);
-	}
-
-	.project-caption,
-	.empty-card p {
-		margin: 0;
-		color: var(--color-slate-600);
-		line-height: 1.55;
-	}
-
-	.project-caption {
+	.project-secondary {
+		line-clamp: 2;
 		display: -webkit-box;
-		line-clamp: 3;
-		-webkit-line-clamp: 3;
-		-webkit-box-orient: vertical;
 		overflow: hidden;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
 	}
 
 	.project-meta {
-		font-size: 0.8rem;
-		color: var(--color-slate-500);
-	}
-
-	.empty-card {
-		padding: var(--space-5);
-	}
-
-	.loading-state {
 		display: flex;
-		justify-content: center;
-		padding: var(--space-8) 0;
+		flex-wrap: wrap;
+		gap: 0.85rem;
+		font-size: 0.85rem;
 	}
 
-	@media (max-width: 960px) {
-		.hero,
-		.workspace {
+	.empty-card p {
+		margin-top: 0.35rem;
+	}
+
+	@media (max-width: 900px) {
+		.section-head--inline,
+		.quick-create-grid,
+		.advanced-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.ai-assist-head {
-			grid-template-columns: 1fr;
+		.project-row {
+			grid-template-columns: 56px minmax(0, 1fr);
 		}
 
-		.ai-suggestion-top {
+		.project-row .project-actions {
+			grid-column: 1 / -1;
+		}
+
+		.ai-panel-head,
+		.ai-suggestion-top,
+		.project-actions {
 			flex-direction: column;
+			align-items: stretch;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.mode-row {
+			grid-template-columns: 1fr;
+		}
+
+		.quick-create-actions,
+		.project-actions {
+			flex-direction: column;
+		}
+
+		.quick-create-actions :global(button),
+		.project-actions :global(a),
+		.project-actions :global(button),
+		.ai-panel-head :global(button) {
+			width: 100%;
 		}
 	}
 </style>
