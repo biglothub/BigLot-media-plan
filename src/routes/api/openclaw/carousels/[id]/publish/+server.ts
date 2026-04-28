@@ -24,7 +24,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 		const workflow = await getCarouselWorkflow(project);
 		if (!workflow.linked_schedule) {
-			return json({ error: 'Create a schedule handoff before saving publication data' }, { status: 400 });
+			return json({ error: 'Connect this carousel to a Calendar item before saving publication data' }, { status: 400 });
 		}
 
 		const body = await request.json();
