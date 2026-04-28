@@ -13,6 +13,7 @@
 		{ href: '/kanban', label: 'Kanban', shortLabel: 'Plan' },
 		{ href: '/calendar', label: 'Shoot Calendar', shortLabel: 'Calendar' },
 		{ href: '/carousel', label: 'Carousel', shortLabel: 'Carousel' },
+		{ href: '/video-carousel', label: 'Video Carousel', shortLabel: 'Video' },
 		{ href: '/approve', label: 'Approve', shortLabel: 'Approve' }
 	];
 
@@ -215,7 +216,7 @@
 			bottom: 0;
 			z-index: var(--z-sticky);
 			display: grid;
-			grid-template-columns: repeat(5, minmax(0, 1fr));
+			grid-template-columns: repeat(6, minmax(0, 1fr));
 			gap: var(--space-1);
 			padding:
 				var(--space-2)

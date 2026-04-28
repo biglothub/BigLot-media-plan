@@ -4,6 +4,7 @@ import type { CarouselAsset } from '$lib/types';
 import { supabaseAdmin, hasSupabaseServiceRoleConfig } from '$lib/server/supabase-admin';
 
 const PEXELS_API_BASE_URL = 'https://api.pexels.com/v1';
+const PEXELS_VIDEO_API_BASE_URL = 'https://api.pexels.com/videos';
 const PEXELS_TIMEOUT_MS = 60_000;
 const CAROUSEL_ASSET_BUCKET = 'carousel-assets';
 const MAX_CAROUSEL_ACCOUNT_AVATAR_BYTES = 5 * 1024 * 1024;
@@ -359,3 +360,112 @@ export async function uploadCarouselAccountAvatar(
 export async function deleteCarouselStoredAsset(storagePath: string | null | undefined): Promise<void> {
 	await removeStoredCarouselAsset(storagePath);
 }
+
+// ─── Pexels Video Search ────────────────────────────────────────────────────
+
+export interface PexelsVideoFile {
+	id: number;
+	quality: 'sd' | 'hd' | 'uhd' | string;
+	file_type: string;
+	width: number | null;
+	height: number | null;
+	fps: number | null;
+	link: string;
+}
+
+export interface PexelsVideo {
+	id: number;
+	width: number;
+	height: number;
+	duration: number;
+	url: string;
+	image: string;
+	user: { name: string; url: string };
+	video_files: PexelsVideoFile[];
+	search_query: string | null;
+}
+
+function pickBestVideoFile(files: PexelsVideoFile[]): PexelsVideoFile | null {
+	const preferred = ['hd', 'sd', 'uhd'];
+	for (const quality of preferred) {
+		const match = files.find((f) => f.quality === quality && f.file_type === 'video/mp4');
+		if (match) return match;
+	}
+	return files.find((f) => f.file_type === 'video/mp4') ?? files[0] ?? null;
+}
+
+function extractPexelsVideo(item: JsonRecord, sourceQuery: string | null): PexelsVideo {
+	const rawFiles = Array.isArray(item.video_files) ? (item.video_files as JsonRecord[]) : [];
+	const videoFiles: PexelsVideoFile[] = rawFiles.map((f) => ({
+		id: Number(f.id),
+		quality: typeof f.quality === 'string' ? f.quality : 'sd',
+		file_type: typeof f.file_type === 'string' ? f.file_type : 'video/mp4',
+		width: typeof f.width === 'number' ? f.width : null,
+		height: typeof f.height === 'number' ? f.height : null,
+		fps: typeof f.fps === 'number' ? f.fps : null,
+		link: typeof f.link === 'string' ? f.link : ''
+	}));
+
+	const user = (item.user as JsonRecord | undefined) ?? {};
+
+	return {
+		id: Number(item.id),
+		width: typeof item.width === 'number' ? item.width : 0,
+		height: typeof item.height === 'number' ? item.height : 0,
+		duration: typeof item.duration === 'number' ? item.duration : 0,
+		url: typeof item.url === 'string' ? item.url : '',
+		image: typeof item.image === 'string' ? item.image : '',
+		user: {
+			name: typeof user.name === 'string' ? user.name : '',
+			url: typeof user.url === 'string' ? user.url : ''
+		},
+		video_files: videoFiles,
+		search_query: sourceQuery
+	};
+}
+
+async function pexelsVideoFetch(pathname: string): Promise<unknown> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), PEXELS_TIMEOUT_MS);
+
+	try {
+		const response = await fetch(`${PEXELS_VIDEO_API_BASE_URL}${pathname}`, {
+			headers: pexelsHeaders(),
+			signal: controller.signal
+		});
+
+		if (!response.ok) {
+			const message = await response.text();
+			throw new Error(`Pexels Video API error ${response.status}: ${message}`);
+		}
+
+		return await response.json();
+	} catch (error) {
+		if ((error as Error).name === 'AbortError') throw new Error('Pexels Video request timed out');
+		throw error;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+export async function searchPexelsVideos(term: string, limit = 6): Promise<PexelsVideo[]> {
+	const normalizedTerm = term.trim();
+	if (!normalizedTerm) return [];
+	if (!hasPexelsConfig) throw new Error('PEXELS_API_KEY is required');
+
+	const params = new URLSearchParams({
+		query: normalizedTerm,
+		per_page: String(Math.min(Math.max(limit, 1), 15)),
+		orientation: 'portrait',
+		size: 'large',
+		locale: 'en-US'
+	});
+
+	const payload = (await pexelsVideoFetch(`/search?${params.toString()}`)) as JsonRecord;
+	const items = Array.isArray(payload.videos) ? (payload.videos as JsonRecord[]) : [];
+	return items
+		.map((item) => extractPexelsVideo(item, normalizedTerm))
+		.filter((v) => v.id > 0 && pickBestVideoFile(v.video_files) !== null);
+}
+
+export { pickBestVideoFile };

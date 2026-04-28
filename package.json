@@ -25,6 +25,8 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@ffmpeg/ffmpeg": "^0.12.15",
+		"@ffmpeg/util": "^0.12.2",
 		"@supabase/supabase-js": "^2.98.0",
 		"html-to-image": "^1.11.13",
 		"jszip": "^3.10.1",
