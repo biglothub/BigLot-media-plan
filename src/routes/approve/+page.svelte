@@ -482,6 +482,12 @@
 	.page { display: grid; gap: var(--space-5); }
 
 	.hero { display: grid; gap: var(--space-1); }
+	.hero {
+		padding: var(--space-4);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-xl);
+		background: var(--color-bg-elevated);
+	}
 	.kicker {
 		margin: 0;
 		font-size: var(--text-xs);
@@ -577,8 +583,8 @@
 		font-weight: var(--fw-bold);
 		flex-shrink: 0;
 	}
-	.status-approved { background: #dcfce7; color: #166534; }
-	.status-changes_requested { background: #fef3c7; color: #92400e; }
+	.status-approved { background: rgba(22, 163, 74, 0.12); color: var(--color-green-700); }
+	.status-changes_requested { background: rgba(249, 115, 22, 0.14); color: var(--color-orange-600); }
 	.status-pending { background: var(--color-slate-100); color: var(--color-slate-600); }
 
 	/* ── Drive buttons ── */
@@ -586,7 +592,7 @@
 		padding: 0.3rem 0.8rem;
 		background: var(--color-primary-bg);
 		border: 1px solid var(--color-primary-border);
-		border-radius: var(--radius-full);
+		border-radius: var(--radius-md);
 		font-size: var(--text-sm);
 		font-weight: var(--fw-semibold);
 		color: var(--color-primary);
@@ -619,13 +625,20 @@
 	.form-field textarea {
 		width: 100%;
 		padding: var(--space-2) var(--space-3);
-		border: 1px solid var(--color-border);
+		border: 1px solid var(--color-border-strong);
 		border-radius: var(--radius-md);
 		font-size: var(--text-sm);
 		font-family: inherit;
 		background: var(--color-bg-elevated);
 	}
 	.form-field textarea { resize: vertical; }
+	.form-field input:focus,
+	.form-field select:focus,
+	.form-field textarea:focus {
+		outline: 0;
+		border-color: rgba(15, 23, 42, 0.34);
+		box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+	}
 	.form-actions { display: flex; }
 
 	@media (max-width: 600px) {

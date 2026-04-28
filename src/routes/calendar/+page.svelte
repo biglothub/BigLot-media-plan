@@ -618,7 +618,7 @@
 
 	.panel {
 		padding: 1rem;
-		border-radius: 1rem;
+		border-radius: var(--radius-xl);
 		border: 1px solid var(--color-border);
 		background: var(--color-bg-elevated);
 	}
@@ -656,7 +656,7 @@
 
 	.mobile-panel {
 		border: 1px solid var(--color-border);
-		border-radius: 0.9rem;
+		border-radius: var(--radius-lg);
 		background: var(--color-bg-elevated);
 		padding: 0.8rem;
 	}
@@ -719,7 +719,7 @@
 	.idea-bank,
 	.calendar-shell {
 		border: 1px solid var(--color-border);
-		border-radius: 0.85rem;
+		border-radius: var(--radius-lg);
 		background: var(--color-bg-elevated);
 	}
 
@@ -750,8 +750,9 @@
 		border-radius: var(--radius-full);
 		font-size: 0.75rem;
 		font-weight: 700;
-		background: rgba(37, 99, 235, 0.12);
-		color: var(--color-primary);
+		background: var(--color-bg-subtle);
+		color: var(--color-slate-700);
+		border: 1px solid var(--color-border);
 	}
 
 	.idea-list {
@@ -763,7 +764,8 @@
 
 	.idea-card {
 		--platform-frame-color: var(--color-border);
-		border: 1px solid var(--platform-frame-color);
+		border: 1px solid var(--color-border);
+		border-top: 3px solid var(--platform-frame-color);
 		padding: 0.55rem;
 		border-radius: 0.7rem;
 		cursor: grab;
@@ -785,8 +787,8 @@
 
 	.idea-search:focus {
 		outline: none;
-		border-color: #2563eb;
-		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+		border-color: rgba(15, 23, 42, 0.34);
+		box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
 	}
 
 	.idea-preview {
@@ -830,8 +832,9 @@
 		border-radius: var(--radius-full);
 		font-size: 0.67rem;
 		font-weight: 700;
-		background: rgba(180, 83, 9, 0.14);
-		color: #92400e;
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
+		border: 1px solid var(--color-border);
 	}
 
 	.calendar-shell {
@@ -883,8 +886,8 @@
 	}
 
 	.calendar-day.drop-hover {
-		border-color: rgba(37, 99, 235, 0.45);
-		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3);
+		border-color: rgba(15, 23, 42, 0.34);
+		box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.18);
 	}
 
 	.calendar-day-head {
@@ -916,7 +919,8 @@
 		width: 100%;
 		box-sizing: border-box;
 		border-radius: 0.65rem;
-		border: 1px solid var(--platform-frame-color);
+		border: 1px solid var(--color-border);
+		border-top: 3px solid var(--platform-frame-color);
 		background: var(--color-bg-elevated);
 		cursor: grab;
 		min-width: 0;
@@ -943,19 +947,19 @@
 	}
 
 	.platform-frame--instagram {
-		--platform-frame-color: #ec4899;
+		--platform-frame-color: var(--color-instagram);
 	}
 
 	.platform-frame--tiktok {
-		--platform-frame-color: #111111;
+		--platform-frame-color: var(--color-tiktok);
 	}
 
 	.platform-frame--youtube {
-		--platform-frame-color: #dc2626;
+		--platform-frame-color: var(--color-youtube);
 	}
 
 	.platform-frame--facebook {
-		--platform-frame-color: #1877f2;
+		--platform-frame-color: var(--color-facebook);
 	}
 
 	.calendar-link {
@@ -1004,8 +1008,8 @@
 	}
 
 	.member-chip {
-		background: rgba(37, 99, 235, 0.12);
-		color: var(--color-primary);
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
 	}
 
 	.carousel-chip {
@@ -1044,8 +1048,8 @@
 		border-radius: var(--radius-full);
 		font-size: 0.62rem;
 		font-weight: 700;
-		background: rgba(37, 99, 235, 0.12);
-		color: var(--color-primary);
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
 	}
 
 	.calendar-item-actions {
@@ -1055,9 +1059,9 @@
 	}
 
 	.tiny-detail {
-		border: 0;
-		background: rgba(37, 99, 235, 0.12);
-		color: var(--color-primary);
+		border: 1px solid var(--color-border);
+		background: #fff;
+		color: var(--color-slate-700);
 		border-radius: 0.5rem;
 		font-size: 0.7rem;
 		font-weight: 700;
@@ -1106,23 +1110,23 @@
 	}
 
 	.stage-select--planned {
-		background-color: rgba(100, 116, 139, 0.14);
+		background-color: var(--color-slate-100);
 		color: var(--color-slate-600);
 	}
 
 	.stage-select--scripting {
-		background-color: rgba(139, 92, 246, 0.14);
-		color: #6d28d9;
+		background-color: rgba(147, 51, 234, 0.12);
+		color: var(--color-purple-700);
 	}
 
 	.stage-select--shooting {
-		background-color: rgba(245, 158, 11, 0.14);
-		color: #b45309;
+		background-color: rgba(249, 115, 22, 0.14);
+		color: var(--color-orange-600);
 	}
 
 	.stage-select--editing {
-		background-color: rgba(59, 130, 246, 0.14);
-		color: var(--color-primary);
+		background-color: rgba(37, 99, 235, 0.12);
+		color: var(--color-blue-700);
 	}
 
 	.stage-select--published {
@@ -1132,19 +1136,19 @@
 
 	/* Stage left border accent on calendar items */
 	.calendar-item.stage--planned {
-		border-left: 3px solid #94a3b8;
+		border-left: 3px solid var(--color-slate-300);
 	}
 
 	.calendar-item.stage--scripting {
-		border-left: 3px solid #8b5cf6;
+		border-left: 3px solid var(--color-purple-500);
 	}
 
 	.calendar-item.stage--shooting {
-		border-left: 3px solid #f59e0b;
+		border-left: 3px solid var(--color-orange-500);
 	}
 
 	.calendar-item.stage--editing {
-		border-left: 3px solid #3b82f6;
+		border-left: 3px solid var(--color-blue-500);
 	}
 
 	.calendar-item.stage--published {

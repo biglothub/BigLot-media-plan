@@ -661,7 +661,7 @@
 			<div class="hero-actions">
 				<Button variant="primary" size="lg" onclick={focusAnalyzeInput}>Analyze Link</Button>
 				<Button variant="ai" size="lg" onclick={() => { showSuggestModeModal = true; }}>
-					✦ ช่วยคิด idea
+					AI ช่วยคิด idea
 				</Button>
 				{#if ideas.length > 0}
 					<Button variant="secondary" size="lg" onclick={exportBacklogCSV}>Export CSV</Button>
@@ -692,21 +692,18 @@
 
 			<div class="hero-stats">
 				<StatsCard
-					icon="💡"
 					label="Ideas ในคลัง"
 					value={dashboardStats.totalIdeas}
 					sub="{dashboardStats.activeIdeas} active"
 					variant="primary"
 				/>
 				<StatsCard
-					icon="📅"
 					label="Scheduled"
 					value={dashboardStats.scheduledIdeas}
 					sub="{scheduledPercent}% of total"
 					variant="success"
 				/>
 				<StatsCard
-					icon="🪄"
 					label="Needs Category"
 					value={dashboardStats.uncategorizedIdeas}
 					sub={dashboardStats.pinnedIdeas > 0 ? `${dashboardStats.pinnedIdeas} pinned` : 'พร้อมจัดระบบ'}
@@ -1177,37 +1174,22 @@
 		overflow: hidden;
 		display: grid;
 		gap: 1.1rem;
-		padding: 1.35rem;
-		border-radius: 1.5rem;
-		border: 1px solid rgba(37, 99, 235, 0.14);
+		padding: 1.25rem;
+		border-radius: var(--radius-xl);
+		border: 1px solid var(--color-border);
 		background:
-			radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 28%),
-			radial-gradient(circle at 18% 18%, rgba(37, 99, 235, 0.16), transparent 24%),
-			linear-gradient(135deg, #ffffff 0%, #f8fbff 54%, #fff7ed 100%);
-		box-shadow: var(--shadow-sm);
+			radial-gradient(circle at top right, rgba(249, 115, 22, 0.14), transparent 30%),
+			radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.12), transparent 32%),
+			var(--color-bg-elevated);
+		box-shadow: var(--shadow-xs);
 	}
 
 	.hero-main::before {
-		content: '';
-		position: absolute;
-		inset: auto -4rem -5rem auto;
-		width: 18rem;
-		height: 18rem;
-		border-radius: 999px;
-		background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 68%);
-		pointer-events: none;
+		content: none;
 	}
 
 	.hero-main::after {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background-image:
-			linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
-			linear-gradient(90deg, rgba(255, 255, 255, 0.45) 1px, transparent 1px);
-		background-size: 28px 28px;
-		mask-image: linear-gradient(135deg, rgba(0, 0, 0, 0.35), transparent 75%);
-		pointer-events: none;
+		content: none;
 	}
 
 	.hero-main > * {
@@ -1227,22 +1209,22 @@
 		font-weight: 700;
 		letter-spacing: 0.18em;
 		text-transform: uppercase;
-		color: var(--color-blue-700);
+		color: var(--color-primary);
 	}
 
 	.hero-title {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: clamp(2.4rem, 6vw, 4.1rem);
-		line-height: 0.94;
-		letter-spacing: -0.04em;
+		font-size: clamp(2rem, 4.5vw, 3rem);
+		line-height: 1;
+		letter-spacing: -0.03em;
 		color: var(--color-slate-900);
 	}
 
 	.hero-subtitle {
 		margin: 0;
 		max-width: 42rem;
-		font-size: 1rem;
+		font-size: 0.95rem;
 		line-height: 1.7;
 		color: var(--color-slate-600);
 	}
@@ -1263,10 +1245,9 @@
 		display: grid;
 		gap: 0.5rem;
 		padding: 0.95rem 1rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.78);
-		backdrop-filter: blur(10px);
-		border: 1px solid rgba(15, 23, 42, 0.07);
+		border-radius: var(--radius-lg);
+		background: rgba(255, 255, 255, 0.72);
+		border: 1px solid var(--color-border);
 	}
 
 	.hero-band-label {
@@ -1313,8 +1294,8 @@
 		display: grid;
 		gap: 0.75rem;
 		padding: 1rem;
-		border-radius: 1.15rem;
-		background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98));
+		border-radius: var(--radius-xl);
+		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
 		box-shadow: var(--shadow-xs);
 	}
@@ -1369,7 +1350,7 @@
 		display: block;
 		height: 100%;
 		border-radius: inherit;
-		background: linear-gradient(90deg, var(--color-blue-600), var(--color-orange-500));
+		background: linear-gradient(90deg, var(--color-blue-600), var(--color-purple-600), var(--color-orange-500));
 	}
 
 	.stage-pills {
@@ -1403,7 +1384,7 @@
 
 	.panel {
 		padding: 1.25rem;
-		border-radius: 1.2rem;
+		border-radius: var(--radius-xl);
 		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
 		box-shadow: var(--shadow-xs);
@@ -1411,7 +1392,7 @@
 
 	.panel--feature {
 		background:
-			linear-gradient(180deg, rgba(37, 99, 235, 0.035), transparent 38%),
+			linear-gradient(180deg, rgba(37, 99, 235, 0.045), transparent 42%),
 			var(--color-bg-elevated);
 	}
 
@@ -1441,7 +1422,7 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.12em;
-		color: var(--color-blue-700);
+		color: var(--color-primary);
 	}
 
 	.panel-subtitle {
@@ -1456,12 +1437,12 @@
 		display: inline-flex;
 		align-items: center;
 		padding: 0.32rem 0.7rem;
-		border-radius: 999px;
-		background: rgba(37, 99, 235, 0.08);
-		color: var(--color-blue-700);
+		border-radius: var(--radius-md);
+		background: var(--color-primary-bg);
+		color: var(--color-primary);
 		font-size: 0.76rem;
 		font-weight: 700;
-		border: 1px solid rgba(37, 99, 235, 0.14);
+		border: 1px solid var(--color-primary-border);
 	}
 
 	.row {
