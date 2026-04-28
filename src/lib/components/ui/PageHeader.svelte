@@ -35,8 +35,8 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-4);
-    padding-bottom: var(--space-6);
+    gap: var(--space-3);
+    padding-bottom: var(--space-4);
     flex-wrap: wrap;
   }
 
@@ -52,13 +52,13 @@
     font-weight: var(--fw-bold);
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--color-blue-600);
+    color: var(--color-slate-500);
     margin: 0;
   }
 
   .page-title {
     font-family: var(--font-heading);
-    font-size: var(--text-4xl);
+    font-size: clamp(1.65rem, 3vw, 2.35rem);
     font-weight: var(--fw-bold);
     color: var(--color-slate-900);
     line-height: var(--leading-tight);
@@ -66,7 +66,7 @@
   }
 
   .page-subtitle {
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
     color: var(--color-slate-500);
     margin: 0;
     line-height: var(--leading-relaxed);
@@ -78,7 +78,7 @@
     gap: var(--space-2);
     flex-wrap: wrap;
     flex-shrink: 0;
-    padding-top: var(--space-2);
+    padding-top: var(--space-1);
   }
 
   @media (max-width: 640px) {

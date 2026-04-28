@@ -44,17 +44,13 @@
   .stats-card {
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-xl);
-    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
     box-shadow: var(--shadow-xs);
-    transition: box-shadow var(--transition-normal);
-  }
-
-  .stats-card:hover {
-    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition-fast);
   }
 
   .stats-card--primary {
@@ -84,7 +80,7 @@
     font-weight: var(--fw-semibold);
     color: var(--color-slate-500);
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.06em;
   }
 
   .stats-icon {
@@ -94,7 +90,7 @@
 
   .stats-value {
     font-family: var(--font-heading);
-    font-size: var(--text-2xl);
+    font-size: var(--text-xl);
     font-weight: var(--fw-bold);
     color: var(--color-slate-900);
     line-height: 1;

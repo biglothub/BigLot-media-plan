@@ -31,7 +31,8 @@
     children
   }: Props = $props();
 
-  const uid = id ?? `select-${Math.random().toString(36).slice(2, 8)}`;
+  const fallbackId = `select-${Math.random().toString(36).slice(2, 8)}`;
+  const uid = $derived(id ?? fallbackId);
 </script>
 
 <div class="field {extraClass}" class:field--error={!!error} class:field--disabled={disabled}>
@@ -81,8 +82,8 @@
   }
 
   .field-label {
-    font-size: var(--text-sm);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--fw-semibold);
     color: var(--color-slate-700);
     display: flex;
     align-items: center;
@@ -99,7 +100,7 @@
 
   .field-select {
     width: 100%;
-    padding: 0.48rem var(--space-8) 0.48rem var(--space-3);
+    padding: 0.58rem var(--space-8) 0.58rem var(--space-3);
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-md);
@@ -119,8 +120,8 @@
   }
 
   .field-select:focus {
-    border-color: var(--color-blue-500);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    border-color: rgba(15, 23, 42, 0.34);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
   }
 
   .field--error .field-select {

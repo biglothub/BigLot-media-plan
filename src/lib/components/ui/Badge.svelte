@@ -79,12 +79,12 @@
   /* ── Sizes ── */
   .badge--sm {
     font-size: var(--text-xs);
-    padding: 0.2rem 0.5rem;
+    padding: 0.18rem 0.45rem;
   }
 
   .badge--md {
     font-size: var(--text-xs);
-    padding: 0.28rem 0.6rem;
+    padding: 0.24rem 0.55rem;
   }
 
   /* ── Semantic variants ── */
@@ -95,19 +95,19 @@
   }
 
   .badge--success {
-    background: var(--color-green-50);
+    background: rgba(22, 163, 74, 0.08);
     color: var(--color-green-700);
     border-color: rgba(22, 163, 74, 0.2);
   }
 
   .badge--warning {
-    background: var(--color-yellow-50);
-    color: var(--color-yellow-700);
-    border-color: rgba(202, 138, 4, 0.2);
+    background: rgba(234, 88, 12, 0.08);
+    color: var(--color-orange-600);
+    border-color: rgba(234, 88, 12, 0.18);
   }
 
   .badge--danger {
-    background: var(--color-red-50);
+    background: rgba(220, 38, 38, 0.08);
     color: var(--color-red-700);
     border-color: rgba(220, 38, 38, 0.2);
   }
@@ -115,7 +115,7 @@
   .badge--info {
     background: var(--color-blue-50);
     color: var(--color-blue-700);
-    border-color: rgba(29, 78, 216, 0.2);
+    border-color: rgba(37, 99, 235, 0.18);
   }
 
   /* ── Platform ── */
@@ -138,49 +138,49 @@
   }
 
   .badge--platform.badge--val-instagram {
-    background: rgba(225, 48, 108, 0.09);
+    background: rgba(225, 48, 108, 0.1);
     color: #c2185b;
-    border-color: rgba(225, 48, 108, 0.2);
+    border-color: rgba(225, 48, 108, 0.22);
   }
 
   .badge--platform.badge--val-tiktok {
-    background: rgba(1, 1, 1, 0.07);
-    color: #1a1a1a;
-    border-color: rgba(1, 1, 1, 0.15);
+    background: rgba(1, 1, 1, 0.08);
+    color: #111827;
+    border-color: rgba(1, 1, 1, 0.16);
   }
 
   /* ── Category ── */
   .badge--category {
-    background: var(--color-indigo-50);
-    color: var(--color-indigo-700);
-    border-color: rgba(79, 70, 229, 0.18);
+    background: var(--color-slate-100);
+    color: var(--color-slate-700);
+    border-color: var(--color-border);
     text-transform: uppercase;
     letter-spacing: 0.07em;
     font-size: 0.65rem;
   }
 
   .badge--category.badge--val-hero {
-    background: rgba(234, 179, 8, 0.1);
+    background: rgba(234, 179, 8, 0.12);
     color: var(--color-yellow-700);
-    border-color: rgba(202, 138, 4, 0.2);
+    border-color: rgba(202, 138, 4, 0.22);
   }
 
   .badge--category.badge--val-hub {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(99, 102, 241, 0.12);
     color: var(--color-indigo-700);
-    border-color: rgba(79, 70, 229, 0.2);
+    border-color: rgba(79, 70, 229, 0.22);
   }
 
   .badge--category.badge--val-help {
-    background: var(--color-green-50);
+    background: rgba(22, 163, 74, 0.1);
     color: var(--color-green-700);
-    border-color: rgba(22, 163, 74, 0.2);
+    border-color: rgba(22, 163, 74, 0.22);
   }
 
   .badge--category.badge--val-pin {
-    background: rgba(244, 63, 94, 0.08);
+    background: rgba(244, 63, 94, 0.1);
     color: #be123c;
-    border-color: rgba(244, 63, 94, 0.2);
+    border-color: rgba(244, 63, 94, 0.22);
   }
 
   /* ── Stage ── */
@@ -193,35 +193,35 @@
   .badge--stage.badge--val-planned {
     background: var(--color-blue-50);
     color: var(--color-blue-700);
-    border-color: rgba(29, 78, 216, 0.2);
+    border-color: rgba(37, 99, 235, 0.18);
   }
 
   .badge--stage.badge--val-scripting {
-    background: rgba(249, 115, 22, 0.1);
-    color: var(--color-orange-600);
-    border-color: rgba(249, 115, 22, 0.2);
-  }
-
-  .badge--stage.badge--val-shooting {
-    background: rgba(234, 179, 8, 0.1);
-    color: var(--color-yellow-700);
-    border-color: rgba(202, 138, 4, 0.2);
-  }
-
-  .badge--stage.badge--val-editing {
-    background: rgba(168, 85, 247, 0.1);
+    background: rgba(147, 51, 234, 0.1);
     color: var(--color-purple-700);
     border-color: rgba(147, 51, 234, 0.2);
   }
 
+  .badge--stage.badge--val-shooting {
+    background: rgba(249, 115, 22, 0.12);
+    color: var(--color-orange-600);
+    border-color: rgba(249, 115, 22, 0.22);
+  }
+
+  .badge--stage.badge--val-editing {
+    background: rgba(14, 165, 233, 0.12);
+    color: #0369a1;
+    border-color: rgba(14, 165, 233, 0.22);
+  }
+
   .badge--stage.badge--val-review {
-    background: rgba(139, 92, 246, 0.08);
+    background: rgba(139, 92, 246, 0.1);
     color: #6d28d9;
     border-color: rgba(109, 40, 217, 0.2);
   }
 
   .badge--stage.badge--val-published {
-    background: var(--color-green-50);
+    background: rgba(22, 163, 74, 0.08);
     color: var(--color-green-700);
     border-color: rgba(22, 163, 74, 0.2);
   }

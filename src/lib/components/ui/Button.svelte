@@ -73,7 +73,8 @@
     white-space: nowrap;
     cursor: pointer;
     border: 1px solid transparent;
-    border-radius: var(--radius-full);
+    min-height: 2.15rem;
+    border-radius: var(--radius-md);
     transition:
       background var(--transition-fast),
       border-color var(--transition-fast),
@@ -86,44 +87,46 @@
   }
 
   .btn:active:not(:disabled) {
-    transform: scale(0.97);
+    transform: translateY(1px);
   }
 
   /* ── Sizes ── */
   .btn--sm {
     font-size: var(--text-xs);
-    padding: 0.3rem 0.65rem;
+    min-height: 1.85rem;
+    padding: 0.32rem 0.62rem;
     gap: var(--space-1);
   }
 
   .btn--md {
     font-size: var(--text-sm);
-    padding: 0.44rem 0.85rem;
+    padding: 0.5rem 0.85rem;
   }
 
   .btn--lg {
     font-size: var(--text-base);
-    padding: 0.65rem 1.25rem;
+    min-height: 2.6rem;
+    padding: 0.68rem 1.1rem;
   }
 
   /* ── Variants ── */
   .btn--primary {
-    background: var(--color-blue-700);
+    background: var(--color-primary);
     color: #fff;
-    border-color: var(--color-blue-700);
+    border-color: var(--color-primary);
     box-shadow: var(--shadow-xs);
   }
   .btn--primary:hover:not(:disabled) {
-    background: var(--color-blue-800);
-    border-color: var(--color-blue-800);
+    background: var(--color-primary-hover);
+    border-color: var(--color-primary-hover);
     box-shadow: var(--shadow-sm);
   }
 
   .btn--secondary {
     background: var(--color-bg-elevated);
-    color: var(--color-slate-700);
+    color: var(--color-slate-800);
     border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-xs);
+    box-shadow: none;
   }
   .btn--secondary:hover:not(:disabled) {
     background: var(--color-slate-50);
@@ -143,7 +146,7 @@
   .btn--danger {
     background: var(--color-bg-elevated);
     color: var(--color-red-600);
-    border-color: rgba(220, 38, 38, 0.2);
+    border-color: var(--color-border-strong);
   }
   .btn--danger:hover:not(:disabled) {
     background: var(--color-red-50);
@@ -151,14 +154,14 @@
   }
 
   .btn--ai {
-    background: linear-gradient(135deg, var(--color-purple-600), var(--color-indigo-600));
+    background: linear-gradient(135deg, var(--color-blue-600), var(--color-purple-600) 58%, var(--color-orange-500));
     color: #fff;
     border-color: transparent;
-    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.3);
+    box-shadow: 0 8px 22px rgba(79, 70, 229, 0.22);
   }
   .btn--ai:hover:not(:disabled) {
-    box-shadow: 0 4px 18px rgba(124, 58, 237, 0.4);
-    filter: brightness(1.07);
+    filter: saturate(1.08) brightness(1.03);
+    box-shadow: 0 10px 28px rgba(79, 70, 229, 0.28);
   }
 
   /* ── Disabled & Loading ── */

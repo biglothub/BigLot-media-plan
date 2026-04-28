@@ -93,8 +93,8 @@
   }
 
   .field-label {
-    font-size: var(--text-sm);
-    font-weight: var(--fw-medium);
+    font-size: var(--text-xs);
+    font-weight: var(--fw-semibold);
     color: var(--color-slate-700);
     display: flex;
     align-items: center;
@@ -107,7 +107,7 @@
 
   .field-textarea {
     width: 100%;
-    padding: 0.5rem var(--space-3);
+    padding: 0.58rem var(--space-3);
     background: var(--color-bg-elevated);
     border: 1px solid var(--color-border-strong);
     border-radius: var(--radius-md);
@@ -136,8 +136,8 @@
   }
 
   .field-textarea:focus {
-    border-color: var(--color-blue-500);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    border-color: rgba(15, 23, 42, 0.34);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
   }
 
   .field--error .field-textarea {

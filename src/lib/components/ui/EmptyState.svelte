@@ -8,7 +8,7 @@
     action?: Snippet;
   }
 
-  let { icon = '📭', title, description, action }: Props = $props();
+  let { icon = '', title, description, action }: Props = $props();
 </script>
 
 <div class="empty-state">
@@ -33,17 +33,17 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    gap: var(--space-3);
-    padding: var(--space-12) var(--space-6);
+    gap: var(--space-2);
+    padding: var(--space-10) var(--space-5);
     color: var(--color-slate-500);
   }
 
   .empty-icon {
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     line-height: 1;
     display: block;
     margin-bottom: var(--space-1);
-    filter: grayscale(0.3);
+    filter: grayscale(1);
   }
 
   .empty-title {

@@ -117,7 +117,7 @@
     position: fixed;
     inset: 0;
     z-index: var(--z-modal);
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(15, 23, 42, 0.36);
     display: grid;
     place-items: center;
     padding: var(--space-4);
@@ -131,8 +131,9 @@
 
   .modal-box {
     background: var(--color-bg-elevated);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     width: 100%;
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
@@ -168,14 +169,14 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-5) var(--space-6) var(--space-4);
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--color-border);
     flex-shrink: 0;
   }
 
   .modal-title {
     font-family: var(--font-heading);
-    font-size: var(--text-lg);
+    font-size: var(--text-md);
     font-weight: var(--fw-bold);
     color: var(--color-slate-900);
     line-height: var(--leading-tight);
