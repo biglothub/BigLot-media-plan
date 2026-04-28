@@ -155,12 +155,12 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    transition: box-shadow var(--transition-normal), transform var(--transition-normal);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
 
   .idea-card:hover {
-    box-shadow: var(--shadow-md);
-    transform: translateY(-1px);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-xs);
   }
 
   .platform-frame--instagram {
@@ -230,7 +230,7 @@
     font-weight: var(--fw-semibold);
     padding: 0.2rem 0.55rem;
     border-radius: var(--radius-full);
-    background: var(--color-green-50);
+    background: rgba(22, 163, 74, 0.08);
     color: var(--color-green-700);
     border: 1px solid rgba(22, 163, 74, 0.2);
     white-space: nowrap;
@@ -290,7 +290,7 @@
 
   .card-link {
     font-size: var(--text-xs);
-    color: var(--color-blue-600);
+    color: var(--color-slate-500);
     text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -320,7 +320,7 @@
     font-size: var(--text-xs);
     font-weight: var(--fw-semibold);
     padding: 0.32rem 0.7rem;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-md);
     border: 1px solid var(--color-border-strong);
     background: var(--color-bg-elevated);
     color: var(--color-slate-600);
@@ -336,13 +336,13 @@
   }
 
   .btn-action--primary {
-    background: var(--color-primary-bg);
-    color: var(--color-primary);
-    border-color: var(--color-primary-border);
+    background: var(--color-primary);
+    color: #fff;
+    border-color: var(--color-primary);
   }
 
   .btn-action--primary:hover:not(:disabled) {
-    background: rgba(37, 99, 235, 0.15);
+    background: var(--color-primary-hover);
   }
 
   .btn-action--danger {

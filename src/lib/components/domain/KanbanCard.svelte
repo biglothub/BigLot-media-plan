@@ -47,9 +47,9 @@
   const stageColors: Record<string, string> = {
     planned:   'var(--color-slate-400)',
     scripting: 'var(--color-purple-500)',
-    shooting:  '#f59e0b',
+    shooting:  'var(--color-orange-500)',
     editing:   'var(--color-blue-500)',
-    review:    'var(--color-orange-600)',
+    review:    'var(--color-yellow-600)',
     published: 'var(--color-green-600)',
   };
 </script>
@@ -185,27 +185,28 @@
     border-left: 3px solid var(--stage-color, var(--color-slate-400));
     display: grid;
     cursor: grab;
-    transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     overflow: hidden;
     user-select: none;
   }
 
   .kanban-card:focus-visible {
-    outline: 2px solid var(--color-blue-500);
+    outline: 2px solid rgba(15, 23, 42, 0.62);
     outline-offset: 1px;
   }
 
   .kanban-card:active {
     cursor: grabbing;
-    transform: scale(0.98);
+    transform: none;
   }
 
   .kanban-card:hover {
-    box-shadow: var(--shadow-md);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-xs);
   }
 
   .kanban-card--active {
-    outline: 2px solid var(--color-blue-500);
+    outline: 2px solid rgba(15, 23, 42, 0.62);
     outline-offset: 1px;
   }
 
@@ -243,8 +244,8 @@
   }
 
   .chip--platform {
-    background: rgba(180, 83, 9, 0.12);
-    color: #92400e;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--color-blue-700);
   }
 
   .chip--type {
@@ -254,7 +255,7 @@
 
   .chip--category {
     background: rgba(99, 102, 241, 0.12);
-    color: var(--color-indigo-600);
+    color: var(--color-indigo-700);
   }
 
   .chip--carousel {
@@ -314,7 +315,7 @@
   .card-notes-snippet {
     margin: 0.2rem 0 0;
     font-size: 0.7rem;
-    color: var(--color-purple-600);
+    color: var(--color-slate-500);
     line-height: var(--leading-snug);
     opacity: 0.85;
   }
@@ -371,7 +372,7 @@
   .btn-detail {
     background: var(--color-primary-bg);
     color: var(--color-primary);
-    border: none;
+    border: 1px solid var(--color-primary-border);
     border-radius: var(--radius-md);
     font-size: var(--text-xs);
     font-weight: var(--fw-bold);

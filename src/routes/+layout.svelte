@@ -53,13 +53,13 @@
 				<strong>{pageTitle}</strong>
 			</div>
 			<a class="brand" href="/">BigLot Media Plan</a>
-		</div>
 
-		<nav class="desktop-nav" aria-label="Primary navigation">
-			{#each menus as menu}
-				<a class:active={isActive(menu.href)} href={menu.href}>{menu.label}</a>
-			{/each}
-		</nav>
+			<nav class="desktop-nav" aria-label="Primary navigation">
+				{#each menus as menu}
+					<a class:active={isActive(menu.href)} href={menu.href}>{menu.label}</a>
+				{/each}
+			</nav>
+		</div>
 	</header>
 
 	<div class="content">
@@ -87,6 +87,7 @@
 
 	.app-shell {
 		min-height: 100vh;
+		background: var(--color-bg);
 	}
 
 	.top-bar {
@@ -94,11 +95,11 @@
 		top: 0;
 		z-index: var(--z-sticky);
 		padding:
-			calc(0.8rem + env(safe-area-inset-top, 0px))
+			calc(0.7rem + env(safe-area-inset-top, 0px))
 			var(--side-padding)
-			var(--space-3);
-		background: var(--color-bg-elevated);
-		backdrop-filter: blur(16px);
+			var(--space-2);
+		background: rgba(255, 255, 255, 0.92);
+		backdrop-filter: blur(14px);
 		border-bottom: 1px solid var(--color-border);
 	}
 
@@ -107,7 +108,7 @@
 		margin: 0 auto;
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-end;
+		align-items: center;
 		gap: var(--space-4);
 	}
 
@@ -136,22 +137,22 @@
 		font-family: var(--font-heading);
 		font-weight: var(--fw-bold);
 		color: var(--color-slate-900);
+		white-space: nowrap;
 	}
 
 	.desktop-nav {
-		max-width: var(--max-width);
-		margin: var(--space-3) auto 0;
 		display: flex;
 		align-items: center;
 		gap: var(--space-1);
 		flex-wrap: wrap;
+		justify-content: flex-end;
 	}
 
 	.desktop-nav a,
 	.bottom-nav a {
 		color: var(--color-slate-700);
-		padding: 0.42rem var(--space-3);
-		border-radius: var(--radius-full);
+		padding: 0.42rem 0.68rem;
+		border-radius: var(--radius-md);
 		font-size: var(--text-sm);
 		font-weight: var(--fw-semibold);
 		border: 1px solid transparent;
@@ -221,9 +222,9 @@
 				var(--space-3)
 				calc(0.7rem + env(safe-area-inset-bottom, 0px));
 			background: var(--color-bg-elevated);
-			backdrop-filter: blur(16px);
+			backdrop-filter: blur(14px);
 			border-top: 1px solid var(--color-border);
-			box-shadow: 0 -8px 24px var(--color-border);
+			box-shadow: 0 -6px 18px rgba(15, 23, 42, 0.06);
 		}
 
 		.bottom-nav a {
