@@ -360,17 +360,6 @@
 </script>
 
 <main class="page">
-	<PageHeader
-		eyebrow="Carousel"
-		title="Create or Continue"
-	>
-		{#snippet actions()}
-			<Button variant="secondary" onclick={() => { void loadProjects(); }} loading={loadingProjects}>
-				Refresh
-			</Button>
-		{/snippet}
-	</PageHeader>
-
 	{#if !hasSupabaseConfig}
 		<p class="alert">ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ <code>PUBLIC_SUPABASE_ANON_KEY</code></p>
 	{:else}
@@ -378,47 +367,43 @@
 			<p class="alert">{initialLoadError}</p>
 		{/if}
 
-		<section class="quick-create-card">
-			<div class="quick-create-grid">
-				<label class="field field--title">
-					<span>Project title</span>
-					<input id="carousel-idea-title" bind:value={newIdeaTitle} placeholder={titlePlaceholder} />
-				</label>
-
-				<div class="field">
-					<span>Mode</span>
-					<div class="mode-row">
-						{#each PROJECT_MODE_OPTIONS as option}
-							<button
-								type="button"
-								class:selected={contentMode === option.value}
-								onclick={() => {
-									setContentMode(option.value);
-								}}
-							>
-								<strong>{option.label}</strong>
-							</button>
-						{/each}
-					</div>
-				</div>
+		<!-- ── Create section ── -->
+		<section class="create-section">
+			<div class="mode-tabs">
+				{#each PROJECT_MODE_OPTIONS as option}
+					<button
+						type="button"
+						class="mode-tab"
+						class:mode-tab--active={contentMode === option.value}
+						onclick={() => setContentMode(option.value)}
+					>{option.label}</button>
+				{/each}
 			</div>
 
-			<div class="quick-create-actions">
-				<Button variant="primary" onclick={() => { void createStandaloneProject(); }} loading={creatingStandalone}>
-					{creatingStandalone ? 'Creating...' : contentMode === 'quote' ? 'Create Quote Project' : 'Create Carousel Project'}
-				</Button>
-				<Button variant="ghost" onclick={resetIdeaDraft}>Clear</Button>
+			<div class="command-bar">
+				<input
+					id="carousel-idea-title"
+					class="command-input"
+					bind:value={newIdeaTitle}
+					placeholder={titlePlaceholder}
+					onkeydown={(e) => { if (e.key === 'Enter' && !creatingStandalone) void createStandaloneProject(); }}
+				/>
+				<button
+					class="command-btn"
+					disabled={creatingStandalone}
+					onclick={() => void createStandaloneProject()}
+				>
+					{creatingStandalone ? 'Creating…' : 'Create'}
+				</button>
 			</div>
 
-			<details class="advanced-panel">
-				<summary>
-					<div>
-					<strong>Advanced setup</strong>
-					<span>description, category, brief และ AI assist</span>
-					</div>
+			<details class="adv-panel">
+				<summary class="adv-summary">
+					<span>Advanced</span>
+					<small>description · category · brief · AI assist</small>
 				</summary>
 
-				<div class="advanced-body">
+				<div class="adv-body">
 					<div class="advanced-grid">
 						<label class="field">
 							<span>Description</span>
@@ -457,12 +442,8 @@
 								<button
 									type="button"
 									class:selected={activeAiPreset === preset.id}
-									onclick={() => {
-										activeAiPreset = activeAiPreset === preset.id ? '' : preset.id;
-									}}
-								>
-									{preset.label}
-								</button>
+									onclick={() => { activeAiPreset = activeAiPreset === preset.id ? '' : preset.id; }}
+								>{preset.label}</button>
 							{/each}
 						</div>
 
@@ -493,7 +474,6 @@
 													</span>
 												{/if}
 											</div>
-
 											<button type="button" class="suggestion-apply" onclick={() => applySuggestionToDraft(suggestion)}>
 												ใช้เป็น draft
 											</button>
@@ -504,10 +484,10 @@
 
 										<div class="ai-suggestion-meta">
 											{#if suggestion.audience}
-												<p><strong>Audience</strong>{suggestion.audience}</p>
+												<p><strong>Audience</strong> {suggestion.audience}</p>
 											{/if}
 											{#if suggestion.hook}
-												<p><strong>Hook</strong>{suggestion.hook}</p>
+												<p><strong>Hook</strong> {suggestion.hook}</p>
 											{/if}
 										</div>
 
@@ -523,7 +503,7 @@
 										{/if}
 
 										{#if suggestion.cta}
-											<p class="ai-cta"><strong>CTA</strong>{suggestion.cta}</p>
+											<p class="ai-cta"><strong>CTA</strong> {suggestion.cta}</p>
 										{/if}
 
 										<p class="ai-reason">{suggestion.reason}</p>
@@ -536,10 +516,19 @@
 			</details>
 		</section>
 
-		<section class="projects-panel">
-			<div class="section-head section-head--inline">
-				<h2>งานล่าสุด</h2>
-				<input bind:value={search} placeholder="ค้นหา project, status หรือ mode..." />
+		<!-- ── Projects section ── -->
+		<section class="projects-section">
+			<div class="projects-head">
+				<h2 class="projects-title">งานล่าสุด</h2>
+				<div class="projects-controls">
+					<input class="search-input" bind:value={search} placeholder="ค้นหา…" />
+					<button
+						class="refresh-btn"
+						title="Refresh"
+						disabled={loadingProjects}
+						onclick={() => void loadProjects()}
+					>↺</button>
+				</div>
 			</div>
 
 			{#if loadingProjects}
@@ -547,60 +536,47 @@
 					<Spinner label="Loading carousel projects..." />
 				</div>
 			{:else if filteredProjects.length === 0}
-				<div class="empty-card">
-					<h4>ยังไม่มี carousel project</h4>
-					<p>เริ่มจากสร้าง project ใหม่ด้านบน แล้วระบบจะพาเข้า Studio ทันที</p>
+				<div class="empty-state">
+					<p>ยังไม่มี project — พิมพ์ชื่อด้านบนแล้วกด Create ได้เลย</p>
 				</div>
 			{:else}
-				<div class="project-list">
+				<ul class="project-list">
 					{#each filteredProjects as project}
-						<article class="project-row">
-							{#if project.cover_thumbnail_url}
-								<div class="project-thumb">
-									<img src={project.cover_thumbnail_url} alt={project.title ?? 'Carousel cover'} loading="lazy" />
+						<li class="project-item">
+							<a class="project-link" href={`/carousel/${project.id}`}>
+								<div class="project-thumb" class:project-thumb--empty={!project.cover_thumbnail_url}>
+									{#if project.cover_thumbnail_url}
+										<img src={project.cover_thumbnail_url} alt="" loading="lazy" />
+									{:else}
+										<span>{(project.title ?? 'C')[0].toUpperCase()}</span>
+									{/if}
 								</div>
-							{:else}
-								<div class="project-thumb project-thumb--empty">
-									<span>{(project.title ?? 'C')[0].toUpperCase()}</span>
-								</div>
-							{/if}
-							<div class="project-main">
-								<div class="project-title-row">
-									<h3>{project.title ?? 'Untitled carousel'}</h3>
-									<div class="project-badges">
+								<div class="project-info">
+									<div class="project-name">{project.title ?? 'Untitled carousel'}</div>
+									<div class="project-meta">
 										<Badge variant={badgeVariant(project.status)} label={carouselStatusLabel[project.status]} />
 										<Badge variant="neutral" label={project.content_mode === 'quote' ? 'Quote' : 'Standard'} />
+										<span class="project-stats">{project.slide_count} slides · {latestActivityLabel(project)}</span>
 									</div>
 								</div>
-
-								<div class="project-meta">
-									<span>{project.slide_count} slides</span>
-									<span>{latestActivityLabel(project)}</span>
-								</div>
-							</div>
-
+							</a>
 							<div class="project-actions">
-								<Button variant="primary" href={`/carousel/${project.id}`}>Open</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => { void duplicateProject(project); }}
-									loading={duplicatingProjectId === project.id}
-								>
-									{duplicatingProjectId === project.id ? 'Duplicating...' : 'Duplicate'}
-								</Button>
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => { void deleteProject(project); }}
-									loading={deletingProjectId === project.id}
-								>
-									{deletingProjectId === project.id ? 'Deleting...' : 'Delete'}
-								</Button>
+								<button
+									class="project-action-btn"
+									title="Duplicate"
+									disabled={duplicatingProjectId === project.id}
+									onclick={() => void duplicateProject(project)}
+								>{duplicatingProjectId === project.id ? '…' : 'Copy'}</button>
+								<button
+									class="project-action-btn project-action-btn--danger"
+									title="Delete"
+									disabled={deletingProjectId === project.id}
+									onclick={() => void deleteProject(project)}
+								>{deletingProjectId === project.id ? '…' : 'Delete'}</button>
 							</div>
-						</article>
+						</li>
 					{/each}
-				</div>
+				</ul>
 			{/if}
 		</section>
 	{/if}
@@ -609,7 +585,7 @@
 <style>
 	.page {
 		display: grid;
-		gap: var(--space-6);
+		gap: var(--space-5);
 	}
 
 	.alert {
@@ -621,10 +597,10 @@
 		border: 1px solid rgba(220, 38, 38, 0.14);
 	}
 
-	.quick-create-card,
-	.projects-panel {
+	/* ── Create section ── */
+	.create-section {
 		display: grid;
-		gap: var(--space-4);
+		gap: var(--space-3);
 		padding: var(--space-5);
 		border-radius: var(--radius-xl);
 		border: 1px solid var(--color-border);
@@ -632,50 +608,323 @@
 		box-shadow: var(--shadow-xs);
 	}
 
-	.quick-create-card {
-		background:
-			radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 34%),
-			radial-gradient(circle at bottom left, rgba(249, 115, 22, 0.1), transparent 30%),
-			var(--color-bg-elevated);
+	.mode-tabs {
+		display: flex;
+		gap: 2px;
+		background: var(--color-slate-100);
+		border-radius: var(--radius-md);
+		padding: 3px;
+		width: fit-content;
 	}
 
-	.section-head {
+	.mode-tab {
+		padding: 0.38rem 1rem;
+		border-radius: calc(var(--radius-md) - 1px);
+		border: none;
+		background: transparent;
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		color: var(--color-slate-500);
+		cursor: pointer;
+		transition: background 100ms ease, color 100ms ease, box-shadow 100ms ease;
+	}
+
+	.mode-tab--active {
+		background: #fff;
+		color: var(--color-slate-900);
+		box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+	}
+
+	.command-bar {
+		display: flex;
+		gap: var(--space-2);
+	}
+
+	.command-input {
+		flex: 1;
+		padding: 0.75rem 1rem;
+		border-radius: var(--radius-lg);
+		border: 1.5px solid var(--color-border-strong);
+		background: var(--color-bg);
+		font: inherit;
+		font-size: var(--text-base);
+		color: var(--color-text);
+		transition: border-color 120ms ease, box-shadow 120ms ease;
+	}
+
+	.command-input:focus {
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 3px var(--color-primary-bg);
+	}
+
+	.command-btn {
+		padding: 0.75rem 1.5rem;
+		border-radius: var(--radius-lg);
+		border: none;
+		background: var(--color-primary);
+		color: #fff;
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		cursor: pointer;
+		white-space: nowrap;
+		transition: background 120ms ease, opacity 120ms ease;
+	}
+
+	.command-btn:hover:not(:disabled) {
+		background: var(--color-primary-hover);
+	}
+
+	.command-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	/* ── Advanced panel ── */
+	.adv-panel {
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-subtle);
+	}
+
+	.adv-summary {
+		list-style: none;
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		padding: 0.65rem var(--space-4);
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.adv-summary::-webkit-details-marker { display: none; }
+
+	.adv-summary span {
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		color: var(--color-slate-700);
+	}
+
+	.adv-summary small {
+		font-size: var(--text-xs);
+		color: var(--color-slate-400);
+	}
+
+	.adv-body {
 		display: grid;
-		gap: 0.45rem;
-	}
-
-	.section-head--inline {
-		grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-		align-items: end;
 		gap: var(--space-4);
+		padding: 0 var(--space-4) var(--space-4);
 	}
 
-	.section-kicker {
-		margin: 0;
-		font-size: 0.78rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-text-soft);
+	/* ── Projects section ── */
+	.projects-section {
+		display: grid;
+		gap: var(--space-3);
 	}
 
-	.section-head h2,
-	.ai-panel-head h3,
-	.project-title-row h3,
-	.empty-card h4,
-	.ai-suggestion-card h4 {
+	.projects-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.projects-title {
 		margin: 0;
 		font-family: var(--font-heading);
+		font-size: var(--text-lg);
+		color: var(--color-slate-900);
 	}
 
-	.section-copy {
+	.projects-controls {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.search-input {
+		width: 200px;
+		padding: 0.45rem 0.75rem;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
+		font: inherit;
+		font-size: var(--text-sm);
+		color: var(--color-text);
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: rgba(15, 23, 42, 0.3);
+		box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
+	}
+
+	.refresh-btn {
+		width: 2rem;
+		height: 2rem;
+		display: grid;
+		place-items: center;
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-md);
+		background: var(--color-bg-elevated);
+		color: var(--color-slate-500);
+		cursor: pointer;
+		font-size: 1rem;
+		line-height: 1;
+		transition: background 100ms ease, color 100ms ease;
+	}
+
+	.refresh-btn:hover:not(:disabled) {
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
+	}
+
+	/* ── Project list ── */
+	.project-list {
+		list-style: none;
 		margin: 0;
-		max-width: 62ch;
-		color: var(--color-text-soft);
-		line-height: 1.6;
+		padding: 0;
+		display: grid;
+		gap: var(--space-2);
 	}
 
-	.quick-create-grid,
+	.project-item {
+		display: flex;
+		align-items: center;
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		overflow: hidden;
+		transition: border-color 120ms ease, box-shadow 120ms ease;
+	}
+
+	.project-item:hover {
+		border-color: var(--color-border-strong);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.project-item:hover .project-actions {
+		opacity: 1;
+	}
+
+	.project-link {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: var(--space-4);
+		padding: var(--space-3) var(--space-4);
+		min-width: 0;
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.project-thumb {
+		width: 68px;
+		height: 68px;
+		border-radius: var(--radius-md);
+		overflow: hidden;
+		flex-shrink: 0;
+		background: var(--color-slate-100);
+	}
+
+	.project-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.project-thumb--empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--color-slate-400);
+	}
+
+	.project-info {
+		flex: 1;
+		display: grid;
+		gap: 0.4rem;
+		min-width: 0;
+	}
+
+	.project-name {
+		font-family: var(--font-heading);
+		font-weight: var(--fw-semibold);
+		font-size: var(--text-base);
+		color: var(--color-slate-900);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.project-meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.project-stats {
+		font-size: var(--text-xs);
+		color: var(--color-slate-400);
+	}
+
+	.project-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-1);
+		padding-right: var(--space-3);
+		opacity: 0;
+		transition: opacity 120ms ease;
+	}
+
+	.project-action-btn {
+		padding: 0.32rem 0.65rem;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		font: inherit;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-semibold);
+		color: var(--color-slate-600);
+		cursor: pointer;
+		transition: background 100ms ease, border-color 100ms ease;
+	}
+
+	.project-action-btn:hover:not(:disabled) {
+		background: var(--color-slate-50);
+		border-color: var(--color-slate-300);
+	}
+
+	.project-action-btn--danger { color: var(--color-red-600); }
+
+	.project-action-btn--danger:hover:not(:disabled) {
+		background: var(--color-red-50);
+		border-color: rgba(220, 38, 38, 0.2);
+	}
+
+	.empty-state {
+		padding: var(--space-8);
+		text-align: center;
+		color: var(--color-slate-400);
+		border-radius: var(--radius-lg);
+		border: 1px dashed var(--color-border-strong);
+	}
+
+	.empty-state p { margin: 0; }
+
+	.loading-state {
+		padding: var(--space-5);
+		display: grid;
+		place-items: center;
+	}
+
+	/* ── Fields shared in adv panel ── */
 	.advanced-grid {
 		display: grid;
 		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
@@ -687,24 +936,17 @@
 		gap: 0.55rem;
 	}
 
-	.field--title {
-		min-width: 0;
-	}
-
-	.field--full {
-		grid-column: 1 / -1;
-	}
+	.field--full { grid-column: 1 / -1; }
 
 	.field span {
 		font-size: 0.82rem;
 		font-weight: 700;
-		color: var(--color-text-soft);
+		color: var(--color-slate-500);
 	}
 
 	.field input,
 	.field textarea,
-	.field select,
-	.projects-panel input {
+	.field select {
 		width: 100%;
 		padding: 0.68rem 0.8rem;
 		border-radius: var(--radius-md);
@@ -716,107 +958,19 @@
 
 	.field input:focus,
 	.field textarea:focus,
-	.field select:focus,
-	.projects-panel input:focus {
+	.field select:focus {
 		outline: 0;
 		border-color: rgba(15, 23, 42, 0.36);
 		box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 	}
 
 	.field small {
-		color: var(--color-text-soft);
+		font-size: var(--text-xs);
+		color: var(--color-slate-400);
 		line-height: 1.6;
 	}
 
-	.mode-row {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-3);
-	}
-
-	.mode-row button {
-		display: grid;
-		gap: 0.35rem;
-		padding: var(--space-3);
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: #fff;
-		text-align: left;
-		cursor: pointer;
-		transition:
-			border-color 160ms ease,
-			background 160ms ease;
-	}
-
-	.mode-row button:hover,
-	.project-row:hover,
-	.preset-row button:hover {
-		border-color: var(--color-border-strong);
-	}
-
-	.mode-row button.selected {
-		border-color: var(--color-primary-border);
-		background: var(--color-primary-bg);
-		box-shadow: none;
-	}
-
-	.mode-row strong {
-		font-family: var(--font-heading);
-	}
-
-	.mode-row strong {
-		margin: 0;
-	}
-
-	.project-secondary,
-	.project-meta,
-	.ai-suggestion-card p {
-		color: var(--color-text-soft);
-		line-height: 1.6;
-	}
-
-	.quick-create-actions,
-	.project-actions {
-		display: flex;
-		gap: var(--space-3);
-		flex-wrap: wrap;
-	}
-
-	.advanced-panel {
-		border-radius: var(--radius-lg);
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-subtle);
-	}
-
-	.advanced-panel summary {
-		list-style: none;
-		padding: var(--space-4);
-		cursor: pointer;
-	}
-
-	.advanced-panel summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.advanced-panel summary div {
-		display: grid;
-		gap: 0.2rem;
-	}
-
-	.advanced-panel summary strong {
-		font-family: var(--font-heading);
-	}
-
-	.advanced-panel summary span {
-		color: var(--color-text-soft);
-	}
-
-	.advanced-body {
-		display: grid;
-		gap: var(--space-4);
-		padding: 0 var(--space-4) var(--space-4);
-	}
-
+	/* ── AI panel ── */
 	.ai-panel {
 		display: grid;
 		gap: var(--space-4);
@@ -832,18 +986,25 @@
 		align-items: start;
 	}
 
-	.ai-panel-head p,
-	.ai-panel-head h3,
-	.project-secondary,
-	.empty-card p,
-	.ai-reason {
+	.section-kicker,
+	.ai-panel-head p {
 		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-slate-500);
+	}
+
+	.ai-panel-head h3 {
+		margin: 0;
+		font-family: var(--font-heading);
 	}
 
 	.preset-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.7rem;
+		gap: 0.6rem;
 	}
 
 	.preset-row button,
@@ -854,10 +1015,11 @@
 	}
 
 	.preset-row button {
-		padding: 0.55rem 0.9rem;
+		padding: 0.45rem 0.85rem;
 		border-radius: 999px;
 		background: rgba(226, 232, 240, 0.8);
-		color: var(--color-text-soft);
+		color: var(--color-slate-600);
+		font-size: var(--text-sm);
 	}
 
 	.preset-row button.selected {
@@ -868,89 +1030,67 @@
 	.ai-error {
 		margin: 0;
 		padding: 0.9rem 1rem;
-		border-radius: 0.9rem;
+		border-radius: var(--radius-lg);
 		background: rgba(254, 242, 242, 0.96);
 		color: var(--color-red-700);
 		border: 1px solid rgba(248, 113, 113, 0.22);
 	}
 
-	.loading-state {
-		padding: var(--space-5);
-		display: grid;
-		place-items: center;
-	}
-
-	.ai-suggestion-list,
-	.project-list {
+	.ai-suggestion-list {
 		display: grid;
 		gap: var(--space-3);
 	}
 
-	.ai-suggestion-card,
-	.project-row,
-	.empty-card {
+	.ai-suggestion-card {
 		padding: var(--space-4);
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border);
 		background: #fff;
-		box-shadow: none;
-	}
-
-	.ai-suggestion-card {
 		display: grid;
 		gap: 0.85rem;
 	}
 
-	.ai-chip-row,
-	.project-badges {
+	.ai-suggestion-card p,
+	.ai-suggestion-card h4 { margin: 0; }
+
+	.ai-suggestion-card h4 { font-family: var(--font-heading); }
+
+	.ai-suggestion-desc { color: var(--color-slate-600); }
+
+	.ai-chip-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.55rem;
+		gap: 0.5rem;
 	}
 
 	.journey-pill {
 		display: inline-flex;
 		align-items: center;
-		padding: 0.35rem 0.7rem;
+		padding: 0.3rem 0.65rem;
 		border-radius: 999px;
 		font-size: 0.72rem;
 		font-weight: 700;
 	}
 
-	.journey-pill--awareness {
-		background: rgba(253, 230, 138, 0.35);
-		color: #92400e;
-	}
-
-	.journey-pill--trust {
-		background: rgba(147, 197, 253, 0.24);
-		color: #1d4ed8;
-	}
-
-	.journey-pill--conversion {
-		background: rgba(167, 243, 208, 0.32);
-		color: #047857;
-	}
+	.journey-pill--awareness { background: rgba(253, 230, 138, 0.35); color: #92400e; }
+	.journey-pill--trust     { background: rgba(147, 197, 253, 0.24); color: #1d4ed8; }
+	.journey-pill--conversion{ background: rgba(167, 243, 208, 0.32); color: #047857; }
 
 	.suggestion-apply {
-		padding: 0.45rem 0.8rem;
+		padding: 0.4rem 0.8rem;
 		border-radius: 999px;
 		background: rgba(37, 99, 235, 0.1);
 		color: var(--color-blue-700);
-		font-weight: 700;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
 	}
 
 	.ai-suggestion-meta,
 	.ai-outline,
-	.ai-cta {
-		display: grid;
-		gap: 0.4rem;
-	}
+	.ai-cta { display: grid; gap: 0.4rem; }
 
 	.ai-suggestion-meta p,
-	.ai-cta {
-		margin: 0;
-	}
+	.ai-cta { margin: 0; color: var(--color-slate-600); }
 
 	.ai-suggestion-meta strong,
 	.ai-outline strong,
@@ -965,111 +1105,46 @@
 		padding-left: 1.2rem;
 		display: grid;
 		gap: 0.35rem;
-		color: var(--color-text-soft);
+		color: var(--color-slate-600);
 	}
 
-	.project-row {
-		display: grid;
-		grid-template-columns: 56px minmax(0, 1fr) auto;
-		gap: var(--space-4);
-		align-items: center;
-		transition: border-color 160ms ease;
+	.ai-reason {
+		margin: 0;
+		color: var(--color-slate-500);
+		font-size: var(--text-sm);
 	}
 
-	.project-thumb {
-		width: 56px;
-		height: 56px;
-		border-radius: var(--radius-lg, 0.75rem);
-		overflow: hidden;
-		flex-shrink: 0;
-		background: var(--color-slate-100, #f1f5f9);
-	}
-	.project-thumb img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
-	.project-thumb--empty {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 1.25rem;
-		font-weight: 700;
-		color: var(--color-slate-400, #94a3b8);
-	}
-
-	.project-main {
-		display: grid;
-		gap: 0.5rem;
-		min-width: 0;
-	}
-
-	.project-title-row {
-		display: flex;
-		justify-content: space-between;
-		gap: var(--space-3);
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
-	.project-secondary {
-		line-clamp: 2;
-		display: -webkit-box;
-		overflow: hidden;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-	}
-
-	.project-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.85rem;
-		font-size: 0.85rem;
-	}
-
-	.empty-card p {
-		margin-top: 0.35rem;
-	}
-
-	@media (max-width: 900px) {
-		.section-head--inline,
-		.quick-create-grid,
+	/* ── Responsive ── */
+	@media (max-width: 768px) {
 		.advanced-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.project-row {
-			grid-template-columns: 56px minmax(0, 1fr);
-		}
-
-		.project-row .project-actions {
-			grid-column: 1 / -1;
-		}
-
 		.ai-panel-head,
-		.ai-suggestion-top,
-		.project-actions {
+		.ai-suggestion-top {
 			flex-direction: column;
 			align-items: stretch;
 		}
-	}
 
-	@media (max-width: 640px) {
-		.mode-row {
-			grid-template-columns: 1fr;
+		.project-thumb {
+			width: 52px;
+			height: 52px;
 		}
 
-		.quick-create-actions,
 		.project-actions {
+			opacity: 1;
+			padding: var(--space-2);
 			flex-direction: column;
 		}
 
-		.quick-create-actions :global(button),
-		.project-actions :global(a),
-		.project-actions :global(button),
-		.ai-panel-head :global(button) {
-			width: 100%;
-		}
+		.search-input { width: 140px; }
+	}
+
+	@media (max-width: 560px) {
+		.command-bar { flex-direction: column; }
+		.command-btn { width: 100%; }
+		.projects-controls { gap: var(--space-1); }
+
+		.ai-panel-head :global(button) { width: 100%; }
 	}
 </style>

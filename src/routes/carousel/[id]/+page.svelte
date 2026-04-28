@@ -1304,6 +1304,11 @@
 					{#each slides as slide}
 						{#if selectedSlideId === slide.id}
 							<section class="selected-preview-panel" aria-label="Selected slide preview">
+								<div class="canvas-edit-hint">
+									<span>✎ Click text to edit directly</span>
+									<kbd>⌘S</kbd>
+									<span>to save</span>
+								</div>
 								<CarouselSlidePreview
 									slide={slide}
 									fontPreset={project.font_preset}
@@ -1318,11 +1323,15 @@
 									quoteTextOffsetXPx={slide.quote_text_offset_x_px}
 									quoteTextOffsetYPx={slide.quote_text_offset_y_px}
 									exportId={null}
+									editable={true}
+									onheadlinechange={(v) => { slide.headline = v; }}
+									onbodychange={(v) => { slide.body = v; }}
+									onctachange={(v) => { slide.cta = v; }}
+									onslideSave={() => { void saveSlide(slide); }}
 								/>
 								<div class="preview-meta-card">
 									<div>
-										<span>Selected</span>
-										<strong>Slide {slide.position} · {slide.role}</strong>
+										<span>Slide {slide.position} · {slide.role}</span>
 									</div>
 									{#if selectedSlideState?.isReady}
 										<span class="slide-state slide-state--ready">Ready</span>
@@ -2211,12 +2220,32 @@
 		gap: var(--space-3);
 	}
 
+	.canvas-edit-hint {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+		font-size: var(--text-xs);
+		color: var(--color-slate-400);
+	}
+
+	.canvas-edit-hint kbd {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.1rem 0.35rem;
+		border-radius: 4px;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-subtle);
+		font-family: inherit;
+		font-size: var(--text-xs);
+		color: var(--color-slate-600);
+	}
+
 	.preview-meta-card {
 		display: flex;
 		justify-content: space-between;
 		gap: var(--space-3);
 		align-items: center;
-		padding: var(--space-3);
+		padding: var(--space-2) var(--space-3);
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--color-border);
 		background: var(--color-bg-subtle);

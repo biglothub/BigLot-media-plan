@@ -25,6 +25,11 @@
 		accountHandle?: string | null;
 		accountAvatarUrl?: string | null;
 		accountIsVerified?: boolean;
+		editable?: boolean;
+		onheadlinechange?: (value: string) => void;
+		onbodychange?: (value: string) => void;
+		onctachange?: (value: string) => void;
+		onslideSave?: () => void;
 	}
 
 	let {
@@ -40,8 +45,43 @@
 		accountDisplayName = '',
 		accountHandle = '',
 		accountAvatarUrl = null,
-		accountIsVerified = false
+		accountIsVerified = false,
+		editable = false,
+		onheadlinechange,
+		onbodychange,
+		onctachange,
+		onslideSave
 	}: Props = $props();
+
+	let headlineEl = $state<HTMLElement | null>(null);
+	let bodyEl = $state<HTMLElement | null>(null);
+	let ctaEl = $state<HTMLElement | null>(null);
+	let headlineFocused = $state(false);
+	let bodyFocused = $state(false);
+	let ctaFocused = $state(false);
+
+	$effect(() => {
+		const v = slide.headline ?? '';
+		if (headlineEl && !headlineFocused && headlineEl.innerText !== v) headlineEl.innerText = v;
+	});
+
+	$effect(() => {
+		const v = slide.body ?? '';
+		if (bodyEl && !bodyFocused && bodyEl.innerText !== v) bodyEl.innerText = v;
+	});
+
+	$effect(() => {
+		const v = slide.cta ?? '';
+		if (ctaEl && !ctaFocused && ctaEl.innerText !== v) ctaEl.innerText = v;
+	});
+
+	function handleKeydown(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+			e.preventDefault();
+			onslideSave?.();
+		}
+		if (e.key === 'Escape') (e.currentTarget as HTMLElement).blur();
+	}
 
 	const backgroundUrl = $derived(getCarouselSelectedAssetUrl(slide) ?? fallbackAssetUrl);
 	const isCta = $derived(slide.role === 'cta');
@@ -117,7 +157,19 @@
 			</header>
 
 			<div class="slide-preview-quote-copy">
-				<h3>{slide.headline ?? 'Untitled slide'}</h3>
+				<h3
+					bind:this={headlineEl}
+					contenteditable={editable ? 'plaintext-only' : undefined}
+					class:editable-field={editable}
+					data-placeholder="Quote text..."
+					onfocus={() => { headlineFocused = true; }}
+					onblur={(e) => { headlineFocused = false; onheadlinechange?.((e.currentTarget as HTMLElement).innerText.trim()); }}
+					oninput={(e) => onheadlinechange?.((e.currentTarget as HTMLElement).innerText)}
+					onkeydown={handleKeydown}
+					role={editable ? 'textbox' : undefined}
+					aria-label={editable ? 'Quote text' : undefined}
+					aria-multiline={editable ? 'true' : undefined}
+				>{slide.headline ?? ''}</h3>
 			</div>
 		</div>
 	{:else}
@@ -125,14 +177,63 @@
 		<div class="slide-preview-noise"></div>
 		<div class="slide-preview-content">
 			<div class="slide-preview-main">
-				<h3>{slide.headline ?? 'Untitled slide'}</h3>
-				{#if slide.body}
-					<p class="slide-preview-body">{slide.body}</p>
+				<h3
+					bind:this={headlineEl}
+					contenteditable={editable ? 'plaintext-only' : undefined}
+					class:editable-field={editable}
+					data-placeholder="Headline..."
+					onfocus={() => { headlineFocused = true; }}
+					onblur={(e) => { headlineFocused = false; onheadlinechange?.((e.currentTarget as HTMLElement).innerText.trim()); }}
+					oninput={(e) => onheadlinechange?.((e.currentTarget as HTMLElement).innerText)}
+					onkeydown={handleKeydown}
+					role={editable ? 'textbox' : undefined}
+					aria-label={editable ? 'Headline' : undefined}
+					aria-multiline={editable ? 'true' : undefined}
+				>{slide.headline ?? ''}</h3>
+				{#if slide.body || editable}
+					<p
+						class="slide-preview-body"
+						bind:this={bodyEl}
+						contenteditable={editable ? 'plaintext-only' : undefined}
+						class:editable-field={editable}
+						data-placeholder="Body copy..."
+						onfocus={() => { bodyFocused = true; }}
+						onblur={(e) => { bodyFocused = false; onbodychange?.((e.currentTarget as HTMLElement).innerText.trim()); }}
+						oninput={(e) => onbodychange?.((e.currentTarget as HTMLElement).innerText)}
+						onkeydown={handleKeydown}
+						role={editable ? 'textbox' : undefined}
+						aria-label={editable ? 'Body copy' : undefined}
+						aria-multiline={editable ? 'true' : undefined}
+					>{slide.body ?? ''}</p>
 				{/if}
-				{#if isCta && slide.cta}
-					<div class="slide-preview-cta">{slide.cta}</div>
-				{:else if slide.cta}
-					<p class="slide-preview-cta-note">{slide.cta}</p>
+				{#if isCta && (slide.cta || editable)}
+					<div
+						class="slide-preview-cta"
+						bind:this={ctaEl}
+						contenteditable={editable ? 'plaintext-only' : undefined}
+						class:editable-field={editable}
+						data-placeholder="CTA text..."
+						onfocus={() => { ctaFocused = true; }}
+						onblur={(e) => { ctaFocused = false; onctachange?.((e.currentTarget as HTMLElement).innerText.trim()); }}
+						oninput={(e) => onctachange?.((e.currentTarget as HTMLElement).innerText)}
+						onkeydown={handleKeydown}
+						role={editable ? 'textbox' : undefined}
+						aria-label={editable ? 'CTA text' : undefined}
+					>{slide.cta ?? ''}</div>
+				{:else if slide.cta || editable}
+					<p
+						class="slide-preview-cta-note"
+						bind:this={ctaEl}
+						contenteditable={editable ? 'plaintext-only' : undefined}
+						class:editable-field={editable}
+						data-placeholder="CTA note..."
+						onfocus={() => { ctaFocused = true; }}
+						onblur={(e) => { ctaFocused = false; onctachange?.((e.currentTarget as HTMLElement).innerText.trim()); }}
+						oninput={(e) => onctachange?.((e.currentTarget as HTMLElement).innerText)}
+						onkeydown={handleKeydown}
+						role={editable ? 'textbox' : undefined}
+						aria-label={editable ? 'CTA note' : undefined}
+					>{slide.cta ?? ''}</p>
 				{/if}
 			</div>
 		</div>
@@ -401,5 +502,28 @@
 
 	.slide-preview--cta h3 {
 		max-width: 14ch;
+	}
+
+	/* ── Editable (Canva-like inline editing) ── */
+	.editable-field {
+		cursor: text;
+		border-radius: 6px;
+		outline: none;
+		transition: box-shadow 100ms ease;
+		-webkit-user-modify: read-write-plaintext-only;
+	}
+
+	.editable-field:empty::before {
+		content: attr(data-placeholder);
+		opacity: 0.35;
+		pointer-events: none;
+	}
+
+	.editable-field:hover:not(:focus) {
+		box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.4), inset 0 0 0 1.5px rgba(255, 255, 255, 0.15);
+	}
+
+	.editable-field:focus {
+		box-shadow: 0 0 0 2.5px #3b82f6, 0 0 0 5px rgba(59, 130, 246, 0.28);
 	}
 </style>
