@@ -361,9 +361,8 @@
 
 <main class="page">
 	<PageHeader
-		eyebrow="Instagram automation"
-		title="Carousel"
-		subtitle="สร้างโปรเจกต์เร็ว แล้วค่อยไปจัดรายละเอียดต่อใน Studio"
+		eyebrow="Carousel"
+		title="Create or Continue"
 	>
 		{#snippet actions()}
 			<Button variant="secondary" onclick={() => { void loadProjects(); }} loading={loadingProjects}>
@@ -380,12 +379,6 @@
 		{/if}
 
 		<section class="quick-create-card">
-			<div class="section-head">
-				<p class="section-kicker">Quick Create</p>
-				<h2>เริ่มจาก title แล้วเข้า Studio เลย</h2>
-				<p class="section-copy">ฟอร์มหลักเหลือแค่ชื่อกับโหมด ส่วน brief, category และ AI assist ถูกย้ายไปไว้ใน Advanced</p>
-			</div>
-
 			<div class="quick-create-grid">
 				<label class="field field--title">
 					<span>Project title</span>
@@ -404,7 +397,6 @@
 								}}
 							>
 								<strong>{option.label}</strong>
-								<small>{option.description}</small>
 							</button>
 						{/each}
 					</div>
@@ -421,8 +413,8 @@
 			<details class="advanced-panel">
 				<summary>
 					<div>
-						<strong>Advanced</strong>
-						<span>description, category, studio brief และ AI assist</span>
+					<strong>Advanced setup</strong>
+					<span>description, category, brief และ AI assist</span>
 					</div>
 				</summary>
 
@@ -546,10 +538,7 @@
 
 		<section class="projects-panel">
 			<div class="section-head section-head--inline">
-				<div>
-					<p class="section-kicker">Recent Projects</p>
-					<h2>เปิดงานเก่าต่อได้ทันที</h2>
-				</div>
+				<h2>งานล่าสุด</h2>
 				<input bind:value={search} placeholder="ค้นหา project, status หรือ mode..." />
 			</div>
 
@@ -584,8 +573,6 @@
 									</div>
 								</div>
 
-								<p class="project-secondary">{project.caption ?? project.visual_direction ?? 'ยังไม่มี caption หรือ visual direction'}</p>
-
 								<div class="project-meta">
 									<span>{project.slide_count} slides</span>
 									<span>{latestActivityLabel(project)}</span>
@@ -595,7 +582,7 @@
 							<div class="project-actions">
 								<Button variant="primary" href={`/carousel/${project.id}`}>Open</Button>
 								<Button
-									variant="secondary"
+									variant="ghost"
 									size="sm"
 									onclick={() => { void duplicateProject(project); }}
 									loading={duplicatingProjectId === project.id}
@@ -603,7 +590,7 @@
 									{duplicatingProjectId === project.id ? 'Duplicating...' : 'Duplicate'}
 								</Button>
 								<Button
-									variant="danger"
+									variant="ghost"
 									size="sm"
 									onclick={() => { void deleteProject(project); }}
 									loading={deletingProjectId === project.id}
@@ -639,16 +626,17 @@
 		display: grid;
 		gap: var(--space-4);
 		padding: var(--space-5);
-		border-radius: 1.5rem;
+		border-radius: var(--radius-xl);
 		border: 1px solid var(--color-border);
 		background: var(--color-bg-elevated);
-		box-shadow: var(--shadow-sm);
+		box-shadow: var(--shadow-xs);
 	}
 
 	.quick-create-card {
 		background:
-			radial-gradient(circle at top left, rgba(249, 115, 22, 0.08), transparent 32%),
-			linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+			radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 34%),
+			radial-gradient(circle at bottom left, rgba(249, 115, 22, 0.1), transparent 30%),
+			var(--color-bg-elevated);
 	}
 
 	.section-head {
@@ -718,9 +706,9 @@
 	.field select,
 	.projects-panel input {
 		width: 100%;
-		padding: 0.85rem 1rem;
-		border-radius: 0.95rem;
-		border: 1px solid rgba(148, 163, 184, 0.28);
+		padding: 0.68rem 0.8rem;
+		border-radius: var(--radius-md);
+		border: 1px solid var(--color-border-strong);
 		background: #fff;
 		font: inherit;
 		color: var(--color-text);
@@ -731,8 +719,8 @@
 	.field select:focus,
 	.projects-panel input:focus {
 		outline: 0;
-		border-color: rgba(37, 99, 235, 0.48);
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+		border-color: rgba(15, 23, 42, 0.36);
+		box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 	}
 
 	.field small {
@@ -749,40 +737,37 @@
 	.mode-row button {
 		display: grid;
 		gap: 0.35rem;
-		padding: var(--space-4);
-		border-radius: 1rem;
-		border: 1px solid rgba(148, 163, 184, 0.3);
-		background: rgba(255, 255, 255, 0.88);
+		padding: var(--space-3);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border);
+		background: #fff;
 		text-align: left;
 		cursor: pointer;
 		transition:
 			border-color 160ms ease,
-			transform 160ms ease,
-			box-shadow 160ms ease;
+			background 160ms ease;
 	}
 
 	.mode-row button:hover,
 	.project-row:hover,
 	.preset-row button:hover {
-		transform: translateY(-1px);
+		border-color: var(--color-border-strong);
 	}
 
 	.mode-row button.selected {
-		border-color: rgba(37, 99, 235, 0.45);
-		background: rgba(219, 234, 254, 0.95);
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+		border-color: var(--color-primary-border);
+		background: var(--color-primary-bg);
+		box-shadow: none;
 	}
 
 	.mode-row strong {
 		font-family: var(--font-heading);
 	}
 
-	.mode-row strong,
-	.mode-row small {
+	.mode-row strong {
 		margin: 0;
 	}
 
-	.mode-row small,
 	.project-secondary,
 	.project-meta,
 	.ai-suggestion-card p {
@@ -798,9 +783,9 @@
 	}
 
 	.advanced-panel {
-		border-radius: 1.2rem;
-		border: 1px solid rgba(148, 163, 184, 0.22);
-		background: rgba(255, 255, 255, 0.88);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-subtle);
 	}
 
 	.advanced-panel summary {
@@ -876,7 +861,7 @@
 	}
 
 	.preset-row button.selected {
-		background: rgba(37, 99, 235, 0.92);
+		background: var(--color-primary);
 		color: #fff;
 	}
 
@@ -905,10 +890,10 @@
 	.project-row,
 	.empty-card {
 		padding: var(--space-4);
-		border-radius: 1rem;
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		background: rgba(255, 255, 255, 0.95);
-		box-shadow: var(--shadow-sm);
+		border-radius: var(--radius-lg);
+		border: 1px solid var(--color-border);
+		background: #fff;
+		box-shadow: none;
 	}
 
 	.ai-suggestion-card {
@@ -988,7 +973,7 @@
 		grid-template-columns: 56px minmax(0, 1fr) auto;
 		gap: var(--space-4);
 		align-items: center;
-		transition: transform 160ms ease;
+		transition: border-color 160ms ease;
 	}
 
 	.project-thumb {
