@@ -7,7 +7,7 @@ import {
 	upsertVideoCarouselSlides
 } from '$lib/server/video-carousel-store';
 import type { CarouselFontPreset } from '$lib/types';
-import type { VideoTextPosition } from '$lib/video-carousel';
+import type { VideoCarouselTemplateType, VideoTextPosition } from '$lib/video-carousel';
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -19,9 +19,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		const durationSeconds = typeof body.duration_seconds === 'number' ? body.duration_seconds : 10;
 		const fontPreset: CarouselFontPreset =
 			typeof body.font_preset === 'string' ? (body.font_preset as CarouselFontPreset) : 'biglot';
+		const templateType: VideoCarouselTemplateType = body.template_type === 'quote' ? 'quote' : 'quiz';
 
 		// Step 1: AI generates script
-		const script = await generateVideoScript(topic, clipCount, durationSeconds);
+		const script = await generateVideoScript(topic, clipCount, durationSeconds, templateType);
 
 		// Step 2: Search Pexels videos for each segment in parallel
 		const videoResults = await Promise.all(
@@ -31,6 +32,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Step 3: Create project in DB
 		const project = await createVideoCarouselProject({
 			title: script.title,
+			template_type: templateType,
 			font_preset: fontPreset
 		});
 

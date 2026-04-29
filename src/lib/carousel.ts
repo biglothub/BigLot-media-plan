@@ -104,6 +104,34 @@ export const CAROUSEL_FONT_PRESETS = [
 		description: 'Playfair Display + Sarabun',
 		headingFont: "'Playfair Display', 'Noto Sans Thai', serif",
 		bodyFont: "'Sarabun', 'Noto Sans Thai', sans-serif"
+	},
+	{
+		value: 'kanit',
+		label: 'Kanit',
+		description: 'Kanit — Thai & English rounded',
+		headingFont: "'Kanit', sans-serif",
+		bodyFont: "'Kanit', sans-serif"
+	},
+	{
+		value: 'prompt_clean',
+		label: 'Prompt Clean',
+		description: 'Prompt — Thai & English clean',
+		headingFont: "'Prompt', sans-serif",
+		bodyFont: "'Prompt', sans-serif"
+	},
+	{
+		value: 'poppins_thai',
+		label: 'Poppins + Sarabun',
+		description: 'Poppins (EN) + Sarabun (TH)',
+		headingFont: "'Poppins', 'Sarabun', sans-serif",
+		bodyFont: "'Poppins', 'Sarabun', sans-serif"
+	},
+	{
+		value: 'bebas_impact',
+		label: 'Bebas Impact',
+		description: 'Bebas Neue heading + Noto Sans Thai',
+		headingFont: "'Bebas Neue', 'Noto Sans Thai', sans-serif",
+		bodyFont: "'Noto Sans Thai', sans-serif"
 	}
 ] as const satisfies ReadonlyArray<{
 	value: CarouselFontPreset;

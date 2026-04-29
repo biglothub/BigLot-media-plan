@@ -2,7 +2,8 @@ import type { CarouselFontPreset } from '$lib/types';
 
 export type VideoCarouselStatus = 'draft' | 'composing' | 'ready' | 'exported';
 export type VideoTextPosition = 'top' | 'center' | 'bottom';
-export type VideoLayoutType = 'standard' | 'quiz';
+export type VideoLayoutType = 'standard' | 'quiz' | 'quote';
+export type VideoCarouselTemplateType = 'quiz' | 'quote';
 
 export interface VideoCarouselSlide {
 	id: string;
@@ -27,6 +28,7 @@ export interface VideoCarouselProject {
 	id: string;
 	title: string;
 	status: VideoCarouselStatus;
+	template_type: VideoCarouselTemplateType;
 	font_preset: CarouselFontPreset;
 	aspect_ratio: '9:16';
 	created_at: string;
@@ -49,7 +51,11 @@ export const VIDEO_FONT_MAP: Record<CarouselFontPreset, string> = {
 	apple_clean: '"Space Grotesk", "Noto Sans Thai", sans-serif',
 	mitr_friendly: '"Mitr", "Noto Sans Thai", sans-serif',
 	ibm_plex_thai: '"IBM Plex Sans Thai", "Noto Sans Thai", sans-serif',
-	editorial_serif: '"Playfair Display", "Noto Sans Thai", serif'
+	editorial_serif: '"Playfair Display", "Noto Sans Thai", serif',
+	kanit: '"Kanit", sans-serif',
+	prompt_clean: '"Prompt", sans-serif',
+	poppins_thai: '"Poppins", "Sarabun", sans-serif',
+	bebas_impact: '"Bebas Neue", "Noto Sans Thai", sans-serif'
 };
 
 export const FONT_PRESET_LABELS: Record<CarouselFontPreset, string> = {
@@ -57,7 +63,21 @@ export const FONT_PRESET_LABELS: Record<CarouselFontPreset, string> = {
 	apple_clean: 'Apple Clean',
 	mitr_friendly: 'Mitr Friendly',
 	ibm_plex_thai: 'IBM Plex Thai',
-	editorial_serif: 'Editorial Serif'
+	editorial_serif: 'Editorial Serif',
+	kanit: 'Kanit',
+	prompt_clean: 'Prompt Clean',
+	poppins_thai: 'Poppins + Sarabun',
+	bebas_impact: 'Bebas Impact'
+};
+
+export const VIDEO_CAROUSEL_TEMPLATE_LABELS: Record<VideoCarouselTemplateType, string> = {
+	quiz: 'Quiz / ตัวเลือก',
+	quote: 'Quote / คำคม'
+};
+
+export const VIDEO_CAROUSEL_TEMPLATE_DESCRIPTIONS: Record<VideoCarouselTemplateType, string> = {
+	quiz: 'Template ตามตัวอย่าง: หัวข้อหลัก ข้อความเน้นสีทอง และตัวเลือก A-F',
+	quote: 'Template คำคม: ข้อความหลักกลางจอ พร้อมข้อความรองสั้น ๆ'
 };
 
 export const VIDEO_CAROUSEL_STATUS_LABELS: Record<VideoCarouselStatus, string> = {

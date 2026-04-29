@@ -6,7 +6,7 @@ import {
 	deleteVideoCarouselProject
 } from '$lib/server/video-carousel-store';
 import type { CarouselFontPreset } from '$lib/types';
-import type { VideoCarouselStatus } from '$lib/video-carousel';
+import type { VideoCarouselStatus, VideoCarouselTemplateType } from '$lib/video-carousel';
 
 export const GET: RequestHandler = async ({ params }) => {
 	try {
@@ -24,6 +24,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		const patch: Parameters<typeof updateVideoCarouselProject>[1] = {};
 		if (typeof body.title === 'string') patch.title = body.title.trim();
 		if (typeof body.status === 'string') patch.status = body.status as VideoCarouselStatus;
+		if (typeof body.template_type === 'string') patch.template_type = body.template_type as VideoCarouselTemplateType;
 		if (typeof body.font_preset === 'string') patch.font_preset = body.font_preset as CarouselFontPreset;
 		const project = await updateVideoCarouselProject(params.id, patch);
 		return json(project);

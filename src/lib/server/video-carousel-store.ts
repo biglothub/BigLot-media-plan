@@ -1,5 +1,12 @@
 import { supabaseAdmin } from '$lib/server/supabase-admin';
-import type { VideoCarouselProject, VideoCarouselSlide, VideoCarouselStatus, VideoTextPosition, VideoLayoutType } from '$lib/video-carousel';
+import type {
+	VideoCarouselProject,
+	VideoCarouselSlide,
+	VideoCarouselStatus,
+	VideoTextPosition,
+	VideoLayoutType,
+	VideoCarouselTemplateType
+} from '$lib/video-carousel';
 import type { CarouselFontPreset } from '$lib/types';
 
 type JsonRecord = Record<string, unknown>;
@@ -20,8 +27,12 @@ function normalizeTextPosition(value: unknown): VideoTextPosition {
 }
 
 function normalizeFontPreset(value: unknown): CarouselFontPreset {
-	const valid = new Set(['biglot', 'apple_clean', 'mitr_friendly', 'ibm_plex_thai', 'editorial_serif']);
+	const valid = new Set(['biglot', 'apple_clean', 'mitr_friendly', 'ibm_plex_thai', 'editorial_serif', 'kanit', 'prompt_clean', 'poppins_thai', 'bebas_impact']);
 	return valid.has(value as string) ? (value as CarouselFontPreset) : 'biglot';
+}
+
+function normalizeTemplateType(value: unknown): VideoCarouselTemplateType {
+	return value === 'quote' ? 'quote' : 'quiz';
 }
 
 function normalizeProject(row: JsonRecord): VideoCarouselProject {
@@ -29,6 +40,7 @@ function normalizeProject(row: JsonRecord): VideoCarouselProject {
 		id: row.id as string,
 		title: typeof row.title === 'string' ? row.title : 'Untitled',
 		status: normalizeStatus(row.status),
+		template_type: normalizeTemplateType(row.template_type),
 		font_preset: normalizeFontPreset(row.font_preset),
 		aspect_ratio: '9:16',
 		created_at: row.created_at as string,
@@ -37,7 +49,8 @@ function normalizeProject(row: JsonRecord): VideoCarouselProject {
 }
 
 function normalizeLayoutType(value: unknown): VideoLayoutType {
-	return value === 'quiz' ? 'quiz' : 'standard';
+	if (value === 'quiz' || value === 'quote') return value;
+	return 'standard';
 }
 
 function normalizeOptions(value: unknown): string[] {
@@ -100,6 +113,7 @@ export async function getVideoCarouselSlides(projectId: string): Promise<VideoCa
 
 export async function createVideoCarouselProject(input: {
 	title: string;
+	template_type?: VideoCarouselTemplateType;
 	font_preset?: CarouselFontPreset;
 }): Promise<VideoCarouselProject> {
 	const { data, error } = await db()
@@ -107,6 +121,7 @@ export async function createVideoCarouselProject(input: {
 		.insert({
 			title: input.title.trim() || 'Untitled video carousel',
 			status: 'draft',
+			template_type: input.template_type ?? 'quiz',
 			font_preset: input.font_preset ?? 'biglot',
 			aspect_ratio: '9:16'
 		})
@@ -197,6 +212,7 @@ export async function updateVideoCarouselProject(
 	patch: Partial<{
 		title: string;
 		status: VideoCarouselStatus;
+		template_type: VideoCarouselTemplateType;
 		font_preset: CarouselFontPreset;
 	}>
 ): Promise<VideoCarouselProject> {

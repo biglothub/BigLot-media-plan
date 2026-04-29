@@ -12,7 +12,11 @@ export type CarouselFontPreset =
 	| 'apple_clean'
 	| 'mitr_friendly'
 	| 'ibm_plex_thai'
-	| 'editorial_serif';
+	| 'editorial_serif'
+	| 'kanit'
+	| 'prompt_clean'
+	| 'poppins_thai'
+	| 'bebas_impact';
 
 import type { TeamMember } from '$lib/team';
 export type { TeamMember } from '$lib/team';

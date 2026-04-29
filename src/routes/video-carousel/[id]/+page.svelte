@@ -2,10 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { Button, PageHeader, Spinner, toast } from '$lib';
 	import type { PageData } from './$types';
-	import type { VideoCarouselSlide, VideoCarouselProject } from '$lib/video-carousel';
+	import type { VideoCarouselSlide, VideoCarouselProject, VideoTextPosition } from '$lib/video-carousel';
 	import {
 		VIDEO_FONT_MAP,
 		FONT_PRESET_LABELS,
+		VIDEO_CAROUSEL_TEMPLATE_LABELS,
 		VIDEO_CAROUSEL_CANVAS_WIDTH,
 		VIDEO_CAROUSEL_CANVAS_HEIGHT,
 		OPTION_LETTERS,
@@ -26,7 +27,7 @@
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 
 	// ── Edit state ────────────────────────────────────────────────────────────
-	let editingField = $state<'text' | 'accent' | number | null>(null);
+	let editingField = $state<'text' | 'accent' | 'subtext' | number | null>(null);
 	let draftValue = $state('');
 
 	// ── Swap panel ────────────────────────────────────────────────────────────
@@ -164,6 +165,44 @@
 		}
 	}
 
+	function drawQuoteLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
+		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
+		const posY = slide.text_position === 'top' ? h * 0.28 : slide.text_position === 'bottom' ? h * 0.72 : h * 0.5;
+		const text = editingField === 'text' ? draftValue : slide.text;
+		const sub = editingField === 'subtext' ? draftValue : (slide.subtext ?? '');
+
+		ctx.fillStyle = 'rgba(2, 6, 23, 0.56)';
+		ctx.fillRect(0, 0, w, h);
+
+		ctx.save();
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = 'rgba(255,255,255,0.22)';
+		ctx.font = `bold ${Math.round(w * 0.22)}px ${font}`;
+		ctx.fillText('"', w / 2, posY - w * 0.18);
+		ctx.restore();
+
+		ctx.save();
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = '#ffffff';
+		ctx.shadowColor = 'rgba(0,0,0,0.75)';
+		ctx.shadowBlur = 14;
+		ctx.font = `bold ${Math.round(w * 0.07)}px ${font}`;
+		wrapTextCentered(ctx, text, w / 2, posY, w * 0.78, Math.round(w * 0.09));
+		ctx.restore();
+
+		if (sub) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = ACCENT_COLOR;
+			ctx.font = `bold ${Math.round(w * 0.033)}px ${font}`;
+			ctx.fillText(sub, w / 2, posY + Math.round(w * 0.17));
+			ctx.restore();
+		}
+	}
+
 	function drawFrame() {
 		if (!canvasEl || !videoEl || !activeSlide) return;
 		const ctx = canvasEl.getContext('2d');
@@ -175,6 +214,8 @@
 
 		if (activeSlide.layout_type === 'quiz') {
 			drawQuizLayout(ctx, activeSlide, w, h);
+		} else if (activeSlide.layout_type === 'quote') {
+			drawQuoteLayout(ctx, activeSlide, w, h);
 		} else {
 			drawStandardLayout(ctx, activeSlide, w, h);
 		}
@@ -225,10 +266,11 @@
 	});
 
 	// ── Edit helpers ──────────────────────────────────────────────────────────
-	function startEdit(field: 'text' | 'accent' | number) {
+	function startEdit(field: 'text' | 'accent' | 'subtext' | number) {
 		if (!activeSlide) return;
 		if (field === 'text') draftValue = activeSlide.text;
 		else if (field === 'accent') draftValue = activeSlide.accent_text ?? '';
+		else if (field === 'subtext') draftValue = activeSlide.subtext ?? '';
 		else draftValue = activeSlide.options[field as number] ?? '';
 		editingField = field;
 	}
@@ -245,12 +287,21 @@
 			const val = draftValue.trim() || null;
 			if (val === activeSlide.accent_text) return;
 			await patchSlide(activeSlide.id, { accent_text: val });
+		} else if (field === 'subtext') {
+			const val = draftValue.trim() || null;
+			if (val === activeSlide.subtext) return;
+			await patchSlide(activeSlide.id, { subtext: val });
 		} else {
 			const idx = field as number;
 			const newOptions = [...activeSlide.options];
 			newOptions[idx] = draftValue.trim();
 			await patchSlide(activeSlide.id, { options_json: newOptions });
 		}
+	}
+
+	async function setTextPosition(position: VideoTextPosition) {
+		if (!activeSlide || activeSlide.text_position === position) return;
+		await patchSlide(activeSlide.id, { text_position: position });
 	}
 
 	function addOption() {
@@ -322,97 +373,320 @@
 		}
 	}
 
+	function formatExportError(error: unknown): string {
+		if (error instanceof Error && error.message) return error.message;
+		if (typeof error === 'string' && error.trim()) return error;
+		return 'Export ล้มเหลว';
+	}
+
+	function getMediaErrorMessage(video: HTMLVideoElement, fallback: string): string {
+		const error = video.error;
+		if (!error) return fallback;
+		const labels: Record<number, string> = {
+			1: 'การโหลด video ถูกยกเลิก',
+			2: 'โหลด video จากเครือข่ายไม่สำเร็จ',
+			3: 'ถอดรหัส video ไม่สำเร็จ',
+			4: 'browser ไม่รองรับไฟล์ video นี้'
+		};
+		const label = labels[error.code] ?? fallback;
+		return error.message ? `${label}: ${error.message}` : label;
+	}
+
+	function waitForVideoReady(video: HTMLVideoElement, clipLabel: string): Promise<void> {
+		if (video.readyState >= 2) return Promise.resolve();
+		return new Promise((resolve, reject) => {
+			const timeout = window.setTimeout(() => {
+				cleanup();
+				reject(new Error(`${clipLabel}: โหลด video นานเกินไป`));
+			}, 15000);
+
+			function cleanup() {
+				window.clearTimeout(timeout);
+				video.removeEventListener('loadeddata', onReady);
+				video.removeEventListener('canplay', onReady);
+				video.removeEventListener('error', onError);
+			}
+
+			function onReady() {
+				if (video.readyState < 2) return;
+				cleanup();
+				resolve();
+			}
+
+			function onError() {
+				cleanup();
+				reject(new Error(`${clipLabel}: ${getMediaErrorMessage(video, 'โหลด video ไม่สำเร็จ')}`));
+			}
+
+			video.addEventListener('loadeddata', onReady);
+			video.addEventListener('canplay', onReady);
+			video.addEventListener('error', onError);
+		});
+	}
+
+	function loadExportVideo(src: string, clipLabel: string): Promise<HTMLVideoElement> {
+		const video = document.createElement('video');
+		video.crossOrigin = 'anonymous';
+		video.preload = 'auto';
+		video.muted = true;
+		video.playsInline = true;
+		video.src = src;
+		video.load();
+		return waitForVideoReady(video, clipLabel).then(() => video);
+	}
+
+	function seekVideo(video: HTMLVideoElement, time: number, clipLabel: string): Promise<void> {
+		const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : time;
+		const safeTime = Math.min(Math.max(time, 0), Math.max(duration - 0.05, 0));
+		if (Math.abs(video.currentTime - safeTime) < 0.001 && video.readyState >= 2) return Promise.resolve();
+
+		return new Promise((resolve, reject) => {
+			const timeout = window.setTimeout(() => {
+				cleanup();
+				reject(new Error(`${clipLabel}: seek video นานเกินไป`));
+			}, 10000);
+
+			function cleanup() {
+				window.clearTimeout(timeout);
+				video.removeEventListener('seeked', onSeeked);
+				video.removeEventListener('error', onError);
+			}
+
+			function onSeeked() {
+				cleanup();
+				resolve();
+			}
+
+			function onError() {
+				cleanup();
+				reject(new Error(`${clipLabel}: ${getMediaErrorMessage(video, 'seek video ไม่สำเร็จ')}`));
+			}
+
+			video.addEventListener('seeked', onSeeked);
+			video.addEventListener('error', onError);
+			video.currentTime = safeTime;
+		});
+	}
+
+	const RECORDING_MIME_TYPES = [
+		'video/mp4;codecs=avc1.42E01E',
+		'video/mp4',
+		'video/webm;codecs=vp9',
+		'video/webm;codecs=vp8',
+		'video/webm'
+	] as const;
+
+	function getSupportedRecordingMimeType(): string {
+		const mimeType = RECORDING_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+		if (!mimeType) throw new Error('browser ไม่รองรับการบันทึก video จาก canvas');
+		return mimeType;
+	}
+
+	function getRecordingExtension(mimeType: string): 'mp4' | 'webm' {
+		return mimeType.includes('mp4') ? 'mp4' : 'webm';
+	}
+
+	function createRecording(stream: MediaStream, mimeType: string): {
+		recorder: MediaRecorder;
+		done: Promise<Blob>;
+	} {
+		const chunks: Blob[] = [];
+		const recorder = new MediaRecorder(stream, {
+			mimeType,
+			videoBitsPerSecond: 10_000_000
+		});
+		const done = new Promise<Blob>((resolve, reject) => {
+			recorder.ondataavailable = (event) => {
+				if (event.data.size > 0) chunks.push(event.data);
+			};
+			recorder.onerror = () => reject(new Error('บันทึก video stream ไม่สำเร็จ'));
+			recorder.onstop = () => {
+				if (!chunks.length) {
+					reject(new Error('ไม่ได้รับข้อมูล video จาก recorder'));
+					return;
+				}
+				resolve(new Blob(chunks, { type: mimeType }));
+			};
+		});
+		return { recorder, done };
+	}
+
+	function drawExportFrame(
+		ctx: CanvasRenderingContext2D,
+		canvas: HTMLCanvasElement,
+		video: HTMLVideoElement,
+		slide: VideoCarouselSlide
+	) {
+		ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+		if (slide.layout_type === 'quiz') {
+			drawQuizLayout(ctx, slide, canvas.width, canvas.height);
+		} else if (slide.layout_type === 'quote') {
+			drawQuoteLayout(ctx, slide, canvas.width, canvas.height);
+		} else {
+			drawStandardLayout(ctx, slide, canvas.width, canvas.height);
+		}
+	}
+
+	async function renderRecordedSlide(
+		ctx: CanvasRenderingContext2D,
+		canvas: HTMLCanvasElement,
+		video: HTMLVideoElement,
+		slide: VideoCarouselSlide,
+		clipLabel: string,
+		progressStart: number,
+		progressEnd: number
+	): Promise<void> {
+		const durationSeconds = Math.max(0.1, slide.duration_seconds);
+		await seekVideo(video, 0, clipLabel);
+		video.loop = true;
+		await video.play().catch((error: unknown) => {
+			throw new Error(`${clipLabel}: เล่น video เพื่อ export ไม่สำเร็จ (${formatExportError(error)})`);
+		});
+
+		await new Promise<void>((resolve, reject) => {
+			let frameId = 0;
+			const startedAt = performance.now();
+
+			function finish() {
+				if (frameId) cancelAnimationFrame(frameId);
+				video.pause();
+			}
+
+			function draw(now: number) {
+				const elapsed = Math.min((now - startedAt) / 1000, durationSeconds);
+				try {
+					drawExportFrame(ctx, canvas, video, slide);
+					exportProgress = Math.round(progressStart + (elapsed / durationSeconds) * (progressEnd - progressStart));
+				} catch (error) {
+					finish();
+					reject(error instanceof Error ? error : new Error(formatExportError(error)));
+					return;
+				}
+
+				if (elapsed >= durationSeconds) {
+					finish();
+					resolve();
+					return;
+				}
+				frameId = requestAnimationFrame(draw);
+			}
+
+			frameId = requestAnimationFrame(draw);
+		});
+	}
+
+	function downloadBlob(blob: Blob, filename: string) {
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function transcodeRecordingToMp4(blob: Blob, inputExtension: 'webm' | 'mp4'): Promise<Blob> {
+		exportStatus = 'กำลังแปลงไฟล์เป็น MP4…';
+		exportProgress = 90;
+
+		const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+		const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
+		const ffmpeg = new FFmpeg();
+		let lastFfmpegLog = '';
+		ffmpeg.on('log', ({ message }) => { lastFfmpegLog = message; });
+		ffmpeg.on('progress', ({ progress }) => {
+			if (Number.isFinite(progress)) exportProgress = 90 + Math.round(Math.max(0, Math.min(progress, 1)) * 5);
+		});
+
+		const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+		await ffmpeg.load({
+			coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+			wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
+		});
+
+		const inputName = `recording.${inputExtension}`;
+		await ffmpeg.writeFile(inputName, await fetchFile(blob));
+		const exitCode = await ffmpeg.exec([
+			'-i', inputName,
+			'-c:v', 'libx264',
+			'-preset', 'veryfast',
+			'-crf', '23',
+			'-pix_fmt', 'yuv420p',
+			'-movflags', '+faststart',
+			'output.mp4'
+		]);
+		if (exitCode !== 0) {
+			throw new Error(`แปลงไฟล์เป็น MP4 ไม่สำเร็จ${lastFfmpegLog ? ` (${lastFfmpegLog})` : ''}`);
+		}
+
+		const rawData = await ffmpeg.readFile('output.mp4');
+		return new Blob([rawData as unknown as BlobPart], { type: 'video/mp4' });
+	}
+
 	// ── Export ────────────────────────────────────────────────────────────────
 	async function handleExport() {
 		if (!slides.length) return;
 		exporting = true;
 		exportProgress = 0;
-		exportStatus = 'กำลังโหลด ffmpeg…';
+		exportStatus = 'กำลังเตรียม export…';
+
+		let recorder: MediaRecorder | null = null;
+		let stream: MediaStream | null = null;
+		const preparedVideos: HTMLVideoElement[] = [];
 
 		try {
-			const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-			const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
-			const ffmpeg = new FFmpeg();
-			ffmpeg.on('progress', ({ progress }) => { exportProgress = Math.round(progress * 100); });
-
-			const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-			await ffmpeg.load({
-				coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-				wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm')
-			});
-
 			const offCanvas = document.createElement('canvas');
 			offCanvas.width = VIDEO_CAROUSEL_CANVAS_WIDTH;
 			offCanvas.height = VIDEO_CAROUSEL_CANVAS_HEIGHT;
 			const offCtx = offCanvas.getContext('2d')!;
-			const concatLines: string[] = [];
+			const mimeType = getSupportedRecordingMimeType();
+
+			exportStatus = 'กำลังโหลด video…';
+			for (let i = 0; i < slides.length; i++) {
+				const slide = slides[i];
+				if (!slide.video_url) throw new Error(`Clip ${i + 1}: ไม่มี video URL`);
+				const clipLabel = `Clip ${i + 1}/${slides.length}`;
+				exportStatus = `${clipLabel}: กำลังโหลด video…`;
+				const video = await loadExportVideo(slide.video_url, clipLabel);
+				preparedVideos.push(video);
+				exportProgress = Math.round(((i + 1) / slides.length) * 10);
+			}
+
+			stream = offCanvas.captureStream(24);
+			const recording = createRecording(stream, mimeType);
+			recorder = recording.recorder;
+
+			drawExportFrame(offCtx, offCanvas, preparedVideos[0], slides[0]);
+			recorder.start(1000);
 
 			for (let i = 0; i < slides.length; i++) {
 				const slide = slides[i];
-				exportStatus = `Clip ${i + 1}/${slides.length}: กำลังโหลด video…`;
-
-				const vid = document.createElement('video');
-				vid.crossOrigin = 'anonymous';
-				vid.muted = true;
-				vid.src = slide.video_url ?? '';
-				await new Promise<void>((res, rej) => { vid.onloadedmetadata = () => res(); vid.onerror = () => rej(); vid.load(); });
-
-				const fps = 24;
-				const totalFrames = slide.duration_seconds * fps;
-				const frameDuration = 1 / fps;
-				const frameFiles: string[] = [];
-
-				for (let f = 0; f < totalFrames; f++) {
-					vid.currentTime = (f * frameDuration) % (vid.duration || slide.duration_seconds);
-					await new Promise<void>((r) => { vid.onseeked = () => r(); });
-
-					offCtx.drawImage(vid, 0, 0, offCanvas.width, offCanvas.height);
-
-					if (slide.layout_type === 'quiz') {
-						drawQuizLayout(offCtx, slide, offCanvas.width, offCanvas.height);
-					} else {
-						drawStandardLayout(offCtx, slide, offCanvas.width, offCanvas.height);
-					}
-
-					const blob = await new Promise<Blob>((r) => offCanvas.toBlob((b) => r(b!), 'image/jpeg', 0.92));
-					const fname = `clip${i}_frame${String(f).padStart(5, '0')}.jpg`;
-					await ffmpeg.writeFile(fname, await fetchFile(blob));
-					frameFiles.push(fname);
-					exportProgress = Math.round(((i * totalFrames + f) / (slides.length * totalFrames)) * 80);
-				}
-
-				const listName = `clip${i}_list.txt`;
-				const listContent = frameFiles.map((fn) => `file '${fn}'\nduration ${frameDuration}`).join('\n');
-				await ffmpeg.writeFile(listName, listContent);
-
-				const clipName = `clip${i}.mp4`;
-				exportStatus = `Clip ${i + 1}/${slides.length}: กำลัง encode…`;
-				await ffmpeg.exec([
-					'-f', 'concat', '-safe', '0', '-i', listName,
-					'-vf', `fps=${fps},scale=${VIDEO_CAROUSEL_CANVAS_WIDTH}:${VIDEO_CAROUSEL_CANVAS_HEIGHT}`,
-					'-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-pix_fmt', 'yuv420p',
-					'-movflags', '+faststart', clipName
-				]);
-				concatLines.push(`file '${clipName}'`);
-				for (const fn of frameFiles) await ffmpeg.deleteFile(fn).catch(() => {});
-				await ffmpeg.deleteFile(listName).catch(() => {});
+				const clipLabel = `Clip ${i + 1}/${slides.length}`;
+				exportStatus = `${clipLabel}: กำลัง render…`;
+				await renderRecordedSlide(
+					offCtx,
+					offCanvas,
+					preparedVideos[i],
+					slide,
+					clipLabel,
+					10 + (i / slides.length) * 80,
+					10 + ((i + 1) / slides.length) * 80
+				);
 			}
 
-			exportStatus = 'กำลัง merge clips…';
-			exportProgress = 85;
-			await ffmpeg.writeFile('concat_final.txt', concatLines.join('\n'));
-			await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat_final.txt', '-c', 'copy', 'output.mp4']);
+			exportStatus = 'กำลัง finalize video…';
+			exportProgress = 90;
+			recorder.stop();
+			const recordedBlob = await recording.done;
+			stream.getTracks().forEach((track) => track.stop());
+			stream = null;
 
 			exportProgress = 95;
 			exportStatus = 'กำลัง download…';
-			const rawData = await ffmpeg.readFile('output.mp4');
-			const blob = new Blob([rawData as unknown as BlobPart], { type: 'video/mp4' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `${project?.title ?? 'video-carousel'}.mp4`;
-			a.click();
-			URL.revokeObjectURL(url);
+			const extension = getRecordingExtension(mimeType);
+			const outputBlob = extension === 'mp4'
+				? recordedBlob
+				: await transcodeRecordingToMp4(recordedBlob, extension);
+			downloadBlob(outputBlob, `${project?.title ?? 'video-carousel'}.mp4`);
 
 			exportProgress = 100;
 			exportStatus = 'เสร็จสิ้น!';
@@ -425,9 +699,17 @@
 				});
 			}
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : 'Export ล้มเหลว');
-			exportStatus = 'เกิดข้อผิดพลาด';
+			const message = formatExportError(err);
+			toast.error(message);
+			exportStatus = message;
 		} finally {
+			if (recorder && recorder.state !== 'inactive') recorder.stop();
+			if (stream) stream.getTracks().forEach((track) => track.stop());
+			for (const video of preparedVideos) {
+				video.pause();
+				video.removeAttribute('src');
+				video.load();
+			}
 			exporting = false;
 		}
 	}
@@ -451,7 +733,10 @@
 		<!-- Header -->
 		<div class="editor-header">
 			<button class="back-btn" onclick={() => goto('/video-carousel')}>←</button>
-			<h1 class="editor-title">{project.title}</h1>
+			<div class="title-stack">
+				<h1 class="editor-title">{project.title}</h1>
+				<span class="template-pill">{VIDEO_CAROUSEL_TEMPLATE_LABELS[project.template_type]}</span>
+			</div>
 			<div class="header-actions">
 				<Button variant="ghost" onclick={() => (showSettings = !showSettings)}>Font</Button>
 				<Button variant="ghost" onclick={openSwapPanel} disabled={!activeSlide}>เปลี่ยน Video</Button>
@@ -492,7 +777,7 @@
 			{#if activeSlide}
 				<div class="edit-panel">
 					<div class="edit-section">
-						<span class="edit-label">หัวข้อหลัก</span>
+						<span class="edit-label">{activeSlide.layout_type === 'quiz' ? 'หัวข้อหลัก' : 'ข้อความหลัก'}</span>
 						{#if editingField === 'text'}
 							<textarea
 								class="edit-input"
@@ -509,52 +794,85 @@
 						{/if}
 					</div>
 
-					<div class="edit-section">
-						<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความเน้นสีทอง</span>
-						{#if editingField === 'accent'}
-							<input
-								class="edit-input-line"
-								bind:value={draftValue}
-								onblur={commitEdit}
-								autofocus
-								placeholder="เช่น คุณจะเลือกอะไร?"
-							/>
-						{:else}
-							<button class="edit-value-btn accent" ondblclick={() => startEdit('accent')}>
-								{activeSlide.accent_text || '+ เพิ่มข้อความเน้น'}
-								<span class="edit-hint">double-click แก้ไข</span>
-							</button>
-						{/if}
-					</div>
-
-					<div class="edit-section">
-						<div class="options-header">
-							<span class="edit-label">ตัวเลือก ({activeSlide.options.length})</span>
-							{#if activeSlide.options.length < 6}
-								<button class="add-opt-btn" onclick={addOption}>+ เพิ่ม</button>
+					{#if activeSlide.layout_type === 'quiz'}
+						<div class="edit-section">
+							<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความเน้นสีทอง</span>
+							{#if editingField === 'accent'}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									autofocus
+									placeholder="เช่น คุณจะเลือกอะไร?"
+								/>
+							{:else}
+								<button class="edit-value-btn accent" ondblclick={() => startEdit('accent')}>
+									{activeSlide.accent_text || '+ เพิ่มข้อความเน้น'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
 							{/if}
 						</div>
-						<div class="options-list">
-							{#each activeSlide.options as opt, i}
-								<div class="option-row">
-									<span class="option-letter" style="color:{ACCENT_COLOR}">{OPTION_LETTERS[i]}.</span>
-									{#if editingField === i}
-										<input
-											class="option-input"
-											bind:value={draftValue}
-											onblur={commitEdit}
-											autofocus
-										/>
-									{:else}
-										<button class="option-text-btn" ondblclick={() => startEdit(i)}>
-											{opt || '—'}
-										</button>
-									{/if}
-									<button class="remove-opt-btn" onclick={() => removeOption(i)} title="ลบ">×</button>
-								</div>
-							{/each}
+
+						<div class="edit-section">
+							<div class="options-header">
+								<span class="edit-label">ตัวเลือก ({activeSlide.options.length})</span>
+								{#if activeSlide.options.length < 6}
+									<button class="add-opt-btn" onclick={addOption}>+ เพิ่ม</button>
+								{/if}
+							</div>
+							<div class="options-list">
+								{#each activeSlide.options as opt, i}
+									<div class="option-row">
+										<span class="option-letter" style="color:{ACCENT_COLOR}">{OPTION_LETTERS[i]}.</span>
+										{#if editingField === i}
+											<input
+												class="option-input"
+												bind:value={draftValue}
+												onblur={commitEdit}
+												autofocus
+											/>
+										{:else}
+											<button class="option-text-btn" ondblclick={() => startEdit(i)}>
+												{opt || '—'}
+											</button>
+										{/if}
+										<button class="remove-opt-btn" onclick={() => removeOption(i)} title="ลบ">×</button>
+									</div>
+								{/each}
+							</div>
 						</div>
-					</div>
+					{:else}
+						<div class="edit-section">
+							<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความรอง</span>
+							{#if editingField === 'subtext'}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									autofocus
+									placeholder="เช่น BigLot Gold Insight"
+								/>
+							{:else}
+								<button class="edit-value-btn accent" ondblclick={() => startEdit('subtext')}>
+									{activeSlide.subtext || '+ เพิ่มข้อความรอง'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+
+						<div class="edit-section">
+							<span class="edit-label">ตำแหน่งข้อความ</span>
+							<select
+								class="field-select"
+								value={activeSlide.text_position}
+								onchange={(event) => setTextPosition((event.currentTarget as HTMLSelectElement).value as VideoTextPosition)}
+							>
+								<option value="top">Top</option>
+								<option value="center">Center</option>
+								<option value="bottom">Bottom</option>
+							</select>
+						</div>
+					{/if}
 
 					<div class="edit-section">
 						<span class="edit-label">Search query (Pexels)</span>
@@ -626,10 +944,28 @@
 		color: var(--color-slate-600); padding: 0.25rem 0.5rem; border-radius: var(--radius-sm);
 	}
 	.back-btn:hover { background: var(--color-slate-100); }
+	.title-stack {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
 	.editor-title {
-		flex: 1; font-family: var(--font-heading); font-size: var(--text-md);
+		min-width: 0; font-family: var(--font-heading); font-size: var(--text-md);
 		font-weight: var(--fw-bold); color: var(--color-slate-900); margin: 0;
 		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	}
+	.template-pill {
+		flex-shrink: 0;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-bold);
+		color: var(--color-primary);
+		background: var(--color-primary-bg);
+		border: 1px solid var(--color-primary-border);
+		border-radius: 999px;
+		padding: 0.18rem 0.5rem;
+		white-space: nowrap;
 	}
 	.header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 
