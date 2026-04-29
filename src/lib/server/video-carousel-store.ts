@@ -8,7 +8,8 @@ import type {
 	VideoTextPosition,
 	VideoLayoutType,
 	VideoCarouselTemplateType,
-	VideoFilterType
+	VideoFilterType,
+	VideoTextBoxTransforms
 } from '$lib/video-carousel';
 import type { CarouselFontPreset } from '$lib/types';
 
@@ -82,6 +83,22 @@ function normalizeInteger(value: unknown, fallback = 0): number {
 	return Number.isFinite(numberValue) ? Math.round(numberValue) : fallback;
 }
 
+function normalizeTextBoxTransforms(value: unknown): VideoTextBoxTransforms {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+	const transforms: VideoTextBoxTransforms = {};
+	for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+		if (!key || !rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) continue;
+		const raw = rawValue as Record<string, unknown>;
+		transforms[key] = {
+			x_px: normalizeInteger(raw.x_px),
+			y_px: normalizeInteger(raw.y_px),
+			scale_percent: normalizeInteger(raw.scale_percent, 100)
+		};
+	}
+	return transforms;
+}
+
 function normalizeSlide(row: JsonRecord): VideoCarouselSlide {
 	return {
 		id: row.id as string,
@@ -96,6 +113,7 @@ function normalizeSlide(row: JsonRecord): VideoCarouselSlide {
 		text_offset_x_px: normalizeInteger(row.text_offset_x_px),
 		text_offset_y_px: normalizeInteger(row.text_offset_y_px),
 		text_scale_percent: normalizeInteger(row.text_scale_percent, 100),
+		text_box_transforms: normalizeTextBoxTransforms(row.text_box_transforms_json),
 		pexels_video_id: typeof row.pexels_video_id === 'number' ? row.pexels_video_id : null,
 		video_url: typeof row.video_url === 'string' ? row.video_url : null,
 		thumbnail_url: typeof row.thumbnail_url === 'string' ? row.thumbnail_url : null,
@@ -214,6 +232,7 @@ export async function upsertVideoCarouselSlides(
 		text_offset_x_px?: number;
 		text_offset_y_px?: number;
 		text_scale_percent?: number;
+		text_box_transforms?: VideoTextBoxTransforms;
 		pexels_video_id?: number | null;
 		video_url?: string | null;
 		thumbnail_url?: string | null;
@@ -242,6 +261,7 @@ export async function upsertVideoCarouselSlides(
 		text_offset_x_px: s.text_offset_x_px ?? 0,
 		text_offset_y_px: s.text_offset_y_px ?? 0,
 		text_scale_percent: s.text_scale_percent ?? 100,
+		text_box_transforms_json: s.text_box_transforms ?? {},
 		pexels_video_id: s.pexels_video_id ?? null,
 		video_url: s.video_url ?? null,
 		thumbnail_url: s.thumbnail_url ?? null,
@@ -272,6 +292,7 @@ export async function updateVideoCarouselSlide(
 		text_offset_x_px: number;
 		text_offset_y_px: number;
 		text_scale_percent: number;
+		text_box_transforms_json: VideoTextBoxTransforms;
 		pexels_video_id: number | null;
 		video_url: string | null;
 		thumbnail_url: string | null;

@@ -5,6 +5,12 @@ export type VideoTextPosition = 'top' | 'center' | 'bottom';
 export type VideoLayoutType = 'standard' | 'quiz' | 'quote' | 'listicle' | 'stat';
 export type VideoCarouselTemplateType = 'quiz' | 'quote' | 'listicle' | 'stat';
 export type VideoFilterType = 'none' | 'grayscale';
+export interface VideoTextBoxTransform {
+	x_px: number;
+	y_px: number;
+	scale_percent: number;
+}
+export type VideoTextBoxTransforms = Record<string, VideoTextBoxTransform>;
 export type VideoQuoteCategory =
 	| 'discipline'
 	| 'mindset'
@@ -28,6 +34,7 @@ export interface VideoCarouselSlide {
 	text_offset_x_px: number;
 	text_offset_y_px: number;
 	text_scale_percent: number;
+	text_box_transforms: VideoTextBoxTransforms;
 	pexels_video_id: number | null;
 	video_url: string | null;
 	thumbnail_url: string | null;

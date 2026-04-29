@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getVideoCarouselSlides, upsertVideoCarouselSlides } from '$lib/server/video-carousel-store';
-import type { VideoLayoutType, VideoTextPosition, VideoFilterType } from '$lib/video-carousel';
+import type { VideoLayoutType, VideoTextPosition, VideoFilterType, VideoTextBoxTransforms } from '$lib/video-carousel';
 
 export const GET: RequestHandler = async ({ params }) => {
 	try {
@@ -34,6 +34,9 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 				text_offset_x_px: typeof s.text_offset_x_px === 'number' ? s.text_offset_x_px : 0,
 				text_offset_y_px: typeof s.text_offset_y_px === 'number' ? s.text_offset_y_px : 0,
 				text_scale_percent: typeof s.text_scale_percent === 'number' ? s.text_scale_percent : 100,
+				text_box_transforms: s.text_box_transforms && typeof s.text_box_transforms === 'object' && !Array.isArray(s.text_box_transforms)
+					? (s.text_box_transforms as VideoTextBoxTransforms)
+					: {},
 				pexels_video_id: typeof s.pexels_video_id === 'number' ? s.pexels_video_id : null,
 				video_url: typeof s.video_url === 'string' ? s.video_url : null,
 				thumbnail_url: typeof s.thumbnail_url === 'string' ? s.thumbnail_url : null,
