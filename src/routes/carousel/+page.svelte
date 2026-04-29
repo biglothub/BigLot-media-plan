@@ -213,7 +213,10 @@
 		aiSuggestions = [];
 
 		try {
-			const prompt = [activeAiPresetPrompt, aiCustomPrompt.trim()].filter(Boolean).join('\n');
+			const seedTitlePrompt = newIdeaTitle.trim()
+				? `หัวข้อที่ทีมเริ่มคิดไว้: "${newIdeaTitle.trim()}" — ช่วยแตกเป็นหัวข้อ carousel ที่คมขึ้นและใช้ทำงานได้จริง`
+				: '';
+			const prompt = [activeAiPresetPrompt, seedTitlePrompt, aiCustomPrompt.trim()].filter(Boolean).join('\n');
 			const requestBody: Record<string, unknown> = {
 				useCase: 'carousel_studio',
 				prompt: prompt || undefined,
@@ -389,6 +392,13 @@
 					onkeydown={(e) => { if (e.key === 'Enter' && !creatingStandalone) void createStandaloneProject(); }}
 				/>
 				<button
+					class="command-ai-btn"
+					disabled={creatingStandalone || aiSuggestLoading}
+					onclick={() => void suggestTradingIdeas()}
+				>
+					{aiSuggestLoading ? 'AI กำลังคิด…' : 'AI คิดหัวข้อ'}
+				</button>
+				<button
 					class="command-btn"
 					disabled={creatingStandalone}
 					onclick={() => void createStandaloneProject()}
@@ -396,6 +406,27 @@
 					{creatingStandalone ? 'Creating…' : 'Create'}
 				</button>
 			</div>
+
+			{#if aiSuggestError}
+				<p class="quick-ai-error">{aiSuggestError}</p>
+			{/if}
+
+			{#if aiSuggestions.length > 0}
+				<div class="quick-ai-suggestions" aria-label="AI topic suggestions">
+					<div class="quick-ai-head">
+						<span>{contentMode === 'quote' ? 'Quote topics จาก AI' : 'Carousel topics จาก AI'}</span>
+						<button type="button" onclick={() => (aiSuggestions = [])}>ปิด</button>
+					</div>
+					<div class="quick-ai-grid">
+						{#each aiSuggestions as suggestion}
+							<button type="button" class="quick-ai-card" onclick={() => applySuggestionToDraft(suggestion)}>
+								<span class="quick-ai-title">{suggestion.title}</span>
+								<span class="quick-ai-desc">{suggestion.description}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			<details class="adv-panel">
 				<summary class="adv-summary">
@@ -680,6 +711,124 @@
 	.command-btn:disabled {
 		opacity: 0.55;
 		cursor: not-allowed;
+	}
+
+	.command-ai-btn {
+		padding: 0.75rem 1rem;
+		border-radius: var(--radius-lg);
+		border: 1px solid transparent;
+		background: linear-gradient(135deg, var(--color-blue-600), var(--color-purple-600) 58%, var(--color-orange-500));
+		color: #fff;
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		cursor: pointer;
+		white-space: nowrap;
+		box-shadow: 0 8px 22px rgba(79, 70, 229, 0.18);
+		transition: filter 120ms ease, opacity 120ms ease, box-shadow 120ms ease;
+	}
+
+	.command-ai-btn:hover:not(:disabled) {
+		filter: saturate(1.08) brightness(1.03);
+		box-shadow: 0 10px 26px rgba(79, 70, 229, 0.24);
+	}
+
+	.command-ai-btn:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
+	}
+
+	.quick-ai-error {
+		margin: 0;
+		padding: var(--space-2) var(--space-3);
+		border-radius: var(--radius-md);
+		background: var(--color-red-50);
+		border: 1px solid rgba(220, 38, 38, 0.14);
+		color: var(--color-red-700);
+		font-size: var(--text-sm);
+	}
+
+	.quick-ai-suggestions {
+		display: grid;
+		gap: var(--space-2);
+		padding: var(--space-3);
+		border: 1px solid var(--color-primary-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-primary-bg);
+	}
+
+	.quick-ai-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.quick-ai-head span {
+		font-size: var(--text-xs);
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-700);
+	}
+
+	.quick-ai-head button {
+		border: none;
+		background: transparent;
+		color: var(--color-slate-500);
+		font: inherit;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-semibold);
+		cursor: pointer;
+		padding: 0.1rem 0.2rem;
+		border-radius: var(--radius-sm);
+	}
+
+	.quick-ai-head button:hover {
+		background: rgba(37, 99, 235, 0.08);
+		color: var(--color-slate-800);
+	}
+
+	.quick-ai-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-2);
+	}
+
+	.quick-ai-card {
+		display: grid;
+		gap: 0.2rem;
+		width: 100%;
+		padding: var(--space-3);
+		border: 1px solid rgba(37, 99, 235, 0.18);
+		border-radius: var(--radius-md);
+		background: rgba(255, 255, 255, 0.74);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+	}
+
+	.quick-ai-card:hover {
+		background: #fff;
+		border-color: var(--color-primary-border);
+		transform: translateY(-1px);
+	}
+
+	.quick-ai-title {
+		font-size: var(--text-sm);
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-900);
+		line-height: 1.35;
+	}
+
+	.quick-ai-desc {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		font-size: var(--text-xs);
+		color: var(--color-slate-500);
+		line-height: 1.45;
 	}
 
 	/* ── Advanced panel ── */

@@ -2,13 +2,19 @@
 	import { goto } from '$app/navigation';
 	import { Button, PageHeader, Spinner, toast } from '$lib';
 	import type { PageData } from './$types';
-	import type { VideoCarouselSlide, VideoCarouselProject, VideoTextPosition } from '$lib/video-carousel';
+	import type {
+		VideoCarouselSlide,
+		VideoCarouselProject,
+		VideoTextPosition,
+		VideoFilterType
+	} from '$lib/video-carousel';
 	import {
 		VIDEO_FONT_MAP,
 		FONT_PRESET_LABELS,
 		VIDEO_CAROUSEL_TEMPLATE_LABELS,
 		VIDEO_CAROUSEL_CANVAS_WIDTH,
 		VIDEO_CAROUSEL_CANVAS_HEIGHT,
+		VIDEO_FILTER_LABELS,
 		OPTION_LETTERS,
 		ACCENT_COLOR,
 		videoCarouselTotalDuration
@@ -16,6 +22,41 @@
 	import type { CarouselFontPreset } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
+
+	type EditableField = 'text' | 'accent' | 'subtext' | number;
+	type EditSurface = 'panel' | 'preview';
+	type PreviewEditTone = 'primary' | 'accent' | 'option';
+	interface PreviewEditSpec {
+		key: string;
+		field: EditableField;
+		label: string;
+		value: string;
+		emptyLabel: string;
+		multiline: boolean;
+		tone: PreviewEditTone;
+		targetStyle: string;
+		controlStyle: string;
+	}
+	interface LayoutTransformSpec {
+		left: number;
+		top: number;
+		width: number;
+		height: number;
+		style: string;
+	}
+	interface TransformDragState {
+		slideId: string;
+		mode: 'move' | 'resize';
+		startClientX: number;
+		startClientY: number;
+		startOffsetX: number;
+		startOffsetY: number;
+		startScalePercent: number;
+		startDistance: number;
+		originClientX: number;
+		originClientY: number;
+		canvasRect: DOMRect;
+	}
 
 	let project = $state<VideoCarouselProject | null>(data.project);
 	let slides = $state<VideoCarouselSlide[]>(data.slides ?? []);
@@ -25,15 +66,19 @@
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
+	let uploadVideoInputEl = $state<HTMLInputElement | null>(null);
 
 	// ── Edit state ────────────────────────────────────────────────────────────
-	let editingField = $state<'text' | 'accent' | 'subtext' | number | null>(null);
+	let editingField = $state<EditableField | null>(null);
+	let editingSlideId = $state<string | null>(null);
+	let editingSurface = $state<EditSurface | null>(null);
 	let draftValue = $state('');
 
 	// ── Swap panel ────────────────────────────────────────────────────────────
 	let showSwapPanel = $state(false);
 	let swapCandidates = $state<Array<{ id: number; thumbnail_url: string; video_url: string | null; duration: number; user_name: string }>>([]);
 	let loadingSwap = $state(false);
+	let uploadingVideo = $state(false);
 
 	// ── Export ────────────────────────────────────────────────────────────────
 	let exporting = $state(false);
@@ -52,8 +97,66 @@
 		{ value: 'editorial_serif', label: FONT_PRESET_LABELS.editorial_serif }
 	];
 
+	const MAX_UPLOAD_VIDEO_BYTES = 100 * 1024 * 1024;
+	const SUPPORTED_UPLOAD_VIDEO_TYPES = new Set(['video/mp4', 'video/webm']);
+	const MIN_TEXT_SCALE_PERCENT = 50;
+	const MAX_TEXT_SCALE_PERCENT = 180;
+
+	let offsetSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let transformDrag = $state<TransformDragState | null>(null);
+	let selectedTransformSlideId = $state<string | null>(null);
+
 	// ── Canvas draw ───────────────────────────────────────────────────────────
 	let animFrameId: number | null = null;
+
+	function isEditingSlideField(slide: VideoCarouselSlide, field: EditableField): boolean {
+		return editingSlideId === slide.id && editingField === field;
+	}
+
+	function drawVideoFrame(
+		ctx: CanvasRenderingContext2D,
+		video: HTMLVideoElement,
+		slide: VideoCarouselSlide,
+		w: number,
+		h: number
+	) {
+		ctx.save();
+		ctx.filter = slide.video_filter === 'grayscale' ? 'grayscale(1)' : 'none';
+		ctx.drawImage(video, 0, 0, w, h);
+		ctx.restore();
+	}
+
+	function clamp(value: number, min: number, max: number): number {
+		return Math.min(max, Math.max(min, value));
+	}
+
+	function getTextScalePercent(slide: VideoCarouselSlide): number {
+		return clamp(slide.text_scale_percent ?? 100, MIN_TEXT_SCALE_PERCENT, MAX_TEXT_SCALE_PERCENT);
+	}
+
+	function getTextScale(slide: VideoCarouselSlide): number {
+		return getTextScalePercent(slide) / 100;
+	}
+
+	function getTextTransformOriginPercent(slide: VideoCarouselSlide): { x: number; y: number } {
+		if (slide.layout_type === 'quiz') return { x: 50, y: 56 };
+		if (slide.layout_type === 'listicle' || slide.layout_type === 'stat') return { x: 50, y: 50 };
+		return { x: 50, y: textPositionPercent(slide) };
+	}
+
+	function applyTextCanvasTransform(
+		ctx: CanvasRenderingContext2D,
+		slide: VideoCarouselSlide,
+		w: number,
+		h: number
+	) {
+		const origin = getTextTransformOriginPercent(slide);
+		const originX = (origin.x / 100) * w;
+		const originY = (origin.y / 100) * h;
+		ctx.translate(originX + (slide.text_offset_x_px ?? 0), originY + (slide.text_offset_y_px ?? 0));
+		ctx.scale(getTextScale(slide), getTextScale(slide));
+		ctx.translate(-originX, -originY);
+	}
 
 	function drawQuizLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
 		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
@@ -67,6 +170,9 @@
 		const optionsStartY = h * 0.42;
 		const optionLineH = h * 0.083;
 
+		ctx.save();
+		applyTextCanvasTransform(ctx, slide, w, h);
+
 		// ── Title (text) ─────────────────────────────────────────────────────
 		ctx.save();
 		ctx.textAlign = 'center';
@@ -75,12 +181,12 @@
 		ctx.font = `bold ${Math.round(w * 0.082)}px ${font}`;
 		ctx.shadowColor = 'rgba(0,0,0,0.8)';
 		ctx.shadowBlur = 14;
-		const titleText = editingField === 'text' ? draftValue : slide.text;
+		const titleText = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
 		wrapTextCentered(ctx, titleText, w / 2, titleY, w - padX * 2, Math.round(w * 0.095));
 		ctx.restore();
 
 		// ── Accent text (gold) ───────────────────────────────────────────────
-		const accentText = editingField === 'accent' ? draftValue : (slide.accent_text ?? '');
+		const accentText = isEditingSlideField(slide, 'accent') ? draftValue : (slide.accent_text ?? '');
 		if (accentText) {
 			ctx.save();
 			ctx.textAlign = 'center';
@@ -94,7 +200,7 @@
 		}
 
 		// ── Options ──────────────────────────────────────────────────────────
-		const options = editingField !== null && typeof editingField === 'number'
+		const options = editingSlideId === slide.id && editingField !== null && typeof editingField === 'number'
 			? slide.options.map((o, i) => (i === editingField ? draftValue : o))
 			: slide.options;
 
@@ -129,10 +235,13 @@
 			ctx.fillText(opt, padX + w * 0.1, y);
 			ctx.restore();
 		});
+
+		ctx.restore();
 	}
 
 	function drawStandardLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
 		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
+		const posX = w / 2;
 		const posY = slide.text_position === 'top' ? h * 0.18 : slide.text_position === 'bottom' ? h * 0.8 : h * 0.5;
 		const isTop = slide.text_position === 'top';
 
@@ -142,7 +251,9 @@
 		ctx.fillStyle = grad;
 		ctx.fillRect(0, isTop ? 0 : h * 0.55, w, h * 0.45);
 
-		const text = editingField === 'text' ? draftValue : slide.text;
+		const text = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
+		ctx.save();
+		applyTextCanvasTransform(ctx, slide, w, h);
 		ctx.save();
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
@@ -150,38 +261,34 @@
 		ctx.shadowColor = 'rgba(0,0,0,0.7)';
 		ctx.shadowBlur = 12;
 		ctx.font = `bold ${Math.round(w * 0.072)}px ${font}`;
-		wrapTextCentered(ctx, text, w / 2, posY, w * 0.85, Math.round(w * 0.09));
+		wrapTextCentered(ctx, text, posX, posY, w * 0.85, Math.round(w * 0.09));
 		ctx.restore();
 
-		const sub = slide.subtext ?? '';
+		const sub = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
 		if (sub) {
 			ctx.save();
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.fillStyle = 'rgba(255,255,255,0.85)';
 			ctx.font = `${Math.round(w * 0.038)}px ${font}`;
-			ctx.fillText(sub, w / 2, posY + Math.round(w * 0.12));
+			ctx.fillText(sub, posX, posY + Math.round(w * 0.12));
 			ctx.restore();
 		}
+		ctx.restore();
 	}
 
 	function drawQuoteLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
 		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
+		const posX = w / 2;
 		const posY = slide.text_position === 'top' ? h * 0.28 : slide.text_position === 'bottom' ? h * 0.72 : h * 0.5;
-		const text = editingField === 'text' ? draftValue : slide.text;
-		const sub = editingField === 'subtext' ? draftValue : (slide.subtext ?? '');
+		const text = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
+		const sub = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
 
 		ctx.fillStyle = 'rgba(2, 6, 23, 0.56)';
 		ctx.fillRect(0, 0, w, h);
 
 		ctx.save();
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillStyle = 'rgba(255,255,255,0.22)';
-		ctx.font = `bold ${Math.round(w * 0.22)}px ${font}`;
-		ctx.fillText('"', w / 2, posY - w * 0.18);
-		ctx.restore();
-
+		applyTextCanvasTransform(ctx, slide, w, h);
 		ctx.save();
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
@@ -189,7 +296,7 @@
 		ctx.shadowColor = 'rgba(0,0,0,0.75)';
 		ctx.shadowBlur = 14;
 		ctx.font = `bold ${Math.round(w * 0.07)}px ${font}`;
-		wrapTextCentered(ctx, text, w / 2, posY, w * 0.78, Math.round(w * 0.09));
+		wrapTextCentered(ctx, text, posX, posY, w * 0.78, Math.round(w * 0.09));
 		ctx.restore();
 
 		if (sub) {
@@ -198,9 +305,10 @@
 			ctx.textBaseline = 'middle';
 			ctx.fillStyle = ACCENT_COLOR;
 			ctx.font = `bold ${Math.round(w * 0.033)}px ${font}`;
-			ctx.fillText(sub, w / 2, posY + Math.round(w * 0.17));
+			ctx.fillText(sub, posX, posY + Math.round(w * 0.17));
 			ctx.restore();
 		}
+		ctx.restore();
 	}
 
 	function drawFrame() {
@@ -210,17 +318,155 @@
 		const w = canvasEl.width;
 		const h = canvasEl.height;
 
-		ctx.drawImage(videoEl, 0, 0, w, h);
+		drawVideoFrame(ctx, videoEl, activeSlide, w, h);
 
 		if (activeSlide.layout_type === 'quiz') {
 			drawQuizLayout(ctx, activeSlide, w, h);
 		} else if (activeSlide.layout_type === 'quote') {
 			drawQuoteLayout(ctx, activeSlide, w, h);
+		} else if (activeSlide.layout_type === 'listicle') {
+			drawListicleLayout(ctx, activeSlide, w, h);
+		} else if (activeSlide.layout_type === 'stat') {
+			drawStatLayout(ctx, activeSlide, w, h);
 		} else {
 			drawStandardLayout(ctx, activeSlide, w, h);
 		}
 
 		animFrameId = requestAnimationFrame(drawFrame);
+	}
+
+	function drawListicleLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
+		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
+
+		const grad = ctx.createLinearGradient(0, 0, 0, h);
+		grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+		grad.addColorStop(0.5, 'rgba(0,0,0,0.45)');
+		grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+		ctx.fillStyle = grad;
+		ctx.fillRect(0, 0, w, h);
+
+		const centerX = w / 2;
+		const centerY = h * 0.5;
+
+		ctx.save();
+		applyTextCanvasTransform(ctx, slide, w, h);
+
+		const rankRaw = isEditingSlideField(slide, 'accent') ? draftValue : (slide.accent_text ?? '');
+		const rankText = rankRaw.trim();
+		if (rankText) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = ACCENT_COLOR;
+			ctx.shadowColor = 'rgba(0,0,0,0.7)';
+			ctx.shadowBlur = 16;
+			ctx.font = `900 ${Math.round(w * 0.24)}px ${font}`;
+			ctx.fillText(rankText, centerX, centerY - Math.round(h * 0.16));
+			ctx.restore();
+		}
+
+		const titleText = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
+		if (titleText) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = '#ffffff';
+			ctx.shadowColor = 'rgba(0,0,0,0.8)';
+			ctx.shadowBlur = 14;
+			ctx.font = `bold ${Math.round(w * 0.085)}px ${font}`;
+			wrapTextCentered(ctx, titleText, centerX, centerY + Math.round(h * 0.02), w * 0.82, Math.round(w * 0.105));
+			ctx.restore();
+		}
+
+		const sub = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
+		if (sub) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = 'rgba(255,255,255,0.88)';
+			ctx.shadowColor = 'rgba(0,0,0,0.7)';
+			ctx.shadowBlur = 10;
+			ctx.font = `${Math.round(w * 0.038)}px ${font}`;
+			wrapTextCentered(ctx, sub, centerX, centerY + Math.round(h * 0.16), w * 0.78, Math.round(w * 0.05));
+			ctx.restore();
+		}
+
+		ctx.restore();
+	}
+
+	function drawStatLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
+		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
+
+		ctx.fillStyle = 'rgba(0,0,0,0.6)';
+		ctx.fillRect(0, 0, w, h);
+
+		const centerX = w / 2;
+		const centerY = h * 0.5;
+
+		ctx.save();
+		applyTextCanvasTransform(ctx, slide, w, h);
+
+		const numberText = (isEditingSlideField(slide, 'text') ? draftValue : slide.text).trim();
+		const unitText = (isEditingSlideField(slide, 'accent') ? draftValue : (slide.accent_text ?? '')).trim();
+
+		if (numberText) {
+			ctx.save();
+			ctx.fillStyle = '#ffffff';
+			ctx.shadowColor = 'rgba(0,0,0,0.8)';
+			ctx.shadowBlur = 18;
+			const numberFontSize = Math.round(w * 0.32);
+			const unitFontSize = Math.round(w * 0.13);
+
+			ctx.font = `900 ${numberFontSize}px ${font}`;
+			const numberWidth = ctx.measureText(numberText).width;
+			ctx.font = `900 ${unitFontSize}px ${font}`;
+			const unitWidth = unitText ? ctx.measureText(unitText).width : 0;
+			const gap = unitText ? Math.round(w * 0.018) : 0;
+			const totalWidth = numberWidth + gap + unitWidth;
+			const startX = centerX - totalWidth / 2;
+			const baselineY = centerY - Math.round(h * 0.04);
+
+			ctx.font = `900 ${numberFontSize}px ${font}`;
+			ctx.textBaseline = 'alphabetic';
+			ctx.textAlign = 'left';
+			ctx.fillText(numberText, startX, baselineY + numberFontSize * 0.35);
+
+			if (unitText) {
+				ctx.fillStyle = ACCENT_COLOR;
+				ctx.font = `900 ${unitFontSize}px ${font}`;
+				ctx.fillText(unitText, startX + numberWidth + gap, baselineY + numberFontSize * 0.35);
+			}
+			ctx.restore();
+		}
+
+		const claim = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
+		if (claim) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = '#ffffff';
+			ctx.shadowColor = 'rgba(0,0,0,0.75)';
+			ctx.shadowBlur = 12;
+			ctx.font = `bold ${Math.round(w * 0.055)}px ${font}`;
+			wrapTextCentered(ctx, claim, centerX, centerY + Math.round(h * 0.16), w * 0.84, Math.round(w * 0.07));
+			ctx.restore();
+		}
+
+		const sourceRaw = editingSlideId === slide.id && editingField === 0
+			? draftValue
+			: (slide.options[0] ?? '');
+		const sourceText = sourceRaw.trim();
+		if (sourceText) {
+			ctx.save();
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = 'rgba(255,255,255,0.7)';
+			ctx.font = `${Math.round(w * 0.028)}px ${font}`;
+			ctx.fillText(sourceText, centerX, h * 0.92);
+			ctx.restore();
+		}
+
+		ctx.restore();
 	}
 
 	function wrapTextCentered(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineH: number) {
@@ -265,43 +511,436 @@
 		videoEl.play().catch(() => {});
 	});
 
+	$effect(() => {
+		return () => {
+			if (offsetSaveTimer) clearTimeout(offsetSaveTimer);
+		};
+	});
+
 	// ── Edit helpers ──────────────────────────────────────────────────────────
-	function startEdit(field: 'text' | 'accent' | 'subtext' | number) {
+	function focusOnMount(node: HTMLInputElement | HTMLTextAreaElement) {
+		queueMicrotask(() => {
+			node.focus();
+			node.select();
+		});
+	}
+
+	function previewBoxStyle(left: number, top: number, width: number, height: number): string {
+		return `left:${left}%; top:${top}%; width:${width}%; height:${height}%;`;
+	}
+
+	function getTransformedPreviewBox(
+		slide: VideoCarouselSlide,
+		left: number,
+		top: number,
+		width: number,
+		height: number
+	): LayoutTransformSpec {
+		const origin = getTextTransformOriginPercent(slide);
+		const scale = getTextScale(slide);
+		const transformedLeft = origin.x + getOffsetXPercent(slide) + (left - origin.x) * scale;
+		const transformedTop = origin.y + getOffsetYPercent(slide) + (top - origin.y) * scale;
+		const transformedWidth = width * scale;
+		const transformedHeight = height * scale;
+
+		return {
+			left: transformedLeft,
+			top: transformedTop,
+			width: transformedWidth,
+			height: transformedHeight,
+			style: previewBoxStyle(transformedLeft, transformedTop, transformedWidth, transformedHeight)
+		};
+	}
+
+	function getLayoutTransformSpec(slide: VideoCarouselSlide): LayoutTransformSpec {
+		if (slide.layout_type === 'quiz') {
+			return getTransformedPreviewBox(slide, 50, 56, 92, 72);
+		}
+		if (slide.layout_type === 'listicle') {
+			return getTransformedPreviewBox(slide, 50, 50, 88, 60);
+		}
+		if (slide.layout_type === 'stat') {
+			return getTransformedPreviewBox(slide, 50, 50, 88, 56);
+		}
+		return getTransformedPreviewBox(
+			slide,
+			50,
+			textPositionPercent(slide),
+			slide.layout_type === 'quote' ? 84 : 90,
+			slide.layout_type === 'quote' ? 28 : 24
+		);
+	}
+
+	function textPositionPercent(slide: VideoCarouselSlide): number {
+		if (slide.layout_type === 'quote') {
+			if (slide.text_position === 'top') return 28;
+			if (slide.text_position === 'bottom') return 72;
+			return 50;
+		}
+		if (slide.text_position === 'top') return 18;
+		if (slide.text_position === 'bottom') return 80;
+		return 50;
+	}
+
+	function getOffsetXPercent(slide: VideoCarouselSlide): number {
+		return ((slide.text_offset_x_px ?? 0) / VIDEO_CAROUSEL_CANVAS_WIDTH) * 100;
+	}
+
+	function getOffsetYPercent(slide: VideoCarouselSlide): number {
+		return ((slide.text_offset_y_px ?? 0) / VIDEO_CAROUSEL_CANVAS_HEIGHT) * 100;
+	}
+
+	function getPreviewEditSpecs(slide: VideoCarouselSlide): PreviewEditSpec[] {
+		if (slide.layout_type === 'quiz') {
+			return [
+				{
+					key: 'text',
+					field: 'text',
+					label: 'หัวข้อหลัก',
+					value: slide.text,
+					emptyLabel: 'เพิ่มหัวข้อหลัก',
+					multiline: true,
+					tone: 'primary',
+					targetStyle: getTransformedPreviewBox(slide, 50, 22, 84, 13).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 22, 84, 13).style
+				},
+				{
+					key: 'accent',
+					field: 'accent',
+					label: 'ข้อความเน้นสีทอง',
+					value: slide.accent_text ?? '',
+					emptyLabel: 'เพิ่มข้อความเน้น',
+					multiline: false,
+					tone: 'accent',
+					targetStyle: getTransformedPreviewBox(slide, 50, 28.75, 78, 8).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 28.75, 78, 8).style
+				},
+				...slide.options.map((option, i) => ({
+					key: `option-${i}`,
+					field: i,
+					label: `ตัวเลือก ${OPTION_LETTERS[i] ?? i + 1}`,
+					value: option,
+					emptyLabel: `เพิ่มตัวเลือก ${OPTION_LETTERS[i] ?? i + 1}`,
+					multiline: false,
+					tone: 'option' as const,
+					targetStyle: getTransformedPreviewBox(slide, 50, 42 + i * 8.3, 90, 7).style,
+					controlStyle: getTransformedPreviewBox(slide, 55, 42 + i * 8.3, 70, 6.2).style
+				}))
+			];
+		}
+
+		if (slide.layout_type === 'listicle') {
+			return [
+				{
+					key: 'accent',
+					field: 'accent',
+					label: 'อันดับ',
+					value: slide.accent_text ?? '',
+					emptyLabel: 'เช่น #5',
+					multiline: false,
+					tone: 'accent',
+					targetStyle: getTransformedPreviewBox(slide, 50, 34, 50, 16).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 34, 50, 16).style
+				},
+				{
+					key: 'text',
+					field: 'text',
+					label: 'หัวข้อย่อย',
+					value: slide.text,
+					emptyLabel: 'เพิ่มหัวข้อย่อย',
+					multiline: true,
+					tone: 'primary',
+					targetStyle: getTransformedPreviewBox(slide, 50, 52, 82, 14).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 52, 82, 14).style
+				},
+				{
+					key: 'subtext',
+					field: 'subtext',
+					label: 'Caption',
+					value: slide.subtext ?? '',
+					emptyLabel: 'เพิ่ม caption',
+					multiline: false,
+					tone: 'option',
+					targetStyle: getTransformedPreviewBox(slide, 50, 66, 78, 7).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 66, 78, 7).style
+				}
+			];
+		}
+
+		if (slide.layout_type === 'stat') {
+			return [
+				{
+					key: 'text',
+					field: 'text',
+					label: 'ตัวเลขใหญ่',
+					value: slide.text,
+					emptyLabel: 'เช่น 90',
+					multiline: false,
+					tone: 'primary',
+					targetStyle: getTransformedPreviewBox(slide, 50, 46, 60, 22).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 46, 60, 22).style
+				},
+				{
+					key: 'accent',
+					field: 'accent',
+					label: 'หน่วย',
+					value: slide.accent_text ?? '',
+					emptyLabel: 'เช่น %',
+					multiline: false,
+					tone: 'accent',
+					targetStyle: getTransformedPreviewBox(slide, 78, 46, 18, 14).style,
+					controlStyle: getTransformedPreviewBox(slide, 78, 46, 18, 14).style
+				},
+				{
+					key: 'subtext',
+					field: 'subtext',
+					label: 'Claim',
+					value: slide.subtext ?? '',
+					emptyLabel: 'เพิ่มคำอธิบาย',
+					multiline: true,
+					tone: 'primary',
+					targetStyle: getTransformedPreviewBox(slide, 50, 66, 84, 10).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 66, 84, 10).style
+				},
+				{
+					key: 'option-0',
+					field: 0,
+					label: 'Source / อ้างอิง',
+					value: slide.options[0] ?? '',
+					emptyLabel: 'เพิ่ม source (ไม่บังคับ)',
+					multiline: false,
+					tone: 'option',
+					targetStyle: getTransformedPreviewBox(slide, 50, 92, 70, 5).style,
+					controlStyle: getTransformedPreviewBox(slide, 50, 92, 70, 5).style
+				}
+			];
+		}
+
+		const subOffset = slide.layout_type === 'quote' ? 9.6 : 6.75;
+		return [
+			{
+				key: 'text',
+				field: 'text',
+				label: 'ข้อความหลัก',
+				value: slide.text,
+				emptyLabel: 'เพิ่มข้อความหลัก',
+				multiline: true,
+				tone: 'primary',
+				targetStyle: getTransformedPreviewBox(slide, 50, textPositionPercent(slide), slide.layout_type === 'quote' ? 78 : 85, 16).style,
+				controlStyle: getTransformedPreviewBox(slide, 50, textPositionPercent(slide), slide.layout_type === 'quote' ? 78 : 85, 16).style
+			},
+			{
+				key: 'subtext',
+				field: 'subtext',
+				label: 'ข้อความรอง',
+				value: slide.subtext ?? '',
+				emptyLabel: 'เพิ่มข้อความรอง',
+				multiline: false,
+				tone: 'accent',
+				targetStyle: getTransformedPreviewBox(slide, 50, textPositionPercent(slide) + subOffset, 70, 6).style,
+				controlStyle: getTransformedPreviewBox(slide, 50, textPositionPercent(slide) + subOffset, 70, 6).style
+			}
+		];
+	}
+
+	function isPanelEditing(field: EditableField): boolean {
+		return !!activeSlide && editingSurface === 'panel' && isEditingSlideField(activeSlide, field);
+	}
+
+	function isPreviewEditing(field: EditableField): boolean {
+		return !!activeSlide && editingSurface === 'preview' && isEditingSlideField(activeSlide, field);
+	}
+
+	function startEdit(field: EditableField, surface: EditSurface = 'panel') {
 		if (!activeSlide) return;
 		if (field === 'text') draftValue = activeSlide.text;
 		else if (field === 'accent') draftValue = activeSlide.accent_text ?? '';
 		else if (field === 'subtext') draftValue = activeSlide.subtext ?? '';
 		else draftValue = activeSlide.options[field as number] ?? '';
 		editingField = field;
+		editingSlideId = activeSlide.id;
+		editingSurface = surface;
+		selectedTransformSlideId = activeSlide.id;
+	}
+
+	function cancelEdit() {
+		editingField = null;
+		editingSlideId = null;
+		editingSurface = null;
+		draftValue = '';
 	}
 
 	async function commitEdit() {
-		if (!activeSlide || editingField === null) return;
+		if (editingField === null || !editingSlideId) return;
 		const field = editingField;
+		const slideId = editingSlideId;
+		const slide = slides.find((item) => item.id === slideId);
+		if (!slide) {
+			cancelEdit();
+			return;
+		}
 		editingField = null;
+		editingSlideId = null;
+		editingSurface = null;
 
 		if (field === 'text') {
-			if (draftValue.trim() === activeSlide.text) return;
-			await patchSlide(activeSlide.id, { text: draftValue.trim() });
+			if (draftValue.trim() === slide.text) return;
+			await patchSlide(slideId, { text: draftValue.trim() });
 		} else if (field === 'accent') {
 			const val = draftValue.trim() || null;
-			if (val === activeSlide.accent_text) return;
-			await patchSlide(activeSlide.id, { accent_text: val });
+			if (val === slide.accent_text) return;
+			await patchSlide(slideId, { accent_text: val });
 		} else if (field === 'subtext') {
 			const val = draftValue.trim() || null;
-			if (val === activeSlide.subtext) return;
-			await patchSlide(activeSlide.id, { subtext: val });
+			if (val === slide.subtext) return;
+			await patchSlide(slideId, { subtext: val });
 		} else {
 			const idx = field as number;
-			const newOptions = [...activeSlide.options];
+			const newOptions = [...slide.options];
 			newOptions[idx] = draftValue.trim();
-			await patchSlide(activeSlide.id, { options_json: newOptions });
+			await patchSlide(slideId, { options_json: newOptions });
+		}
+	}
+
+	function handlePreviewEditKeydown(event: KeyboardEvent, multiline: boolean) {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			cancelEdit();
+			return;
+		}
+		if (event.key === 'Enter' && (!multiline || event.metaKey || event.ctrlKey)) {
+			event.preventDefault();
+			void commitEdit();
 		}
 	}
 
 	async function setTextPosition(position: VideoTextPosition) {
 		if (!activeSlide || activeSlide.text_position === position) return;
 		await patchSlide(activeSlide.id, { text_position: position });
+	}
+
+	async function setVideoFilter(filter: VideoFilterType) {
+		if (!activeSlide || activeSlide.video_filter === filter) return;
+		await patchSlide(activeSlide.id, { video_filter: filter });
+	}
+
+	function updateSlideLocal(slideId: string, patch: Partial<VideoCarouselSlide>) {
+		slides = slides.map((slide) => (slide.id === slideId ? { ...slide, ...patch } : slide));
+	}
+
+	function setTextOffset(axis: 'x' | 'y', value: number) {
+		if (!activeSlide) return;
+		const slideId = activeSlide.id;
+		const field = axis === 'x' ? 'text_offset_x_px' : 'text_offset_y_px';
+		const limit = axis === 'x' ? VIDEO_CAROUSEL_CANVAS_WIDTH * 0.55 : VIDEO_CAROUSEL_CANVAS_HEIGHT * 0.55;
+		const normalized = Math.round(clamp(value, -limit, limit));
+		updateSlideLocal(slideId, { [field]: normalized } as Partial<VideoCarouselSlide>);
+
+		if (offsetSaveTimer) clearTimeout(offsetSaveTimer);
+		offsetSaveTimer = setTimeout(() => {
+			void patchSlide(slideId, { [field]: normalized });
+			offsetSaveTimer = null;
+		}, 350);
+	}
+
+	function setTextScale(value: number) {
+		if (!activeSlide) return;
+		const slideId = activeSlide.id;
+		const normalized = Math.round(clamp(value, MIN_TEXT_SCALE_PERCENT, MAX_TEXT_SCALE_PERCENT));
+		updateSlideLocal(slideId, { text_scale_percent: normalized });
+
+		if (offsetSaveTimer) clearTimeout(offsetSaveTimer);
+		offsetSaveTimer = setTimeout(() => {
+			void patchSlide(slideId, { text_scale_percent: normalized });
+			offsetSaveTimer = null;
+		}, 350);
+	}
+
+	async function resetLayoutTransform() {
+		if (!activeSlide) return;
+		if (offsetSaveTimer) {
+			clearTimeout(offsetSaveTimer);
+			offsetSaveTimer = null;
+		}
+		const slideId = activeSlide.id;
+		updateSlideLocal(slideId, { text_offset_x_px: 0, text_offset_y_px: 0, text_scale_percent: 100 });
+		await patchSlide(slideId, { text_offset_x_px: 0, text_offset_y_px: 0, text_scale_percent: 100 });
+	}
+
+	function startLayoutTransform(event: PointerEvent, mode: 'move' | 'resize') {
+		if (!activeSlide || !canvasEl || editingField !== null) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (offsetSaveTimer) {
+			clearTimeout(offsetSaveTimer);
+			offsetSaveTimer = null;
+		}
+
+		const rect = canvasEl.getBoundingClientRect();
+		const spec = getLayoutTransformSpec(activeSlide);
+		const originClientX = rect.left + (spec.left / 100) * rect.width;
+		const originClientY = rect.top + (spec.top / 100) * rect.height;
+		const startDistance = Math.max(
+			8,
+			Math.hypot(event.clientX - originClientX, event.clientY - originClientY)
+		);
+
+		selectedTransformSlideId = activeSlide.id;
+		transformDrag = {
+			slideId: activeSlide.id,
+			mode,
+			startClientX: event.clientX,
+			startClientY: event.clientY,
+			startOffsetX: activeSlide.text_offset_x_px ?? 0,
+			startOffsetY: activeSlide.text_offset_y_px ?? 0,
+			startScalePercent: getTextScalePercent(activeSlide),
+			startDistance,
+			originClientX,
+			originClientY,
+			canvasRect: rect
+		};
+	}
+
+	function handleLayoutTransformPointerMove(event: PointerEvent) {
+		if (!transformDrag) return;
+		const slide = slides.find((item) => item.id === transformDrag?.slideId);
+		if (!slide) return;
+
+		if (transformDrag.mode === 'move') {
+			const dx = (event.clientX - transformDrag.startClientX) * (VIDEO_CAROUSEL_CANVAS_WIDTH / transformDrag.canvasRect.width);
+			const dy = (event.clientY - transformDrag.startClientY) * (VIDEO_CAROUSEL_CANVAS_HEIGHT / transformDrag.canvasRect.height);
+			updateSlideLocal(slide.id, {
+				text_offset_x_px: Math.round(clamp(transformDrag.startOffsetX + dx, -VIDEO_CAROUSEL_CANVAS_WIDTH * 0.55, VIDEO_CAROUSEL_CANVAS_WIDTH * 0.55)),
+				text_offset_y_px: Math.round(clamp(transformDrag.startOffsetY + dy, -VIDEO_CAROUSEL_CANVAS_HEIGHT * 0.55, VIDEO_CAROUSEL_CANVAS_HEIGHT * 0.55))
+			});
+			return;
+		}
+
+		const distance = Math.max(
+			8,
+			Math.hypot(event.clientX - transformDrag.originClientX, event.clientY - transformDrag.originClientY)
+		);
+		const nextScale = Math.round(
+			clamp(
+				transformDrag.startScalePercent * (distance / transformDrag.startDistance),
+				MIN_TEXT_SCALE_PERCENT,
+				MAX_TEXT_SCALE_PERCENT
+			)
+		);
+		updateSlideLocal(slide.id, { text_scale_percent: nextScale });
+	}
+
+	function handleLayoutTransformPointerUp() {
+		if (!transformDrag) return;
+		const slide = slides.find((item) => item.id === transformDrag?.slideId);
+		const slideId = transformDrag.slideId;
+		transformDrag = null;
+		if (!slide) return;
+		void patchSlide(slideId, {
+			text_offset_x_px: slide.text_offset_x_px,
+			text_offset_y_px: slide.text_offset_y_px,
+			text_scale_percent: slide.text_scale_percent
+		});
 	}
 
 	function addOption() {
@@ -353,6 +992,55 @@
 		if (!activeSlide) return;
 		showSwapPanel = false;
 		await patchSlide(activeSlide.id, { pexels_video_id: c.id, video_url: c.video_url, thumbnail_url: c.thumbnail_url });
+	}
+
+	function openUploadVideoPicker() {
+		if (!activeSlide || uploadingVideo) return;
+		if (!uploadVideoInputEl) return;
+		uploadVideoInputEl.value = '';
+		uploadVideoInputEl.click();
+	}
+
+	function validateUploadVideo(file: File): string | null {
+		if (!SUPPORTED_UPLOAD_VIDEO_TYPES.has(file.type)) return 'รองรับเฉพาะไฟล์วิดีโอ MP4 หรือ WEBM';
+		if (file.size <= 0) return 'ไฟล์วิดีโอว่างเปล่า';
+		if (file.size > MAX_UPLOAD_VIDEO_BYTES) return 'ไฟล์วิดีโอใหญ่เกิน 100MB';
+		return null;
+	}
+
+	async function handleUploadVideoChange(event: Event) {
+		if (!project || !activeSlide) return;
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+
+		const validationError = validateUploadVideo(file);
+		if (validationError) {
+			toast.error(validationError);
+			input.value = '';
+			return;
+		}
+
+		uploadingVideo = true;
+		try {
+			const formData = new FormData();
+			formData.append('file', file);
+			const res = await fetch(`/api/video-carousel/projects/${project.id}/slides/${activeSlide.id}/upload-video`, {
+				method: 'POST',
+				body: formData
+			});
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error ?? 'Upload failed');
+			const updated = data.slide as VideoCarouselSlide;
+			slides = slides.map((slide) => (slide.id === updated.id ? updated : slide));
+			showSwapPanel = false;
+			toast.success('อัปโหลด video สำเร็จ');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'อัปโหลด video ไม่สำเร็จ');
+		} finally {
+			uploadingVideo = false;
+			input.value = '';
+		}
 	}
 
 	// ── Font save ─────────────────────────────────────────────────────────────
@@ -517,11 +1205,15 @@
 		video: HTMLVideoElement,
 		slide: VideoCarouselSlide
 	) {
-		ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+		drawVideoFrame(ctx, video, slide, canvas.width, canvas.height);
 		if (slide.layout_type === 'quiz') {
 			drawQuizLayout(ctx, slide, canvas.width, canvas.height);
 		} else if (slide.layout_type === 'quote') {
 			drawQuoteLayout(ctx, slide, canvas.width, canvas.height);
+		} else if (slide.layout_type === 'listicle') {
+			drawListicleLayout(ctx, slide, canvas.width, canvas.height);
+		} else if (slide.layout_type === 'stat') {
+			drawStatLayout(ctx, slide, canvas.width, canvas.height);
 		} else {
 			drawStandardLayout(ctx, slide, canvas.width, canvas.height);
 		}
@@ -715,13 +1407,19 @@
 	}
 
 	function onKeydown(e: KeyboardEvent) {
+		if (transformDrag) return;
 		if (editingField !== null) return;
 		if (e.key === 'ArrowRight' || e.key === 'ArrowDown') activeIdx = Math.min(activeIdx + 1, slides.length - 1);
 		else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') activeIdx = Math.max(activeIdx - 1, 0);
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window
+	onkeydown={onKeydown}
+	onpointermove={handleLayoutTransformPointerMove}
+	onpointerup={handleLayoutTransformPointerUp}
+	onpointercancel={handleLayoutTransformPointerUp}
+/>
 
 {#if !project}
 	<div class="not-found">
@@ -740,7 +1438,22 @@
 			<div class="header-actions">
 				<Button variant="ghost" onclick={() => (showSettings = !showSettings)}>Font</Button>
 				<Button variant="ghost" onclick={openSwapPanel} disabled={!activeSlide}>เปลี่ยน Video</Button>
-				<Button variant="primary" onclick={handleExport} disabled={exporting || slides.length === 0}>
+				<Button
+					variant="ghost"
+					onclick={openUploadVideoPicker}
+					loading={uploadingVideo}
+					disabled={!activeSlide || exporting}
+				>
+					อัปโหลด Video
+				</Button>
+				<input
+					bind:this={uploadVideoInputEl}
+					class="upload-video-input"
+					type="file"
+					accept="video/mp4,video/webm"
+					onchange={handleUploadVideoChange}
+				/>
+				<Button variant="primary" onclick={handleExport} disabled={exporting || uploadingVideo || slides.length === 0}>
 					{#if exporting}<Spinner size="sm" />{exportProgress}%{:else}Export MP4{/if}
 				</Button>
 			</div>
@@ -770,6 +1483,66 @@
 				<div class="canvas-wrap">
 					<video bind:this={videoEl} class="hidden-video" autoplay loop muted playsinline crossorigin="anonymous"></video>
 					<canvas bind:this={canvasEl} width={VIDEO_CAROUSEL_CANVAS_WIDTH} height={VIDEO_CAROUSEL_CANVAS_HEIGHT} class="preview-canvas"></canvas>
+					{#if activeSlide}
+						<div class="preview-edit-layer" aria-label="แก้ไขข้อความบน video preview">
+							{#if editingSurface !== 'preview'}
+								<button
+									type="button"
+									class="layout-transform-frame"
+									class:selected={selectedTransformSlideId === activeSlide.id || transformDrag?.slideId === activeSlide.id}
+									class:dragging={transformDrag?.slideId === activeSlide.id}
+									style={getLayoutTransformSpec(activeSlide).style}
+									aria-label="ลากเพื่อย้าย layout ข้อความ"
+									onpointerdown={(event) => startLayoutTransform(event, 'move')}
+								>
+									<span class="layout-transform-label">Layout</span>
+									<span class="layout-transform-size">{getTextScalePercent(activeSlide)}%</span>
+									<span
+										class="layout-resize-handle"
+										aria-hidden="true"
+										onpointerdown={(event) => startLayoutTransform(event, 'resize')}
+									></span>
+								</button>
+							{/if}
+							{#each getPreviewEditSpecs(activeSlide) as item (item.key)}
+								{#if isPreviewEditing(item.field)}
+									{#if item.multiline}
+										<textarea
+											class="preview-edit-control tone-{item.tone}"
+											style={item.controlStyle}
+											aria-label={item.label}
+											bind:value={draftValue}
+											onblur={commitEdit}
+											onkeydown={(event) => handlePreviewEditKeydown(event, item.multiline)}
+											use:focusOnMount
+										></textarea>
+									{:else}
+										<input
+											class="preview-edit-control tone-{item.tone}"
+											style={item.controlStyle}
+											aria-label={item.label}
+											bind:value={draftValue}
+											onblur={commitEdit}
+											onkeydown={(event) => handlePreviewEditKeydown(event, item.multiline)}
+											use:focusOnMount
+										/>
+									{/if}
+								{:else}
+									<button
+										type="button"
+										class="preview-edit-target tone-{item.tone}"
+										class:empty-value={!item.value}
+										style={item.targetStyle}
+										aria-label="แก้ไข {item.label}"
+										onpointerdown={(event) => startLayoutTransform(event, 'move')}
+										ondblclick={() => startEdit(item.field, 'preview')}
+									>
+										<span>{item.value || item.emptyLabel}</span>
+									</button>
+								{/if}
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 
@@ -777,13 +1550,18 @@
 			{#if activeSlide}
 				<div class="edit-panel">
 					<div class="edit-section">
-						<span class="edit-label">{activeSlide.layout_type === 'quiz' ? 'หัวข้อหลัก' : 'ข้อความหลัก'}</span>
-						{#if editingField === 'text'}
+						<span class="edit-label">
+							{#if activeSlide.layout_type === 'quiz'}หัวข้อหลัก
+							{:else if activeSlide.layout_type === 'listicle'}หัวข้อย่อย
+							{:else if activeSlide.layout_type === 'stat'}ตัวเลขใหญ่
+							{:else}ข้อความหลัก{/if}
+						</span>
+						{#if isPanelEditing('text')}
 							<textarea
 								class="edit-input"
 								bind:value={draftValue}
 								onblur={commitEdit}
-								autofocus
+								use:focusOnMount
 								rows="2"
 							></textarea>
 						{:else}
@@ -794,15 +1572,105 @@
 						{/if}
 					</div>
 
-					{#if activeSlide.layout_type === 'quiz'}
+					{#if activeSlide.layout_type === 'listicle'}
 						<div class="edit-section">
-							<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความเน้นสีทอง</span>
-							{#if editingField === 'accent'}
+							<span class="edit-label" style="color:{ACCENT_COLOR}">อันดับ</span>
+							{#if isPanelEditing('accent')}
 								<input
 									class="edit-input-line"
 									bind:value={draftValue}
 									onblur={commitEdit}
-									autofocus
+									use:focusOnMount
+									placeholder="เช่น #5"
+								/>
+							{:else}
+								<button class="edit-value-btn accent" ondblclick={() => startEdit('accent')}>
+									{activeSlide.accent_text || '+ เพิ่มอันดับ (เช่น #5)'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+
+						<div class="edit-section">
+							<span class="edit-label">Caption</span>
+							{#if isPanelEditing('subtext')}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
+									placeholder="เช่น ปล่อยให้ไม้เดียวลากพอร์ตกลับไม่ได้"
+								/>
+							{:else}
+								<button class="edit-value-btn" ondblclick={() => startEdit('subtext')}>
+									{activeSlide.subtext || '+ เพิ่ม caption'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+					{:else if activeSlide.layout_type === 'stat'}
+						<div class="edit-section">
+							<span class="edit-label" style="color:{ACCENT_COLOR}">หน่วย</span>
+							{#if isPanelEditing('accent')}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
+									placeholder="เช่น %, บาท, X"
+								/>
+							{:else}
+								<button class="edit-value-btn accent" ondblclick={() => startEdit('accent')}>
+									{activeSlide.accent_text || '+ เพิ่มหน่วย'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+
+						<div class="edit-section">
+							<span class="edit-label">Claim / คำอธิบาย</span>
+							{#if isPanelEditing('subtext')}
+								<textarea
+									class="edit-input"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
+									rows="2"
+								></textarea>
+							{:else}
+								<button class="edit-value-btn" ondblclick={() => startEdit('subtext')}>
+									{activeSlide.subtext || '+ เพิ่มคำอธิบาย'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+
+						<div class="edit-section">
+							<span class="edit-label">Source / อ้างอิง</span>
+							{#if isPanelEditing(0)}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
+									placeholder="เช่น ที่มา: SEC Thailand"
+								/>
+							{:else}
+								<button class="edit-value-btn" ondblclick={() => startEdit(0)}>
+									{activeSlide.options[0] || '+ เพิ่ม source (ไม่บังคับ)'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+						</div>
+					{:else if activeSlide.layout_type === 'quiz'}
+						<div class="edit-section">
+							<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความเน้นสีทอง</span>
+							{#if isPanelEditing('accent')}
+								<input
+									class="edit-input-line"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
 									placeholder="เช่น คุณจะเลือกอะไร?"
 								/>
 							{:else}
@@ -824,12 +1692,12 @@
 								{#each activeSlide.options as opt, i}
 									<div class="option-row">
 										<span class="option-letter" style="color:{ACCENT_COLOR}">{OPTION_LETTERS[i]}.</span>
-										{#if editingField === i}
+										{#if isPanelEditing(i)}
 											<input
 												class="option-input"
 												bind:value={draftValue}
 												onblur={commitEdit}
-												autofocus
+												use:focusOnMount
 											/>
 										{:else}
 											<button class="option-text-btn" ondblclick={() => startEdit(i)}>
@@ -844,12 +1712,12 @@
 					{:else}
 						<div class="edit-section">
 							<span class="edit-label" style="color:{ACCENT_COLOR}">ข้อความรอง</span>
-							{#if editingField === 'subtext'}
+							{#if isPanelEditing('subtext')}
 								<input
 									class="edit-input-line"
 									bind:value={draftValue}
 									onblur={commitEdit}
-									autofocus
+									use:focusOnMount
 									placeholder="เช่น BigLot Gold Insight"
 								/>
 							{:else}
@@ -872,7 +1740,73 @@
 								<option value="bottom">Bottom</option>
 							</select>
 						</div>
+
 					{/if}
+
+					<div class="edit-section">
+						<div class="position-header">
+							<span class="edit-label">จัด Layout</span>
+							<button class="reset-position-btn" type="button" onclick={resetLayoutTransform}>Reset</button>
+						</div>
+						<div class="offset-controls">
+							<label class="offset-row">
+								<span>ซ้าย / ขวา</span>
+								<input
+									type="range"
+									min="-594"
+									max="594"
+									step="5"
+									value={activeSlide.text_offset_x_px}
+									oninput={(event) => setTextOffset('x', Number((event.currentTarget as HTMLInputElement).value))}
+								/>
+								<strong>{activeSlide.text_offset_x_px}px</strong>
+							</label>
+							<label class="offset-row">
+								<span>บน / ล่าง</span>
+								<input
+									type="range"
+									min="-1056"
+									max="1056"
+									step="5"
+									value={activeSlide.text_offset_y_px}
+									oninput={(event) => setTextOffset('y', Number((event.currentTarget as HTMLInputElement).value))}
+								/>
+								<strong>{activeSlide.text_offset_y_px}px</strong>
+							</label>
+							<label class="offset-row">
+								<span>ขนาด</span>
+								<input
+									type="range"
+									min={MIN_TEXT_SCALE_PERCENT}
+									max={MAX_TEXT_SCALE_PERCENT}
+									step="5"
+									value={activeSlide.text_scale_percent}
+									oninput={(event) => setTextScale(Number((event.currentTarget as HTMLInputElement).value))}
+								/>
+								<strong>{getTextScalePercent(activeSlide)}%</strong>
+							</label>
+						</div>
+					</div>
+
+					<div class="edit-section">
+						<span class="edit-label">Video filter</span>
+						<div class="video-filter-toggle" role="group" aria-label="Video filter">
+							<button
+								type="button"
+								class:active={activeSlide.video_filter === 'none'}
+								onclick={() => setVideoFilter('none')}
+							>
+								{VIDEO_FILTER_LABELS.none}
+							</button>
+							<button
+								type="button"
+								class:active={activeSlide.video_filter === 'grayscale'}
+								onclick={() => setVideoFilter('grayscale')}
+							>
+								{VIDEO_FILTER_LABELS.grayscale}
+							</button>
+						</div>
+					</div>
 
 					<div class="edit-section">
 						<span class="edit-label">Search query (Pexels)</span>
@@ -968,6 +1902,7 @@
 		white-space: nowrap;
 	}
 	.header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+	.upload-video-input { display: none; }
 
 	/* Export progress */
 	.export-progress-wrap {
@@ -1008,6 +1943,155 @@
 	}
 	.hidden-video { display: none; }
 	.preview-canvas { width: 100%; height: 100%; display: block; }
+	.preview-edit-layer {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		pointer-events: none;
+	}
+	.layout-transform-frame {
+		position: absolute;
+		z-index: 1;
+		transform: translate(-50%, -50%);
+		pointer-events: auto;
+		border: 1px solid rgba(147, 197, 253, 0.9);
+		border-radius: 10px;
+		background: rgba(37, 99, 235, 0.05);
+		box-shadow:
+			0 0 0 1px rgba(37, 99, 235, 0.14),
+			inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+		cursor: move;
+		padding: 0;
+		touch-action: none;
+		opacity: 0;
+		transition:
+			opacity var(--transition-fast),
+			background var(--transition-fast),
+			border-color var(--transition-fast);
+	}
+	.preview-edit-layer:hover .layout-transform-frame,
+	.layout-transform-frame.selected,
+	.layout-transform-frame.dragging {
+		opacity: 1;
+	}
+	.layout-transform-frame.dragging {
+		background: rgba(37, 99, 235, 0.12);
+		border-color: #93c5fd;
+	}
+	.layout-transform-label,
+	.layout-transform-size {
+		position: absolute;
+		top: -1.55rem;
+		padding: 0.12rem 0.38rem;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.86);
+		color: #ffffff;
+		font-size: 10px;
+		font-weight: var(--fw-bold);
+		line-height: 1.2;
+		white-space: nowrap;
+	}
+	.layout-transform-label {
+		left: 0;
+	}
+	.layout-transform-size {
+		right: 0;
+	}
+	.layout-resize-handle {
+		position: absolute;
+		right: -7px;
+		bottom: -7px;
+		width: 14px;
+		height: 14px;
+		border: 2px solid #ffffff;
+		border-radius: 50%;
+		background: var(--color-primary);
+		box-shadow: 0 3px 10px rgba(15, 23, 42, 0.32);
+		cursor: nwse-resize;
+		pointer-events: auto;
+		touch-action: none;
+	}
+	.preview-edit-target,
+	.preview-edit-control {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		pointer-events: auto;
+		border-radius: 8px;
+		font-family: inherit;
+	}
+	.preview-edit-target {
+		z-index: 2;
+		border: 1px solid transparent;
+		background: transparent;
+		color: transparent;
+		cursor: move;
+		padding: 0;
+		touch-action: none;
+		transition:
+			background var(--transition-fast),
+			border-color var(--transition-fast),
+			box-shadow var(--transition-fast);
+	}
+	.preview-edit-target span {
+		display: block;
+		width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.preview-edit-target.empty-value {
+		color: rgba(255, 255, 255, 0.82);
+		background: rgba(15, 23, 42, 0.42);
+		border-color: rgba(255, 255, 255, 0.22);
+		font-size: var(--text-xs);
+		font-weight: var(--fw-semibold);
+	}
+	.preview-edit-target.empty-value.tone-accent {
+		color: #facc15;
+		border-color: rgba(245, 197, 24, 0.42);
+	}
+	.preview-edit-target:hover,
+	.preview-edit-target:focus-visible {
+		background: rgba(37, 99, 235, 0.14);
+		border-color: rgba(147, 197, 253, 0.9);
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+		outline: none;
+	}
+	.preview-edit-target:hover::after,
+	.preview-edit-target:focus-visible::after {
+		content: 'ลาก / double-click แก้ไข';
+		position: absolute;
+		right: 0;
+		top: -1.45rem;
+		padding: 0.12rem 0.38rem;
+		border-radius: 999px;
+		background: rgba(15, 23, 42, 0.84);
+		color: #ffffff;
+		font-size: 10px;
+		font-weight: var(--fw-semibold);
+		white-space: nowrap;
+	}
+	.preview-edit-control {
+		z-index: 4;
+		border: 1px solid rgba(147, 197, 253, 0.95);
+		background: rgba(15, 23, 42, 0.86);
+		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+		color: #ffffff;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		line-height: 1.35;
+		outline: none;
+		padding: 0.4rem 0.5rem;
+		resize: none;
+		text-align: center;
+	}
+	.preview-edit-control.tone-accent {
+		color: #facc15;
+		border-color: rgba(245, 197, 24, 0.9);
+	}
+	.preview-edit-control.tone-option {
+		text-align: left;
+	}
 
 	/* Edit panel */
 	.edit-panel {
@@ -1066,6 +2150,97 @@
 		display: flex; align-items: center; justify-content: center;
 	}
 	.remove-opt-btn:hover { background: #fee2e2; color: #dc2626; }
+
+	.position-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+	}
+
+	.reset-position-btn {
+		border: 1px solid var(--color-border);
+		background: var(--color-bg);
+		border-radius: var(--radius-sm);
+		color: var(--color-slate-600);
+		cursor: pointer;
+		font-family: inherit;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-semibold);
+		padding: 0.15rem 0.45rem;
+	}
+
+	.reset-position-btn:hover {
+		background: var(--color-slate-100);
+		color: var(--color-slate-900);
+	}
+
+	.offset-controls {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-2);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-slate-50);
+	}
+
+	.offset-row {
+		display: grid;
+		grid-template-columns: 72px minmax(0, 1fr) 48px;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--text-xs);
+		color: var(--color-slate-600);
+	}
+
+	.offset-row input {
+		width: 100%;
+		accent-color: var(--color-primary);
+	}
+
+	.offset-row strong {
+		text-align: right;
+		color: var(--color-slate-800);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.video-filter-toggle {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-1);
+		padding: 0.2rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		background: var(--color-slate-50);
+	}
+
+	.video-filter-toggle button {
+		border: none;
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-slate-500);
+		cursor: pointer;
+		font-family: inherit;
+		font-size: var(--text-xs);
+		font-weight: var(--fw-bold);
+		padding: 0.38rem 0.5rem;
+		transition:
+			background var(--transition-fast),
+			color var(--transition-fast),
+			box-shadow var(--transition-fast);
+	}
+
+	.video-filter-toggle button:hover {
+		color: var(--color-slate-900);
+	}
+
+	.video-filter-toggle button.active {
+		background: var(--color-bg);
+		color: var(--color-primary);
+		box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+	}
+
 	.search-query-text { font-size: var(--text-xs); color: var(--color-slate-400); font-style: italic; }
 
 	/* Slide strip */

@@ -2,8 +2,18 @@ import type { CarouselFontPreset } from '$lib/types';
 
 export type VideoCarouselStatus = 'draft' | 'composing' | 'ready' | 'exported';
 export type VideoTextPosition = 'top' | 'center' | 'bottom';
-export type VideoLayoutType = 'standard' | 'quiz' | 'quote';
-export type VideoCarouselTemplateType = 'quiz' | 'quote';
+export type VideoLayoutType = 'standard' | 'quiz' | 'quote' | 'listicle' | 'stat';
+export type VideoCarouselTemplateType = 'quiz' | 'quote' | 'listicle' | 'stat';
+export type VideoFilterType = 'none' | 'grayscale';
+export type VideoQuoteCategory =
+	| 'discipline'
+	| 'mindset'
+	| 'risk'
+	| 'patience'
+	| 'news'
+	| 'cut_loss'
+	| 'trading_plan'
+	| 'confidence';
 
 export interface VideoCarouselSlide {
 	id: string;
@@ -15,9 +25,13 @@ export interface VideoCarouselSlide {
 	subtext: string | null;
 	options: string[];
 	text_position: VideoTextPosition;
+	text_offset_x_px: number;
+	text_offset_y_px: number;
+	text_scale_percent: number;
 	pexels_video_id: number | null;
 	video_url: string | null;
 	thumbnail_url: string | null;
+	video_filter: VideoFilterType;
 	duration_seconds: number;
 	search_query: string | null;
 	created_at: string;
@@ -33,6 +47,21 @@ export interface VideoCarouselProject {
 	aspect_ratio: '9:16';
 	created_at: string;
 	updated_at: string;
+}
+
+export interface VideoCarouselProjectPreview {
+	id: string;
+	position: number;
+	video_url: string | null;
+	thumbnail_url: string | null;
+	video_filter: VideoFilterType;
+	duration_seconds: number;
+}
+
+export interface VideoCarouselProjectListItem extends VideoCarouselProject {
+	preview: VideoCarouselProjectPreview | null;
+	slide_count: number;
+	total_duration_seconds: number;
 }
 
 export interface VideoCarouselBundle {
@@ -72,12 +101,43 @@ export const FONT_PRESET_LABELS: Record<CarouselFontPreset, string> = {
 
 export const VIDEO_CAROUSEL_TEMPLATE_LABELS: Record<VideoCarouselTemplateType, string> = {
 	quiz: 'Quiz / ตัวเลือก',
-	quote: 'Quote / คำคม'
+	quote: 'Quote / คำคม',
+	listicle: 'Listicle / อันดับ Top N',
+	stat: 'Stat / ตัวเลขช็อก'
 };
 
 export const VIDEO_CAROUSEL_TEMPLATE_DESCRIPTIONS: Record<VideoCarouselTemplateType, string> = {
 	quiz: 'Template ตามตัวอย่าง: หัวข้อหลัก ข้อความเน้นสีทอง และตัวเลือก A-F',
-	quote: 'Template คำคม: ข้อความหลักกลางจอ พร้อมข้อความรองสั้น ๆ'
+	quote: 'Template คำคม: ข้อความหลักกลางจอ พร้อมข้อความรองสั้น ๆ',
+	listicle: 'นับถอยหลัง #5 → #1 แต่ละสไลด์โชว์อันดับ + หัวข้อ + caption สั้น',
+	stat: 'ตัวเลขใหญ่กลางจอ + ประโยค claim + source อ้างอิง (ฮุก "90% ของเทรดเดอร์...")'
+};
+
+export const VIDEO_FILTER_LABELS: Record<VideoFilterType, string> = {
+	none: 'สีปกติ',
+	grayscale: 'ขาวดำ'
+};
+
+export const VIDEO_QUOTE_CATEGORY_LABELS: Record<VideoQuoteCategory, string> = {
+	discipline: 'วินัยการเทรด',
+	mindset: 'Mindset / จิตวิทยา',
+	risk: 'Risk management',
+	patience: 'รอจังหวะ / ความอดทน',
+	news: 'รับมือข่าว',
+	cut_loss: 'Cut loss / ยอมผิด',
+	trading_plan: 'Trading plan',
+	confidence: 'ความมั่นใจพอดี'
+};
+
+export const VIDEO_QUOTE_CATEGORY_PROMPTS: Record<VideoQuoteCategory, string> = {
+	discipline: 'เน้นวินัย การทำตามกฎ และการไม่หลุดแผนตอนกราฟผันผวน',
+	mindset: 'เน้นจิตวิทยาเทรดเดอร์ อารมณ์ ความกลัว ความโลภ และการจัดการใจ',
+	risk: 'เน้นการคุมความเสี่ยง position size, R:R, drawdown และการอยู่รอดในตลาด',
+	patience: 'เน้นการรอจังหวะ ไม่ไล่ราคา และไม่เข้าเทรดเพราะกลัวพลาด',
+	news: 'เน้นการรับมือข่าวแรง ความผันผวน และการไม่เดาทิศทางก่อนตลาดเฉลย',
+	cut_loss: 'เน้นการยอมรับว่าผิด การ cut loss และไม่ปล่อยให้ไม้เดียวทำลายพอร์ต',
+	trading_plan: 'เน้นแผนเทรด checklist ก่อนเข้า และการวัดผลตามระบบ',
+	confidence: 'เน้นความมั่นใจที่พอดี ไม่ overtrade และไม่มั่นใจเกินจนลืมความเสี่ยง'
 };
 
 export const VIDEO_CAROUSEL_STATUS_LABELS: Record<VideoCarouselStatus, string> = {

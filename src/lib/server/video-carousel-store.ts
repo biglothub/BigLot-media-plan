@@ -1,11 +1,14 @@
 import { supabaseAdmin } from '$lib/server/supabase-admin';
 import type {
 	VideoCarouselProject,
+	VideoCarouselProjectListItem,
+	VideoCarouselProjectPreview,
 	VideoCarouselSlide,
 	VideoCarouselStatus,
 	VideoTextPosition,
 	VideoLayoutType,
-	VideoCarouselTemplateType
+	VideoCarouselTemplateType,
+	VideoFilterType
 } from '$lib/video-carousel';
 import type { CarouselFontPreset } from '$lib/types';
 
@@ -32,7 +35,8 @@ function normalizeFontPreset(value: unknown): CarouselFontPreset {
 }
 
 function normalizeTemplateType(value: unknown): VideoCarouselTemplateType {
-	return value === 'quote' ? 'quote' : 'quiz';
+	if (value === 'quote' || value === 'listicle' || value === 'stat') return value;
+	return 'quiz';
 }
 
 function normalizeProject(row: JsonRecord): VideoCarouselProject {
@@ -48,14 +52,34 @@ function normalizeProject(row: JsonRecord): VideoCarouselProject {
 	};
 }
 
+function normalizeProjectPreview(row: JsonRecord): VideoCarouselProjectPreview {
+	return {
+		id: row.id as string,
+		position: Number(row.position),
+		video_url: typeof row.video_url === 'string' ? row.video_url : null,
+		thumbnail_url: typeof row.thumbnail_url === 'string' ? row.thumbnail_url : null,
+		video_filter: normalizeVideoFilter(row.video_filter),
+		duration_seconds: Number(row.duration_seconds ?? 10)
+	};
+}
+
 function normalizeLayoutType(value: unknown): VideoLayoutType {
-	if (value === 'quiz' || value === 'quote') return value;
+	if (value === 'quiz' || value === 'quote' || value === 'listicle' || value === 'stat') return value;
 	return 'standard';
+}
+
+function normalizeVideoFilter(value: unknown): VideoFilterType {
+	return value === 'grayscale' ? 'grayscale' : 'none';
 }
 
 function normalizeOptions(value: unknown): string[] {
 	if (!Array.isArray(value)) return [];
 	return value.filter((v): v is string => typeof v === 'string');
+}
+
+function normalizeInteger(value: unknown, fallback = 0): number {
+	const numberValue = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(numberValue) ? Math.round(numberValue) : fallback;
 }
 
 function normalizeSlide(row: JsonRecord): VideoCarouselSlide {
@@ -69,9 +93,13 @@ function normalizeSlide(row: JsonRecord): VideoCarouselSlide {
 		subtext: typeof row.subtext === 'string' && row.subtext.trim() ? row.subtext.trim() : null,
 		options: normalizeOptions(row.options_json),
 		text_position: normalizeTextPosition(row.text_position),
+		text_offset_x_px: normalizeInteger(row.text_offset_x_px),
+		text_offset_y_px: normalizeInteger(row.text_offset_y_px),
+		text_scale_percent: normalizeInteger(row.text_scale_percent, 100),
 		pexels_video_id: typeof row.pexels_video_id === 'number' ? row.pexels_video_id : null,
 		video_url: typeof row.video_url === 'string' ? row.video_url : null,
 		thumbnail_url: typeof row.thumbnail_url === 'string' ? row.thumbnail_url : null,
+		video_filter: normalizeVideoFilter(row.video_filter),
 		duration_seconds: Number(row.duration_seconds ?? 10),
 		search_query: typeof row.search_query === 'string' ? row.search_query : null,
 		created_at: row.created_at as string,
@@ -86,6 +114,48 @@ export async function listVideoCarouselProjects(): Promise<VideoCarouselProject[
 		.order('updated_at', { ascending: false });
 	if (error) throw new Error(error.message);
 	return ((data ?? []) as JsonRecord[]).map(normalizeProject);
+}
+
+export async function listVideoCarouselProjectItems(): Promise<VideoCarouselProjectListItem[]> {
+	const projects = await listVideoCarouselProjects();
+	if (projects.length === 0) return [];
+
+	const projectIds = projects.map((project) => project.id);
+	const { data, error } = await db()
+		.from('video_carousel_slides')
+		.select('id,project_id,position,video_url,thumbnail_url,video_filter,duration_seconds')
+		.in('project_id', projectIds)
+		.order('project_id', { ascending: true })
+		.order('position', { ascending: true });
+
+	if (error) throw new Error(error.message);
+
+	const previewByProject = new Map<string, VideoCarouselProjectPreview>();
+	const statsByProject = new Map<string, { slide_count: number; total_duration_seconds: number }>();
+
+	for (const row of (data ?? []) as JsonRecord[]) {
+		const projectId = typeof row.project_id === 'string' ? row.project_id : '';
+		if (!projectId) continue;
+
+		const stats = statsByProject.get(projectId) ?? { slide_count: 0, total_duration_seconds: 0 };
+		stats.slide_count += 1;
+		stats.total_duration_seconds += Number(row.duration_seconds ?? 0);
+		statsByProject.set(projectId, stats);
+
+		if (!previewByProject.has(projectId)) {
+			previewByProject.set(projectId, normalizeProjectPreview(row));
+		}
+	}
+
+	return projects.map((project) => {
+		const stats = statsByProject.get(project.id) ?? { slide_count: 0, total_duration_seconds: 0 };
+		return {
+			...project,
+			preview: previewByProject.get(project.id) ?? null,
+			slide_count: stats.slide_count,
+			total_duration_seconds: stats.total_duration_seconds
+		};
+	});
 }
 
 export async function getVideoCarouselProject(id: string): Promise<VideoCarouselProject | null> {
@@ -141,9 +211,13 @@ export async function upsertVideoCarouselSlides(
 		subtext?: string | null;
 		options?: string[];
 		text_position: VideoTextPosition;
+		text_offset_x_px?: number;
+		text_offset_y_px?: number;
+		text_scale_percent?: number;
 		pexels_video_id?: number | null;
 		video_url?: string | null;
 		thumbnail_url?: string | null;
+		video_filter?: VideoFilterType;
 		duration_seconds: number;
 		search_query?: string | null;
 	}>
@@ -165,9 +239,13 @@ export async function upsertVideoCarouselSlides(
 		subtext: s.subtext ?? null,
 		options_json: s.options ?? [],
 		text_position: s.text_position,
+		text_offset_x_px: s.text_offset_x_px ?? 0,
+		text_offset_y_px: s.text_offset_y_px ?? 0,
+		text_scale_percent: s.text_scale_percent ?? 100,
 		pexels_video_id: s.pexels_video_id ?? null,
 		video_url: s.video_url ?? null,
 		thumbnail_url: s.thumbnail_url ?? null,
+		video_filter: s.video_filter ?? 'none',
 		duration_seconds: s.duration_seconds,
 		search_query: s.search_query ?? null
 	}));
@@ -191,9 +269,13 @@ export async function updateVideoCarouselSlide(
 		subtext: string | null;
 		options_json: string[];
 		text_position: VideoTextPosition;
+		text_offset_x_px: number;
+		text_offset_y_px: number;
+		text_scale_percent: number;
 		pexels_video_id: number | null;
 		video_url: string | null;
 		thumbnail_url: string | null;
+		video_filter: VideoFilterType;
 		duration_seconds: number;
 	}>
 ): Promise<VideoCarouselSlide> {

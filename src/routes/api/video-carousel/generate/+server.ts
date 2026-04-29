@@ -19,7 +19,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		const durationSeconds = typeof body.duration_seconds === 'number' ? body.duration_seconds : 10;
 		const fontPreset: CarouselFontPreset =
 			typeof body.font_preset === 'string' ? (body.font_preset as CarouselFontPreset) : 'biglot';
-		const templateType: VideoCarouselTemplateType = body.template_type === 'quote' ? 'quote' : 'quiz';
+		const templateType: VideoCarouselTemplateType =
+			body.template_type === 'quote' ||
+			body.template_type === 'listicle' ||
+			body.template_type === 'stat'
+				? body.template_type
+				: 'quiz';
 
 		// Step 1: AI generates script
 		const script = await generateVideoScript(topic, clipCount, durationSeconds, templateType);

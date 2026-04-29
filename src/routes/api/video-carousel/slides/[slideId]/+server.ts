@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { updateVideoCarouselSlide } from '$lib/server/video-carousel-store';
-import type { VideoTextPosition, VideoLayoutType } from '$lib/video-carousel';
+import type { VideoTextPosition, VideoLayoutType, VideoFilterType } from '$lib/video-carousel';
 
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
@@ -13,9 +13,13 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		if ('subtext' in body) patch.subtext = typeof body.subtext === 'string' ? body.subtext : null;
 		if (Array.isArray(body.options_json)) patch.options_json = body.options_json as string[];
 		if (typeof body.text_position === 'string') patch.text_position = body.text_position as VideoTextPosition;
+		if (typeof body.text_offset_x_px === 'number') patch.text_offset_x_px = body.text_offset_x_px;
+		if (typeof body.text_offset_y_px === 'number') patch.text_offset_y_px = body.text_offset_y_px;
+		if (typeof body.text_scale_percent === 'number') patch.text_scale_percent = body.text_scale_percent;
 		if ('pexels_video_id' in body) patch.pexels_video_id = typeof body.pexels_video_id === 'number' ? body.pexels_video_id : null;
 		if (typeof body.video_url === 'string') patch.video_url = body.video_url;
 		if (typeof body.thumbnail_url === 'string') patch.thumbnail_url = body.thumbnail_url;
+		if (typeof body.video_filter === 'string') patch.video_filter = body.video_filter as VideoFilterType;
 		if (typeof body.duration_seconds === 'number') patch.duration_seconds = body.duration_seconds;
 
 		const slide = await updateVideoCarouselSlide(params.slideId, patch);
