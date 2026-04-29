@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { Button, Spinner, Badge, toast, StatsCard, IdeaCard } from '$lib';
+	import { Button, Spinner, Badge, toast, IdeaCard } from '$lib';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
@@ -25,8 +25,6 @@
 		getYouTubeEmbedUrl,
 		platformLabel,
 		platformOrder,
-		PRODUCTION_STAGES,
-		toCategorySelectValue,
 	} from "$lib/media-plan";
 	import IdeaEditModal from '$lib/components/domain/IdeaEditModal.svelte';
 	import AISuggestModal from '$lib/components/domain/AISuggestModal.svelte';
@@ -55,50 +53,20 @@
 	);
 
 	const dashboardStats = $derived.by(() => {
-		const platformCount: Record<string, number> = {};
 		let uncategorizedIdeas = 0;
-		let pinnedIdeas = 0;
 		for (const idea of ideas) {
-			platformCount[idea.platform] = (platformCount[idea.platform] ?? 0) + 1;
 			if (!idea.content_category) uncategorizedIdeas += 1;
-			if (idea.content_category === 'pin') pinnedIdeas += 1;
 		}
-		const stageCount: Record<string, number> = { planned: 0, scripting: 0, shooting: 0, editing: 0, review: 0, published: 0 };
-		for (const { status } of scheduledCalendarMap.values()) {
-			if (status in stageCount) stageCount[status]++;
-		}
-		const scheduledIdeas = scheduledBacklogIds.size;
 		const publishedIdeas = publishedBacklogIds.size;
 		const activeIdeas = Math.max(ideas.length - publishedIdeas, 0);
 		return {
-			platformCount,
-			stageCount,
 			totalIdeas: ideas.length,
 			activeIdeas,
 			publishedIdeas,
-			scheduledIdeas,
+			scheduledIdeas: scheduledBacklogIds.size,
 			uncategorizedIdeas,
-			pinnedIdeas,
 		};
 	});
-	const scheduledPercent = $derived(
-		dashboardStats.totalIdeas > 0
-			? Math.round((dashboardStats.scheduledIdeas / dashboardStats.totalIdeas) * 100)
-			: 0,
-	);
-	const platformBreakdown = $derived(
-		platformOrder
-			.map((platform) => ({
-				platform,
-				count: dashboardStats.platformCount[platform] ?? 0,
-			}))
-			.filter((item) => item.count > 0),
-	);
-	const maxPlatformCount = $derived(
-		platformBreakdown.length > 0
-			? Math.max(...platformBreakdown.map((item) => item.count))
-			: 1,
-	);
 	let selectedContentType = $state<BacklogContentType>("video");
 	let showPublished = $state(false);
 
@@ -648,110 +616,31 @@
 </script>
 
 <main class="page">
-	<section class="hero-shell">
-		<div class="hero-main">
-			<div class="hero-copy">
-				<p class="hero-eyebrow">BigLot Media Plan</p>
-				<h1 class="hero-title">Idea Backlog</h1>
-				<p class="hero-subtitle">
-					วางลิงก์เพื่อดึง metadata อัตโนมัติ หรือสร้างไอเดียเองแบบ manual แล้วค่อยแตกต่อเป็น production ได้จากหน้าเดียว
-				</p>
-			</div>
-
-			<div class="hero-actions">
-				<Button variant="primary" size="lg" onclick={focusAnalyzeInput}>Analyze Link</Button>
-				<Button variant="ai" size="lg" onclick={() => { showSuggestModeModal = true; }}>
-					AI ช่วยคิด idea
-				</Button>
-				{#if ideas.length > 0}
-					<Button variant="secondary" size="lg" onclick={exportBacklogCSV}>Export CSV</Button>
-				{/if}
-			</div>
-
-			<div class="hero-band">
-				<div class="hero-band-card">
-					<span class="hero-band-label">รองรับแพลตฟอร์ม</span>
-					<div class="hero-platforms">
-						{#each platformOrder as platform}
-							<Badge variant="platform" value={platform} />
-						{/each}
-					</div>
-				</div>
-				<div class="hero-band-card">
-					<span class="hero-band-label">Focus ตอนนี้</span>
-					<p class="hero-band-value">
-						{#if dashboardStats.uncategorizedIdeas > 0}
-							{dashboardStats.uncategorizedIdeas} ideas ยังไม่จัดหมวด
-						{:else}
-							Backlog จัดหมวดครบแล้ว
-						{/if}
-					</p>
-					<p class="hero-band-copy">คลิกขวาที่ card เพื่อ schedule ลง shoot calendar ได้ทันที</p>
-				</div>
-			</div>
-
-			<div class="hero-stats">
-				<StatsCard
-					label="Ideas ในคลัง"
-					value={dashboardStats.totalIdeas}
-					sub="{dashboardStats.activeIdeas} active"
-					variant="primary"
-				/>
-				<StatsCard
-					label="Scheduled"
-					value={dashboardStats.scheduledIdeas}
-					sub="{scheduledPercent}% of total"
-					variant="success"
-				/>
-				<StatsCard
-					label="Needs Category"
-					value={dashboardStats.uncategorizedIdeas}
-					sub={dashboardStats.pinnedIdeas > 0 ? `${dashboardStats.pinnedIdeas} pinned` : 'พร้อมจัดระบบ'}
-					variant="warning"
-				/>
-			</div>
+	<header class="hero">
+		<div class="hero-copy">
+			<p class="hero-eyebrow">BigLot Media Plan</p>
+			<h1 class="hero-title">Idea Backlog</h1>
+			<p class="hero-subtitle">
+				วางลิงก์เพื่อดึง metadata หรือสร้างไอเดียเองแบบ manual จากหน้าเดียว
+			</p>
 		</div>
 
-		<aside class="hero-side">
-			<div class="dash-group">
-				<p class="dash-group-label">Platform Mix</p>
-				{#if platformBreakdown.length === 0}
-					<p class="dash-empty">เริ่มจากวางลิงก์หรือสร้าง idea ใหม่เพื่อให้เห็นภาพรวมแพลตฟอร์ม</p>
-				{:else}
-					<div class="mix-list">
-						{#each platformBreakdown as item}
-							<div class="mix-row">
-								<div class="mix-label">
-									<Badge variant="platform" value={item.platform} />
-									<strong>{item.count}</strong>
-								</div>
-								<div class="mix-bar">
-									<span style={`width:${(item.count / maxPlatformCount) * 100}%`}></span>
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</div>
-			<div class="dash-group">
-				<p class="dash-group-label">Production Stage</p>
-				{#if dashboardStats.scheduledIdeas === 0}
-					<p class="dash-empty">ยังไม่มีรายการที่ถูก schedule จาก backlog</p>
-				{:else}
-					<div class="stage-pills">
-						{#each PRODUCTION_STAGES as stage}
-							{#if (dashboardStats.stageCount[stage] ?? 0) > 0}
-								<div class="stage-pill">
-									<Badge variant="stage" value={stage} />
-									<strong>{dashboardStats.stageCount[stage]}</strong>
-								</div>
-							{/if}
-						{/each}
-					</div>
-				{/if}
-			</div>
-		</aside>
-	</section>
+		<div class="hero-meta">
+			<span><strong>{dashboardStats.totalIdeas}</strong> ideas</span>
+			<span><strong>{dashboardStats.scheduledIdeas}</strong> scheduled</span>
+			{#if dashboardStats.uncategorizedIdeas > 0}
+				<span><strong>{dashboardStats.uncategorizedIdeas}</strong> needs category</span>
+			{/if}
+		</div>
+
+		<div class="hero-actions">
+			<Button variant="primary" onclick={focusAnalyzeInput}>Analyze Link</Button>
+			<Button variant="ai" onclick={() => { showSuggestModeModal = true; }}>AI ช่วยคิด idea</Button>
+			{#if ideas.length > 0}
+				<Button variant="ghost" onclick={exportBacklogCSV}>Export CSV</Button>
+			{/if}
+		</div>
+	</header>
 
 	{#if !hasSupabaseConfig}
 		<p class="alert">
@@ -760,73 +649,27 @@
 		</p>
 	{/if}
 
-	<section class="workspace-grid">
-		<section class="panel panel--feature">
-			<div class="panel-head panel-head--feature">
-				<div>
-					<p class="panel-eyebrow">Auto Intake</p>
-					<h2>วางลิงก์ แล้วให้ระบบช่วยดึง metadata</h2>
-					<p class="panel-subtitle">
-						เหมาะกับการเก็บ reference จากคู่แข่งหรือคอนเทนต์ที่ทีมอยากแตกต่อเป็นไอเดียใหม่
-					</p>
-				</div>
-				<span class="feature-chip">Fast capture</span>
-			</div>
+	<section class="panel">
+		<div class="row no-margin">
+			<label for="content-link">Content Link</label>
+			<input
+				id="content-link"
+				bind:value={linkInput}
+				placeholder="https://www.instagram.com/p/... หรือ https://www.youtube.com/watch?v=..."
+			/>
+		</div>
+		<div class="panel-actions">
+			<Button variant="primary" onclick={analyzeLink} loading={enriching}>
+				{enriching ? "Analyzing..." : "Analyze Link"}
+			</Button>
+			{#if linkInput || draft}
+				<Button variant="ghost" onclick={() => { linkInput = ""; clearState(); }}>
+					Clear
+				</Button>
+			{/if}
+		</div>
 
-			<div class="analyzer-grid">
-				<div class="analyzer-form">
-					<div class="row no-margin">
-						<label for="content-link">Content Link</label>
-						<input
-							id="content-link"
-							bind:value={linkInput}
-							placeholder="https://www.instagram.com/p/... หรือ https://www.youtube.com/watch?v=..."
-						/>
-					</div>
-					<div class="panel-actions">
-						<Button variant="primary" onclick={analyzeLink} loading={enriching}>
-							{enriching ? "Analyzing..." : "Analyze Link"}
-						</Button>
-						{#if linkInput || draft}
-							<Button variant="ghost" onclick={() => { linkInput = ""; clearState(); }}>
-								Clear
-							</Button>
-						{/if}
-					</div>
-				</div>
-
-				<div class="analyzer-hints">
-					<div class="tip-card">
-						<span class="tip-number">01</span>
-						<strong>Paste reference</strong>
-						<p>วางลิงก์จาก YouTube, Facebook, Instagram หรือ TikTok แล้วระบบจะ enrich ให้ทันที</p>
-					</div>
-					<div class="tip-card">
-						<span class="tip-number">02</span>
-						<strong>Review draft</strong>
-						<p>เช็ก type, category และ note ให้พร้อมก่อนโยนเข้า backlog เพื่อให้ทีมเห็นภาพเดียวกัน</p>
-					</div>
-					<div class="tip-card">
-						<span class="tip-number">03</span>
-						<strong>Schedule faster</strong>
-						<p>หลังบันทึกแล้ว คลิกขวาที่ card เพื่อ pin หรือ schedule ลงปฏิทินได้จากหน้าเดียว</p>
-					</div>
-				</div>
-			</div>
-		</section>
-
-		<section class="panel panel--manual">
-			<div class="panel-head">
-				<div>
-					<p class="panel-eyebrow">Manual Builder</p>
-					<h2>สร้างไอเดียเองแบบย่อ</h2>
-					<p class="panel-subtitle">
-						ใช้เมื่อยังไม่มีลิงก์อ้างอิง แต่ต้องการโยนหัวข้อหรือ concept ใหม่เข้า backlog ให้ทีมเห็นก่อน
-					</p>
-				</div>
-			</div>
-
-			<details class="manual-dropdown" bind:open={manualExpanded}>
+		<details class="manual-dropdown" bind:open={manualExpanded}>
 				<summary>
 					<div class="manual-summary">
 						<span>Create manually</span>
@@ -908,21 +751,15 @@
 					</Button>
 				</div>
 			</details>
-		</section>
 	</section>
 
 	{#if draft}
 		<section class="panel panel--draft">
-			<div class="panel-head">
-				<div>
-					<p class="panel-eyebrow">Draft Preview</p>
-					<h2>พร้อมบันทึกเข้า backlog</h2>
-					<p class="panel-subtitle">ตรวจ type, category และ idea note ก่อนบันทึกเข้า workflow หลัก</p>
-				</div>
-				{#if suggestedCategory}
+			{#if suggestedCategory}
+				<div class="draft-head">
 					<Badge variant="warning" label={`AI แนะนำ: ${contentCategoryLabel[suggestedCategory]}`} />
-				{/if}
-			</div>
+				</div>
+			{/if}
 
 			<div class="draft-grid">
 				<div class="preview-card">
@@ -1032,16 +869,7 @@
 
 	<section class="panel panel--backlog">
 		<div class="backlog-head">
-			<div>
-				<p class="panel-eyebrow">Library</p>
-				<h2>Backlog</h2>
-				<p class="backlog-caption">
-					{dashboardStats.activeIdeas} active ideas
-					{#if dashboardStats.publishedIdeas > 0}
-						· {dashboardStats.publishedIdeas} published
-					{/if}
-				</p>
-			</div>
+			<h2>Backlog <span class="backlog-count">{dashboardStats.activeIdeas}</span></h2>
 			<div class="backlog-toolbar">
 				{#if loadingIdeas}<Spinner size="sm" />{/if}
 				{#if publishedBacklogIds.size > 0}
@@ -1052,23 +880,6 @@
 				{/if}
 			</div>
 		</div>
-
-		{#if ideas.length > 0}
-			<div class="backlog-meta-strip">
-				<div class="mini-stat">
-					<span>Active</span>
-					<strong>{dashboardStats.activeIdeas}</strong>
-				</div>
-				<div class="mini-stat">
-					<span>Pinned</span>
-					<strong>{dashboardStats.pinnedIdeas}</strong>
-				</div>
-				<div class="mini-stat">
-					<span>Groups</span>
-					<strong>{groupedIdeas.length}</strong>
-				</div>
-			</div>
-		{/if}
 
 		{#if ideas.length === 0}
 			<p class="empty">ยังไม่มีรายการไอเดียในระบบ</p>
@@ -1154,7 +965,9 @@
 <style>
 	.page {
 		display: grid;
-		gap: 1.15rem;
+		gap: 1.5rem;
+		max-width: 72rem;
+		margin: 0 auto;
 	}
 
 	h2,
@@ -1162,238 +975,69 @@
 		font-family: var(--font-heading);
 	}
 
-	.hero-shell {
+	.hero {
 		display: grid;
-		grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.95fr);
 		gap: 1rem;
-		align-items: stretch;
-	}
-
-	.hero-main {
-		position: relative;
-		overflow: hidden;
-		display: grid;
-		gap: 1.1rem;
-		padding: 1.25rem;
-		border-radius: var(--radius-xl);
-		border: 1px solid var(--color-border);
-		background:
-			radial-gradient(circle at top right, rgba(249, 115, 22, 0.14), transparent 30%),
-			radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.12), transparent 32%),
-			var(--color-bg-elevated);
-		box-shadow: var(--shadow-xs);
-	}
-
-	.hero-main::before {
-		content: none;
-	}
-
-	.hero-main::after {
-		content: none;
-	}
-
-	.hero-main > * {
-		position: relative;
-		z-index: 1;
+		padding: 0.5rem 0 0.75rem;
 	}
 
 	.hero-copy {
 		display: grid;
-		gap: 0.6rem;
-		max-width: 42rem;
+		gap: 0.4rem;
 	}
 
 	.hero-eyebrow {
 		margin: 0;
-		font-size: 0.75rem;
-		font-weight: 700;
-		letter-spacing: 0.18em;
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.16em;
 		text-transform: uppercase;
-		color: var(--color-primary);
+		color: var(--color-slate-500);
 	}
 
 	.hero-title {
 		margin: 0;
 		font-family: var(--font-heading);
-		font-size: clamp(2rem, 4.5vw, 3rem);
-		line-height: 1;
-		letter-spacing: -0.03em;
+		font-size: clamp(1.75rem, 3.5vw, 2.25rem);
+		line-height: 1.15;
+		letter-spacing: -0.02em;
 		color: var(--color-slate-900);
 	}
 
 	.hero-subtitle {
 		margin: 0;
 		max-width: 42rem;
-		font-size: 0.95rem;
-		line-height: 1.7;
-		color: var(--color-slate-600);
+		font-size: 0.92rem;
+		line-height: 1.6;
+		color: var(--color-slate-500);
+	}
+
+	.hero-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1.25rem;
+		font-size: 0.86rem;
+		color: var(--color-slate-500);
+	}
+
+	.hero-meta strong {
+		font-family: var(--font-heading);
+		color: var(--color-slate-900);
+		font-weight: 700;
+		margin-right: 0.25rem;
 	}
 
 	.hero-actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.65rem;
-	}
-
-	.hero-band {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.hero-band-card {
-		display: grid;
 		gap: 0.5rem;
-		padding: 0.95rem 1rem;
-		border-radius: var(--radius-lg);
-		background: rgba(255, 255, 255, 0.72);
-		border: 1px solid var(--color-border);
-	}
-
-	.hero-band-label {
-		font-size: 0.7rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-slate-500);
-	}
-
-	.hero-platforms {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-	}
-
-	.hero-band-value {
-		margin: 0;
-		font-family: var(--font-heading);
-		font-size: 1.2rem;
-		line-height: 1.2;
-		color: var(--color-slate-900);
-	}
-
-	.hero-band-copy {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.55;
-		color: var(--color-slate-500);
-	}
-
-	.hero-stats {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.hero-side {
-		display: grid;
-		gap: 0.85rem;
-	}
-
-	.dash-group {
-		display: grid;
-		gap: 0.75rem;
-		padding: 1rem;
-		border-radius: var(--radius-xl);
-		background: var(--color-bg-elevated);
-		border: 1px solid var(--color-border);
-		box-shadow: var(--shadow-xs);
-	}
-
-	.dash-group-label {
-		margin: 0;
-		font-size: 0.72rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		font-weight: 700;
-		color: var(--color-slate-400);
-	}
-
-	.dash-empty {
-		margin: 0;
-		font-size: 0.85rem;
-		line-height: 1.6;
-		color: var(--color-slate-500);
-	}
-
-	.mix-list {
-		display: grid;
-		gap: 0.7rem;
-	}
-
-	.mix-row {
-		display: grid;
-		gap: 0.4rem;
-	}
-
-	.mix-label {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.6rem;
-	}
-
-	.mix-label strong {
-		font-family: var(--font-heading);
-		font-size: 1rem;
-		color: var(--color-slate-900);
-	}
-
-	.mix-bar {
-		height: 0.42rem;
-		border-radius: 999px;
-		background: var(--color-slate-100);
-		overflow: hidden;
-	}
-
-	.mix-bar span {
-		display: block;
-		height: 100%;
-		border-radius: inherit;
-		background: linear-gradient(90deg, var(--color-blue-600), var(--color-purple-600), var(--color-orange-500));
-	}
-
-	.stage-pills {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.55rem;
-	}
-
-	.stage-pill {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		padding: 0.28rem 0.34rem;
-		border-radius: 999px;
-		background: var(--color-bg-subtle);
-		border: 1px solid var(--color-border);
-	}
-
-	.stage-pill strong {
-		font-size: 0.82rem;
-		color: var(--color-slate-700);
-		padding-right: 0.2rem;
-	}
-
-	.workspace-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
-		gap: 1rem;
-		align-items: start;
 	}
 
 	.panel {
 		padding: 1.25rem;
-		border-radius: var(--radius-xl);
+		border-radius: var(--radius-lg);
 		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
-		box-shadow: var(--shadow-xs);
-	}
-
-	.panel--feature {
-		background:
-			linear-gradient(180deg, rgba(37, 99, 235, 0.045), transparent 42%),
-			var(--color-bg-elevated);
 	}
 
 	.panel--draft {
@@ -1401,54 +1045,15 @@
 		gap: 1rem;
 	}
 
-	.panel-head {
+	.draft-head {
 		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.9rem;
-		margin-bottom: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.panel-head h2 {
-		margin: 0;
-		font-size: 1.32rem;
-		line-height: 1.05;
-	}
-
-	.panel-eyebrow {
-		margin: 0 0 0.3rem;
-		font-size: 0.72rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.12em;
-		color: var(--color-primary);
-	}
-
-	.panel-subtitle {
-		margin: 0.35rem 0 0;
-		max-width: 36rem;
-		font-size: 0.88rem;
-		line-height: 1.6;
-		color: var(--color-slate-500);
-	}
-
-	.feature-chip {
-		display: inline-flex;
-		align-items: center;
-		padding: 0.32rem 0.7rem;
-		border-radius: var(--radius-md);
-		background: var(--color-primary-bg);
-		color: var(--color-primary);
-		font-size: 0.76rem;
-		font-weight: 700;
-		border: 1px solid var(--color-primary-border);
+		justify-content: flex-end;
 	}
 
 	.row {
 		display: grid;
-		gap: 0.45rem;
-		margin-bottom: 0.9rem;
+		gap: 0.4rem;
+		margin-bottom: 0.85rem;
 	}
 
 	.row-inline {
@@ -1462,7 +1067,7 @@
 	}
 
 	label {
-		font-size: 0.86rem;
+		font-size: 0.84rem;
 		color: var(--color-slate-600);
 	}
 
@@ -1472,14 +1077,13 @@
 		width: 100%;
 		box-sizing: border-box;
 		font: inherit;
-		padding: 0.72rem 0.85rem;
-		border-radius: 0.8rem;
+		padding: 0.65rem 0.8rem;
+		border-radius: 0.5rem;
 		border: 1px solid var(--color-border-strong);
 		background: var(--color-bg-elevated);
 		transition:
 			border-color var(--transition-fast),
-			box-shadow var(--transition-fast),
-			background var(--transition-fast);
+			box-shadow var(--transition-fast);
 	}
 
 	input:focus,
@@ -1487,56 +1091,13 @@
 	textarea:focus {
 		outline: none;
 		border-color: var(--color-blue-500);
-		box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
-	}
-
-	.analyzer-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.92fr);
-		gap: 1rem;
-		align-items: start;
-	}
-
-	.analyzer-form,
-	.analyzer-hints {
-		display: grid;
-		gap: 0.85rem;
-	}
-
-	.tip-card {
-		display: grid;
-		gap: 0.35rem;
-		padding: 0.95rem 1rem;
-		border-radius: 1rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-subtle);
-	}
-
-	.tip-number {
-		font-size: 0.72rem;
-		font-weight: 700;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		color: var(--color-blue-700);
-	}
-
-	.tip-card strong {
-		font-size: 0.92rem;
-		color: var(--color-slate-900);
-	}
-
-	.tip-card p {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.6;
-		color: var(--color-slate-500);
+		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 	}
 
 	.manual-dropdown {
-		border: 1px solid var(--color-border);
-		border-radius: 1rem;
-		padding: 0.35rem 0.8rem;
-		background: linear-gradient(180deg, rgba(248, 250, 252, 0.85), #fff);
+		border-top: 1px solid var(--color-border);
+		margin-top: 1rem;
+		padding-top: 0.5rem;
 	}
 
 	.manual-dropdown summary {
@@ -1546,24 +1107,23 @@
 		gap: 0.75rem;
 		cursor: pointer;
 		user-select: none;
-		padding: 0.45rem 0;
-		color: #1f2937;
+		padding: 0.5rem 0;
+		color: var(--color-slate-700);
 	}
 
 	.manual-summary {
 		display: grid;
-		gap: 0.2rem;
+		gap: 0.15rem;
 	}
 
 	.manual-summary span {
-		font-size: 0.95rem;
-		font-weight: 700;
+		font-size: 0.9rem;
+		font-weight: 600;
 		color: var(--color-slate-900);
 	}
 
 	.manual-summary small {
 		font-size: 0.75rem;
-		font-weight: 600;
 		color: var(--color-slate-500);
 	}
 
@@ -1571,32 +1131,22 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 999px;
-		background: var(--color-bg-subtle);
-		color: var(--color-slate-700);
-		font-size: 1.1rem;
-		font-weight: 700;
+		width: 1.5rem;
+		height: 1.5rem;
+		font-size: 1rem;
+		color: var(--color-slate-500);
 	}
 
 	.manual-body {
-		padding-top: 1rem;
+		padding-top: 0.85rem;
 	}
 
 	.alert {
-		padding: 0.8rem 0.95rem;
-		border-radius: 1rem;
-		font-size: 0.9rem;
-		border: 1px solid rgba(202, 138, 4, 0.18);
-		background: rgba(254, 249, 195, 0.55);
-	}
-
-	.preview-card {
-		border-radius: 1rem;
-		border: 1px solid var(--color-border);
-		background: linear-gradient(180deg, rgba(248, 250, 252, 0.86), #fff);
-		padding: 1rem;
+		padding: 0.75rem 0.9rem;
+		border-radius: 0.5rem;
+		font-size: 0.88rem;
+		border: 1px solid rgba(202, 138, 4, 0.2);
+		background: rgba(254, 249, 195, 0.5);
 	}
 
 	.preview {
@@ -1610,8 +1160,8 @@
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
-		border-radius: 0.75rem;
-		border: 1px solid var(--color-border-medium);
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border);
 	}
 
 	.tiktok-frame {
@@ -1632,14 +1182,20 @@
 		aspect-ratio: 16 / 9;
 	}
 
+	.preview h2 {
+		margin: 0.5rem 0 0;
+		font-size: 1.1rem;
+		line-height: 1.3;
+	}
+
 	.platform {
 		display: inline-block;
-		padding: 0.15rem 0.55rem;
+		padding: 0.12rem 0.5rem;
 		border-radius: var(--radius-full);
-		font-size: 0.7rem;
+		font-size: 0.68rem;
 		font-weight: 700;
-		background: rgba(180, 83, 9, 0.14);
-		color: #92400e;
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
 	}
 
 	.chip-row {
@@ -1650,24 +1206,24 @@
 
 	.content-type {
 		display: inline-block;
-		padding: 0.15rem 0.55rem;
+		padding: 0.12rem 0.5rem;
 		border-radius: var(--radius-full);
-		font-size: 0.7rem;
+		font-size: 0.68rem;
 		font-weight: 700;
-		background: rgba(15, 118, 110, 0.12);
-		color: #115e59;
+		background: var(--color-slate-100);
+		color: var(--color-slate-700);
 	}
 
 	.meta {
-		margin: 0.25rem 0 0;
+		margin: 0.2rem 0 0;
 		color: var(--color-slate-500);
-		font-size: 0.9rem;
+		font-size: 0.85rem;
 	}
 
 	.draft-grid {
 		display: grid;
-		grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.9fr);
-		gap: 1rem;
+		grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+		gap: 1.25rem;
 		align-items: start;
 	}
 
@@ -1679,7 +1235,7 @@
 	.draft-actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.55rem;
+		gap: 0.5rem;
 	}
 
 	.category-label-row {
@@ -1692,63 +1248,42 @@
 	.backlog-head {
 		display: flex;
 		justify-content: space-between;
-		align-items: flex-start;
+		align-items: center;
 		gap: 1rem;
 		margin-bottom: 1rem;
 		flex-wrap: wrap;
 	}
 
-	.backlog-caption {
-		margin: 0.35rem 0 0;
+	.backlog-head h2 {
+		margin: 0;
+		font-size: 1.15rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.backlog-count {
+		font-family: var(--font-heading);
+		font-size: 0.82rem;
+		font-weight: 600;
 		color: var(--color-slate-500);
-		font-size: 0.9rem;
+		padding: 0.1rem 0.5rem;
+		background: var(--color-bg-subtle);
+		border-radius: var(--radius-full);
 	}
 
 	.backlog-toolbar {
 		display: flex;
 		align-items: center;
-		gap: 0.55rem;
+		gap: 0.5rem;
 		flex-wrap: wrap;
-	}
-
-	.backlog-meta-strip {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-		margin-bottom: 1rem;
-	}
-
-	.mini-stat {
-		display: grid;
-		gap: 0.35rem;
-		padding: 0.9rem 1rem;
-		border-radius: 1rem;
-		border: 1px solid var(--color-border);
-		background: var(--color-bg-subtle);
-	}
-
-	.mini-stat span {
-		font-size: 0.72rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--color-slate-500);
-	}
-
-	.mini-stat strong {
-		font-family: var(--font-heading);
-		font-size: 1.45rem;
-		line-height: 1;
-		color: var(--color-slate-900);
 	}
 
 	.empty {
 		text-align: center;
 		color: var(--color-slate-500);
-		padding: 1.6rem;
-		border: 1px dashed var(--color-border-medium);
-		border-radius: 1rem;
-		background: var(--color-bg-subtle);
+		padding: 2rem 1rem;
+		font-size: 0.9rem;
 	}
 
 	.category-groups {
@@ -1949,13 +1484,7 @@
 	}
 
 	@media (max-width: 900px) {
-		.hero-shell,
-		.workspace-grid,
-		.analyzer-grid,
 		.draft-grid,
-		.hero-band,
-		.hero-stats,
-		.backlog-meta-strip,
 		.preview {
 			grid-template-columns: 1fr;
 		}
@@ -1966,13 +1495,8 @@
 	}
 
 	@media (max-width: 640px) {
-		.hero-main,
 		.panel {
 			padding: 1rem;
-		}
-
-		.hero-title {
-			font-size: 2.4rem;
 		}
 
 		.hero-actions,
