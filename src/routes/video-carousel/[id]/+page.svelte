@@ -7,6 +7,9 @@
 		VideoCarouselProject,
 		VideoTextPosition,
 		VideoFilterType,
+		VideoCarouselMusicTrackId,
+		VideoCarouselMusicSource,
+		VideoCarouselExternalMusicTrack,
 		VideoTextBoxTransform,
 		VideoTextBoxTransforms
 	} from '$lib/video-carousel';
@@ -17,15 +20,30 @@
 		VIDEO_CAROUSEL_CANVAS_WIDTH,
 		VIDEO_CAROUSEL_CANVAS_HEIGHT,
 		VIDEO_FILTER_LABELS,
+		VIDEO_LISTICLE_MAX_ITEMS,
+		VIDEO_LISTICLE_MIN_ITEMS,
 		OPTION_LETTERS,
 		ACCENT_COLOR,
+		VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT,
+		VIDEO_CAROUSEL_MUSIC_TRACKS,
+		VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID,
+		describeVideoCarouselMusicRecommendation,
+		recommendVideoCarouselMusicTrack,
 		videoCarouselTotalDuration
 	} from '$lib/video-carousel';
+	import {
+		createVideoCarouselExternalMusicPreview,
+		createVideoCarouselExternalMusicStream,
+		createVideoCarouselMusicPreview,
+		createVideoCarouselMusicStream,
+		type VideoCarouselMusicPlayback,
+		type VideoCarouselMusicStreamHandle
+	} from '$lib/video-carousel-music';
 	import type { CarouselFontPreset } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
-	type EditableField = 'text' | 'accent' | 'subtext' | number;
+	type EditableField = 'text' | 'accent' | 'subtext' | 'caption' | number;
 	type TextBoxKey = string;
 	type EditSurface = 'panel' | 'preview';
 	type PreviewEditTone = 'primary' | 'accent' | 'option';
@@ -92,7 +110,31 @@
 
 	// ── Settings ──────────────────────────────────────────────────────────────
 	let showSettings = $state(false);
-	let fontPreset = $state<CarouselFontPreset>((data.project?.font_preset ?? 'biglot') as CarouselFontPreset);
+	let fontPreset = $state<CarouselFontPreset>('biglot');
+	let musicSource = $state<VideoCarouselMusicSource>('generated');
+	let musicTrackId = $state<VideoCarouselMusicTrackId>('none');
+	let musicVolumePercent = $state(VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT);
+	let previewingMusic = $state(false);
+	let musicPreview: VideoCarouselMusicPlayback | null = null;
+	let selectedExternalMusic = $state<VideoCarouselExternalMusicTrack | null>(null);
+	let jamendoSearchQuery = $state('');
+	let jamendoSearchResults = $state<VideoCarouselExternalMusicTrack[]>([]);
+	let searchingJamendoMusic = $state(false);
+	let jamendoSearchMessage = $state('');
+	let selectedMusicTrack = $derived(VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID[musicTrackId]);
+	let canPreviewMusic = $derived(
+		musicSource === 'jamendo' ? !!selectedExternalMusic?.audio_url : musicTrackId !== 'none'
+	);
+	let recommendedMusicTrackId = $derived(
+		project
+			? recommendVideoCarouselMusicTrack({ template_type: project.template_type, topic: project.title })
+			: 'biglot_pulse'
+	);
+	let recommendedMusicReason = $derived(
+		project
+			? describeVideoCarouselMusicRecommendation({ template_type: project.template_type, topic: project.title })
+			: ''
+	);
 
 	const fontOptions: Array<{ value: CarouselFontPreset; label: string }> = [
 		{ value: 'biglot', label: FONT_PRESET_LABELS.biglot },
@@ -101,6 +143,26 @@
 		{ value: 'ibm_plex_thai', label: FONT_PRESET_LABELS.ibm_plex_thai },
 		{ value: 'editorial_serif', label: FONT_PRESET_LABELS.editorial_serif }
 	];
+
+	function externalMusicFromProject(value: VideoCarouselProject | null | undefined): VideoCarouselExternalMusicTrack | null {
+		if (!value || value.music_source !== 'jamendo') return null;
+		if (!value.music_external_id || !value.music_title || !value.music_artist_name || !value.music_audio_url) {
+			return null;
+		}
+		return {
+			source: 'jamendo',
+			external_id: value.music_external_id,
+			title: value.music_title,
+			artist_name: value.music_artist_name,
+			audio_url: value.music_audio_url,
+			page_url: value.music_page_url,
+			license_url: value.music_license_url,
+			attribution_text: value.music_attribution_text ?? `${value.music_title} - ${value.music_artist_name}`,
+			duration_seconds: value.music_duration_seconds,
+			image_url: value.music_image_url,
+			tags: []
+		};
+	}
 
 	const MAX_UPLOAD_VIDEO_BYTES = 100 * 1024 * 1024;
 	const SUPPORTED_UPLOAD_VIDEO_TYPES = new Set(['video/mp4', 'video/webm']);
@@ -405,6 +467,27 @@
 		ctx.restore();
 	}
 
+	function getListicleRankLabel(slide: VideoCarouselSlide, index: number): string {
+		return `#${Math.max(slide.options.length - index, 1)}`;
+	}
+
+	function getListicleOptionBox(slide: VideoCarouselSlide, index: number): LayoutTransformSpec {
+		const count = Math.max(slide.options.length, VIDEO_LISTICLE_MIN_ITEMS);
+		const gap = 0.85;
+		const availableTop = 43;
+		const availableHeight = 46;
+		const rowHeight = Math.min(7.6, (availableHeight - gap * (count - 1)) / count);
+		const top = availableTop + rowHeight / 2 + index * (rowHeight + gap);
+
+		return {
+			left: 50,
+			top,
+			width: 88,
+			height: rowHeight,
+			style: previewBoxStyle(50, top, 88, rowHeight)
+		};
+	}
+
 	function drawListicleLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
 		const font = VIDEO_FONT_MAP[fontPreset] ?? VIDEO_FONT_MAP.biglot;
 
@@ -419,48 +502,138 @@
 
 		const centerX = w / 2;
 
+		if (slide.options.length === 0) {
+			const rankRaw = isEditingSlideField(slide, 'accent') ? draftValue : (slide.accent_text ?? '');
+			const rankText = rankRaw.trim();
+			if (rankText) {
+				ctx.save();
+				applyTextBoxCanvasTransform(ctx, slide, 'accent', 50, 36, w, h);
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillStyle = ACCENT_COLOR;
+				ctx.shadowColor = 'rgba(0,0,0,0.7)';
+				ctx.shadowBlur = 18;
+				ctx.font = `900 ${Math.round(w * 0.26)}px ${font}`;
+				ctx.fillText(rankText, centerX, h * 0.36);
+				ctx.restore();
+			}
+
+			const titleText = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
+			if (titleText) {
+				ctx.save();
+				applyTextBoxCanvasTransform(ctx, slide, 'text', 50, 56, w, h);
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillStyle = '#ffffff';
+				ctx.shadowColor = 'rgba(0,0,0,0.8)';
+				ctx.shadowBlur = 14;
+				ctx.font = `bold ${Math.round(w * 0.088)}px ${font}`;
+				wrapTextCentered(ctx, titleText, centerX, h * 0.56, w * 0.84, Math.round(w * 0.108));
+				ctx.restore();
+			}
+
+			const sub = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
+			if (sub) {
+				ctx.save();
+				applyTextBoxCanvasTransform(ctx, slide, 'subtext', 50, 72, w, h);
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillStyle = 'rgba(255,255,255,0.9)';
+				ctx.shadowColor = 'rgba(0,0,0,0.7)';
+				ctx.shadowBlur = 10;
+				ctx.font = `${Math.round(w * 0.04)}px ${font}`;
+				wrapTextCentered(ctx, sub, centerX, h * 0.72, w * 0.8, Math.round(w * 0.052));
+				ctx.restore();
+			}
+			return;
+		}
+
 		const rankRaw = isEditingSlideField(slide, 'accent') ? draftValue : (slide.accent_text ?? '');
-		const rankText = rankRaw.trim();
+		const rankText = rankRaw.trim() || `Top ${slide.options.length}`;
 		if (rankText) {
 			ctx.save();
-			applyTextBoxCanvasTransform(ctx, slide, 'accent', 50, 36, w, h);
+			applyTextBoxCanvasTransform(ctx, slide, 'accent', 50, 21, w, h);
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.fillStyle = ACCENT_COLOR;
 			ctx.shadowColor = 'rgba(0,0,0,0.7)';
-			ctx.shadowBlur = 18;
-			ctx.font = `900 ${Math.round(w * 0.26)}px ${font}`;
-			ctx.fillText(rankText, centerX, h * 0.36);
+			ctx.shadowBlur = 12;
+			ctx.font = `900 ${Math.round(w * 0.078)}px ${font}`;
+			ctx.fillText(rankText, centerX, h * 0.21);
 			ctx.restore();
 		}
 
 		const titleText = isEditingSlideField(slide, 'text') ? draftValue : slide.text;
 		if (titleText) {
 			ctx.save();
-			applyTextBoxCanvasTransform(ctx, slide, 'text', 50, 56, w, h);
+			applyTextBoxCanvasTransform(ctx, slide, 'text', 50, 31, w, h);
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.fillStyle = '#ffffff';
 			ctx.shadowColor = 'rgba(0,0,0,0.8)';
 			ctx.shadowBlur = 14;
-			ctx.font = `bold ${Math.round(w * 0.088)}px ${font}`;
-			wrapTextCentered(ctx, titleText, centerX, h * 0.56, w * 0.84, Math.round(w * 0.108));
+			ctx.font = `bold ${Math.round(w * 0.074)}px ${font}`;
+			wrapTextCentered(ctx, titleText, centerX, h * 0.31, w * 0.84, Math.round(w * 0.092));
 			ctx.restore();
 		}
 
 		const sub = isEditingSlideField(slide, 'subtext') ? draftValue : (slide.subtext ?? '');
 		if (sub) {
 			ctx.save();
-			applyTextBoxCanvasTransform(ctx, slide, 'subtext', 50, 72, w, h);
+			applyTextBoxCanvasTransform(ctx, slide, 'subtext', 50, 39, w, h);
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.fillStyle = 'rgba(255,255,255,0.9)';
 			ctx.shadowColor = 'rgba(0,0,0,0.7)';
 			ctx.shadowBlur = 10;
 			ctx.font = `${Math.round(w * 0.04)}px ${font}`;
-			wrapTextCentered(ctx, sub, centerX, h * 0.72, w * 0.8, Math.round(w * 0.052));
+			wrapTextCentered(ctx, sub, centerX, h * 0.39, w * 0.8, Math.round(w * 0.052));
 			ctx.restore();
 		}
+
+		slide.options.forEach((item, i) => {
+			const displayText = editingSlideId === slide.id && editingField === i ? draftValue : item;
+			const box = getListicleOptionBox(slide, i);
+			const rowY = (box.top / 100) * h;
+			const rowH = (box.height / 100) * h;
+			const rowW = (box.width / 100) * w;
+			const rowX = (box.left / 100) * w - rowW / 2;
+			const rankWidth = Math.round(w * 0.16);
+
+			ctx.save();
+			applyTextBoxCanvasTransform(ctx, slide, `option-${i}`, box.left, box.top, w, h);
+			ctx.fillStyle = 'rgba(255,255,255,0.1)';
+			roundRect(ctx, rowX, rowY - rowH / 2, rowW, rowH, Math.round(w * 0.018));
+			ctx.fill();
+
+			ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+			ctx.lineWidth = Math.max(1, w * 0.0015);
+			roundRect(ctx, rowX, rowY - rowH / 2, rowW, rowH, Math.round(w * 0.018));
+			ctx.stroke();
+
+			ctx.textAlign = 'center';
+			ctx.textBaseline = 'middle';
+			ctx.fillStyle = ACCENT_COLOR;
+			ctx.shadowColor = 'rgba(0,0,0,0.5)';
+			ctx.shadowBlur = 6;
+			ctx.font = `900 ${Math.round(rowH * 0.38)}px ${font}`;
+			ctx.fillText(getListicleRankLabel(slide, i), rowX + rankWidth / 2, rowY);
+
+			ctx.textAlign = 'left';
+			ctx.fillStyle = '#ffffff';
+			drawFittedText(
+				ctx,
+				displayText,
+				rowX + rankWidth,
+				rowY,
+				rowW - rankWidth - Math.round(w * 0.035),
+				Math.round(rowH * 0.34),
+				Math.round(rowH * 0.23),
+				font,
+				'bold'
+			);
+			ctx.restore();
+		});
 	}
 
 	function drawStatLayout(ctx: CanvasRenderingContext2D, slide: VideoCarouselSlide, w: number, h: number) {
@@ -555,6 +728,39 @@
 		lines.forEach((l, i) => ctx.fillText(l, x, y - ((lines.length - 1) * lineH) / 2 + i * lineH));
 	}
 
+	function drawFittedText(
+		ctx: CanvasRenderingContext2D,
+		text: string,
+		x: number,
+		y: number,
+		maxWidth: number,
+		fontSize: number,
+		minFontSize: number,
+		fontFamily: string,
+		weight = 'bold'
+	) {
+		const originalText = text.trim();
+		let displayText = originalText;
+		let size = fontSize;
+		ctx.font = `${weight} ${size}px ${fontFamily}`;
+		while (size > minFontSize && ctx.measureText(displayText).width > maxWidth) {
+			size = Math.max(minFontSize, Math.round(size * 0.94));
+			ctx.font = `${weight} ${size}px ${fontFamily}`;
+		}
+
+		while (displayText.length > 1 && ctx.measureText(displayText).width > maxWidth) {
+			displayText = displayText.slice(0, -1).trimEnd();
+		}
+
+		if (displayText !== originalText) {
+			while (displayText.length > 1 && ctx.measureText(`${displayText}…`).width > maxWidth) {
+				displayText = displayText.slice(0, -1).trimEnd();
+			}
+			displayText = `${displayText}…`;
+		}
+		ctx.fillText(displayText, x, y);
+	}
+
 	function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
 		ctx.beginPath();
 		ctx.moveTo(x + r, y);
@@ -585,8 +791,24 @@
 	});
 
 	$effect(() => {
+		if (!project) return;
+		fontPreset = project.font_preset;
+		musicSource = project.music_source;
+		musicTrackId = project.music_track_id;
+		musicVolumePercent = project.music_volume_percent;
+		selectedExternalMusic = externalMusicFromProject(project);
+		jamendoSearchQuery = project.title;
+	});
+
+	$effect(() => {
 		return () => {
 			if (offsetSaveTimer) clearTimeout(offsetSaveTimer);
+		};
+	});
+
+	$effect(() => {
+		return () => {
+			stopMusicPreview();
 		};
 	});
 
@@ -693,6 +915,62 @@
 		}
 
 		if (slide.layout_type === 'listicle') {
+			if (slide.options.length > 0) {
+				return [
+					{
+						key: 'accent',
+						boxKey: 'accent',
+						field: 'accent',
+						label: 'Badge',
+						value: slide.accent_text ?? `Top ${slide.options.length}`,
+						emptyLabel: `Top ${slide.options.length}`,
+						multiline: false,
+						tone: 'accent',
+						targetStyle: getTransformedPreviewBox(slide, 'accent', 50, 21, 50, 8).style,
+						controlStyle: getTransformedPreviewBox(slide, 'accent', 50, 21, 50, 8).style
+					},
+					{
+						key: 'text',
+						boxKey: 'text',
+						field: 'text',
+						label: 'หัวข้อ Listicle',
+						value: slide.text,
+						emptyLabel: 'เพิ่มหัวข้อ',
+						multiline: true,
+						tone: 'primary',
+						targetStyle: getTransformedPreviewBox(slide, 'text', 50, 31, 84, 12).style,
+						controlStyle: getTransformedPreviewBox(slide, 'text', 50, 31, 84, 12).style
+					},
+					{
+						key: 'subtext',
+						boxKey: 'subtext',
+						field: 'subtext',
+						label: 'Hook',
+						value: slide.subtext ?? '',
+						emptyLabel: 'เพิ่ม hook',
+						multiline: false,
+						tone: 'option',
+						targetStyle: getTransformedPreviewBox(slide, 'subtext', 50, 39, 80, 6).style,
+						controlStyle: getTransformedPreviewBox(slide, 'subtext', 50, 39, 80, 6).style
+					},
+					...slide.options.map((option, i) => {
+						const box = getListicleOptionBox(slide, i);
+						return {
+							key: `option-${i}`,
+							boxKey: `option-${i}`,
+							field: i,
+							label: `อันดับ ${getListicleRankLabel(slide, i)}`,
+							value: option,
+							emptyLabel: `เพิ่มอันดับ ${getListicleRankLabel(slide, i)}`,
+							multiline: false,
+							tone: 'option' as const,
+							targetStyle: getTransformedPreviewBox(slide, `option-${i}`, box.left, box.top, box.width, box.height).style,
+							controlStyle: getTransformedPreviewBox(slide, `option-${i}`, box.left + 5, box.top, box.width - 14, box.height).style
+						};
+					})
+				];
+			}
+
 			return [
 				{
 					key: 'accent',
@@ -828,6 +1106,7 @@
 		if (field === 'text') draftValue = activeSlide.text;
 		else if (field === 'accent') draftValue = activeSlide.accent_text ?? '';
 		else if (field === 'subtext') draftValue = activeSlide.subtext ?? '';
+		else if (field === 'caption') draftValue = activeSlide.caption ?? '';
 		else draftValue = activeSlide.options[field as number] ?? '';
 		editingField = field;
 		editingSlideId = activeSlide.id;
@@ -867,6 +1146,10 @@
 			const val = draftValue.trim() || null;
 			if (val === slide.subtext) return;
 			await patchSlide(slideId, { subtext: val });
+		} else if (field === 'caption') {
+			const val = draftValue.trim() || null;
+			if (val === slide.caption) return;
+			await patchSlide(slideId, { caption: val });
 		} else {
 			const idx = field as number;
 			const newOptions = [...slide.options];
@@ -1048,14 +1331,22 @@
 		selectedTransformKey = getPreviewEditSpecs(slide)[0]?.boxKey ?? 'text';
 	}
 
+	function getMaxOptions(slide: VideoCarouselSlide): number {
+		return slide.layout_type === 'listicle' ? VIDEO_LISTICLE_MAX_ITEMS : 6;
+	}
+
+	function getMinOptions(slide: VideoCarouselSlide): number {
+		return slide.layout_type === 'listicle' ? VIDEO_LISTICLE_MIN_ITEMS : 2;
+	}
+
 	function addOption() {
-		if (!activeSlide || activeSlide.options.length >= 6) return;
-		const newOptions = [...activeSlide.options, ''];
+		if (!activeSlide || activeSlide.options.length >= getMaxOptions(activeSlide)) return;
+		const newOptions = [...activeSlide.options, activeSlide.layout_type === 'listicle' ? 'อันดับใหม่' : ''];
 		patchSlide(activeSlide.id, { options_json: newOptions });
 	}
 
 	function removeOption(idx: number) {
-		if (!activeSlide || activeSlide.options.length <= 2) return;
+		if (!activeSlide || activeSlide.options.length <= getMinOptions(activeSlide)) return;
 		const newOptions = activeSlide.options.filter((_, i) => i !== idx);
 		patchSlide(activeSlide.id, { options_json: newOptions });
 	}
@@ -1148,19 +1439,131 @@
 		}
 	}
 
-	// ── Font save ─────────────────────────────────────────────────────────────
-	async function saveFontPreset() {
+	// ── Project settings ──────────────────────────────────────────────────────
+	function stopMusicPreview() {
+		if (!musicPreview) return;
+		musicPreview.stop();
+		musicPreview = null;
+		previewingMusic = false;
+	}
+
+	function selectMusicSource(source: VideoCarouselMusicSource) {
+		if (musicSource === source) return;
+		stopMusicPreview();
+		musicSource = source;
+		if (source === 'jamendo' && !jamendoSearchQuery.trim()) {
+			jamendoSearchQuery = project?.title ?? '';
+		}
+		if (source === 'generated' && musicVolumePercent <= 0 && musicTrackId !== 'none') {
+			musicVolumePercent = VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT;
+		}
+	}
+
+	function selectJamendoMusic(track: VideoCarouselExternalMusicTrack) {
+		stopMusicPreview();
+		musicSource = 'jamendo';
+		selectedExternalMusic = track;
+		if (musicVolumePercent <= 0) {
+			musicVolumePercent = VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT;
+		}
+	}
+
+	async function searchJamendoMusic() {
 		if (!project) return;
+		searchingJamendoMusic = true;
+		jamendoSearchMessage = '';
+		try {
+			const params = new URLSearchParams({
+				q: jamendoSearchQuery.trim() || project.title,
+				topic: project.title,
+				template_type: project.template_type,
+				limit: '8'
+			});
+			const res = await fetch(`/api/video-carousel/music/search?${params.toString()}`);
+			const data = await res.json();
+			if (!res.ok) throw new Error(data.error ?? 'ค้นหาเพลง Jamendo ไม่สำเร็จ');
+			jamendoSearchResults = Array.isArray(data.tracks) ? data.tracks : [];
+			jamendoSearchMessage =
+				jamendoSearchResults.length > 0
+					? `พบ ${jamendoSearchResults.length} เพลงจาก Jamendo`
+					: 'ยังไม่พบเพลง CC BY / CC BY-SA ที่ตรงเงื่อนไข ลองค้นคำกว้างขึ้น';
+		} catch (error) {
+			jamendoSearchResults = [];
+			jamendoSearchMessage = error instanceof Error ? error.message : 'ค้นหาเพลง Jamendo ไม่สำเร็จ';
+			toast.error(jamendoSearchMessage);
+		} finally {
+			searchingJamendoMusic = false;
+		}
+	}
+
+	function formatMusicDuration(seconds: number | null): string {
+		if (!seconds) return '';
+		const minutes = Math.floor(seconds / 60);
+		const rest = seconds % 60;
+		return `${minutes}:${String(rest).padStart(2, '0')}`;
+	}
+
+	async function toggleMusicPreview() {
+		if (previewingMusic) {
+			stopMusicPreview();
+			return;
+		}
+		if (!canPreviewMusic) {
+			toast.error('กรุณาเลือกเพลงก่อน');
+			return;
+		}
+		try {
+			const preview =
+				musicSource === 'jamendo' && selectedExternalMusic
+					? await createVideoCarouselExternalMusicPreview(selectedExternalMusic.audio_url, musicVolumePercent, 12)
+					: await createVideoCarouselMusicPreview(musicTrackId, musicVolumePercent, 12);
+			musicPreview = preview;
+			previewingMusic = true;
+			void preview.done.then(() => {
+				if (musicPreview === preview) {
+					musicPreview = null;
+					previewingMusic = false;
+				}
+			});
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : 'เล่นตัวอย่างเพลงไม่สำเร็จ');
+		}
+	}
+
+	function applyRecommendedMusic() {
+		stopMusicPreview();
+		musicSource = 'generated';
+		musicTrackId = recommendedMusicTrackId;
+		if (musicVolumePercent <= 0) {
+			musicVolumePercent = VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT;
+		}
+	}
+
+	async function saveProjectSettings() {
+		if (!project) return;
+		if (musicSource === 'jamendo' && !selectedExternalMusic) {
+			toast.error('กรุณาเลือกเพลงจาก Jamendo ก่อน');
+			return;
+		}
 		try {
 			const res = await fetch(`/api/video-carousel/projects/${project.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ font_preset: fontPreset })
+				body: JSON.stringify({
+					font_preset: fontPreset,
+					music_source: musicSource,
+					music_track_id: musicSource === 'generated' ? musicTrackId : 'none',
+					external_music: musicSource === 'jamendo' ? selectedExternalMusic : null,
+					music_volume_percent:
+						musicSource === 'generated' && musicTrackId === 'none'
+							? 0
+							: musicVolumePercent
+				})
 			});
 			if (!res.ok) throw new Error();
 			project = await res.json();
 			showSettings = false;
-			toast.success('บันทึก font สำเร็จ');
+			toast.success('บันทึก settings สำเร็จ');
 		} catch {
 			toast.error('บันทึกไม่สำเร็จ');
 		}
@@ -1269,8 +1672,16 @@
 		'video/webm'
 	] as const;
 
-	function getSupportedRecordingMimeType(): string {
-		const mimeType = RECORDING_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+	const RECORDING_MIME_TYPES_WITH_AUDIO = [
+		'video/webm;codecs=vp9,opus',
+		'video/webm;codecs=vp8,opus',
+		'video/webm;codecs=opus',
+		'video/webm'
+	] as const;
+
+	function getSupportedRecordingMimeType(hasAudio = false): string {
+		const candidates = hasAudio ? RECORDING_MIME_TYPES_WITH_AUDIO : RECORDING_MIME_TYPES;
+		const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type));
 		if (!mimeType) throw new Error('browser ไม่รองรับการบันทึก video จาก canvas');
 		return mimeType;
 	}
@@ -1408,6 +1819,9 @@
 			'-preset', 'veryfast',
 			'-crf', '23',
 			'-pix_fmt', 'yuv420p',
+			'-c:a', 'aac',
+			'-b:a', '128k',
+			'-shortest',
 			'-movflags', '+faststart',
 			'output.mp4'
 		]);
@@ -1428,6 +1842,7 @@
 
 		let recorder: MediaRecorder | null = null;
 		let stream: MediaStream | null = null;
+		let musicStream: VideoCarouselMusicStreamHandle | null = null;
 		const preparedVideos: HTMLVideoElement[] = [];
 
 		try {
@@ -1435,7 +1850,14 @@
 			offCanvas.width = VIDEO_CAROUSEL_CANVAS_WIDTH;
 			offCanvas.height = VIDEO_CAROUSEL_CANVAS_HEIGHT;
 			const offCtx = offCanvas.getContext('2d')!;
-			const mimeType = getSupportedRecordingMimeType();
+			const exportMusicSource = musicSource;
+			const exportMusicTrackId = musicTrackId;
+			const exportExternalMusic = selectedExternalMusic;
+			const exportMusicVolumePercent = musicVolumePercent;
+			const shouldAddMusic =
+				exportMusicVolumePercent > 0 &&
+				(exportMusicSource === 'jamendo' ? !!exportExternalMusic?.audio_url : exportMusicTrackId !== 'none');
+			const mimeType = getSupportedRecordingMimeType(shouldAddMusic);
 
 			exportStatus = 'กำลังโหลด video…';
 			for (let i = 0; i < slides.length; i++) {
@@ -1448,7 +1870,24 @@
 				exportProgress = Math.round(((i + 1) / slides.length) * 10);
 			}
 
-			stream = offCanvas.captureStream(24);
+			const canvasStream = offCanvas.captureStream(24);
+			stream = canvasStream;
+			if (shouldAddMusic && project) {
+				exportStatus = 'กำลังเตรียมเพลง…';
+				musicStream =
+					exportMusicSource === 'jamendo' && exportExternalMusic
+						? await createVideoCarouselExternalMusicStream(
+								exportExternalMusic.audio_url,
+								exportMusicVolumePercent,
+								videoCarouselTotalDuration(slides) + 0.5
+							)
+						: await createVideoCarouselMusicStream(
+								exportMusicTrackId,
+								exportMusicVolumePercent,
+								videoCarouselTotalDuration(slides) + 0.5
+							);
+				stream = new MediaStream([...canvasStream.getVideoTracks(), ...musicStream.stream.getAudioTracks()]);
+			}
 			const recording = createRecording(stream, mimeType);
 			recorder = recording.recorder;
 
@@ -1476,6 +1915,10 @@
 			const recordedBlob = await recording.done;
 			stream.getTracks().forEach((track) => track.stop());
 			stream = null;
+			if (musicStream) {
+				musicStream.stop();
+				musicStream = null;
+			}
 
 			exportProgress = 95;
 			exportStatus = 'กำลัง download…';
@@ -1502,6 +1945,7 @@
 		} finally {
 			if (recorder && recorder.state !== 'inactive') recorder.stop();
 			if (stream) stream.getTracks().forEach((track) => track.stop());
+			if (musicStream) musicStream.stop();
 			for (const video of preparedVideos) {
 				video.pause();
 				video.removeAttribute('src');
@@ -1541,7 +1985,7 @@
 				<span class="template-pill">{VIDEO_CAROUSEL_TEMPLATE_LABELS[project.template_type]}</span>
 			</div>
 			<div class="header-actions">
-				<Button variant="ghost" onclick={() => (showSettings = !showSettings)}>Font</Button>
+				<Button variant="ghost" onclick={() => (showSettings = !showSettings)}>ตั้งค่า</Button>
 				<Button variant="ghost" onclick={openSwapPanel} disabled={!activeSlide}>เปลี่ยน Video</Button>
 				<Button
 					variant="ghost"
@@ -1573,12 +2017,143 @@
 
 		{#if showSettings}
 			<div class="settings-panel">
-				<span class="field-label">Font</span>
-				<select class="field-select" bind:value={fontPreset}>
-					{#each fontOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
-				</select>
-				<Button variant="primary" onclick={saveFontPreset}>บันทึก</Button>
-				<Button variant="ghost" onclick={() => (showSettings = false)}>ยกเลิก</Button>
+				<label class="settings-field">
+					<span class="field-label">Font</span>
+					<select class="field-select" bind:value={fontPreset}>
+						{#each fontOptions as opt}<option value={opt.value}>{opt.label}</option>{/each}
+					</select>
+				</label>
+				<div class="settings-field source-settings-field">
+					<span class="field-label">แหล่งเพลง</span>
+					<div class="music-source-toggle" role="group" aria-label="Music source">
+						<button
+							type="button"
+							class:active={musicSource === 'generated'}
+							onclick={() => selectMusicSource('generated')}
+							disabled={exporting}
+						>
+							Generated
+						</button>
+						<button
+							type="button"
+							class:active={musicSource === 'jamendo'}
+							onclick={() => selectMusicSource('jamendo')}
+							disabled={exporting}
+						>
+							Jamendo
+						</button>
+					</div>
+				</div>
+				{#if musicSource === 'generated'}
+					<label class="settings-field music-settings-field">
+						<span class="field-label">เพลงปลอดลิขสิทธิ์</span>
+						<select
+							class="field-select"
+							bind:value={musicTrackId}
+							onchange={stopMusicPreview}
+							disabled={exporting}
+						>
+							{#each VIDEO_CAROUSEL_MUSIC_TRACKS as track}
+								<option value={track.id}>{track.label}</option>
+							{/each}
+						</select>
+						<span class="music-note">
+							{selectedMusicTrack.mood}
+							{#if selectedMusicTrack.bpm} · {selectedMusicTrack.bpm} BPM{/if}
+							<br />
+							{selectedMusicTrack.safe_note}
+							<br />
+							แนะนำ: {VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID[recommendedMusicTrackId].label} · {recommendedMusicReason}
+						</span>
+					</label>
+				{:else}
+					<div class="settings-field jamendo-settings-field">
+						<span class="field-label">Jamendo</span>
+						<div class="jamendo-search-row">
+							<input
+								class="field-input"
+								type="text"
+								bind:value={jamendoSearchQuery}
+								placeholder="เช่น upbeat trading / lofi mindset"
+								disabled={searchingJamendoMusic || exporting}
+							/>
+							<Button
+								variant="ghost"
+								onclick={searchJamendoMusic}
+								loading={searchingJamendoMusic}
+								disabled={exporting}
+							>
+								ค้นหา
+							</Button>
+						</div>
+						{#if selectedExternalMusic}
+							<div class="selected-jamendo-track">
+								<span class="jamendo-track-title">{selectedExternalMusic.title}</span>
+								<span class="jamendo-track-meta">
+									{selectedExternalMusic.artist_name}
+									{#if selectedExternalMusic.duration_seconds}
+										· {formatMusicDuration(selectedExternalMusic.duration_seconds)}
+									{/if}
+								</span>
+							</div>
+						{/if}
+						{#if jamendoSearchMessage}
+							<span class="music-note">{jamendoSearchMessage}</span>
+						{/if}
+						{#if jamendoSearchResults.length > 0}
+							<div class="jamendo-results">
+								{#each jamendoSearchResults as track}
+									<button
+										type="button"
+										class="jamendo-result"
+										class:active={selectedExternalMusic?.external_id === track.external_id}
+										onclick={() => selectJamendoMusic(track)}
+										disabled={exporting}
+									>
+										<span>
+											<strong>{track.title}</strong>
+											<small>
+												{track.artist_name}
+												{#if track.duration_seconds} · {formatMusicDuration(track.duration_seconds)}{/if}
+											</small>
+										</span>
+										<span class="jamendo-license">CC</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+						<span class="music-note">
+							เก็บ attribution และ license URL จาก Jamendo ไว้กับโปรเจกต์
+						</span>
+					</div>
+				{/if}
+				<label class="settings-field volume-settings-field">
+					<span class="field-label">เสียงเพลง</span>
+					<span class="settings-range-row">
+						<input
+							type="range"
+							min="0"
+							max="100"
+							step="5"
+							bind:value={musicVolumePercent}
+							oninput={stopMusicPreview}
+							disabled={!canPreviewMusic || exporting}
+						/>
+						<strong>{!canPreviewMusic ? 'off' : `${musicVolumePercent}%`}</strong>
+					</span>
+				</label>
+				<Button
+					variant="ghost"
+					onclick={applyRecommendedMusic}
+					disabled={(musicSource === 'generated' && musicTrackId === recommendedMusicTrackId) || exporting}
+				>
+					ใช้เพลงแนะนำ
+				</Button>
+				<Button variant="ghost" onclick={toggleMusicPreview} disabled={!canPreviewMusic || exporting}>
+					{previewingMusic ? 'หยุดฟัง' : 'ทดลองฟัง'}
+				</Button>
+				<Button variant="primary" onclick={saveProjectSettings}>บันทึก</Button>
+				<Button variant="ghost" onclick={() => { stopMusicPreview(); showSettings = false; }}>ยกเลิก</Button>
 			</div>
 		{/if}
 
@@ -1647,7 +2222,7 @@
 					<div class="edit-section">
 						<span class="edit-label">
 							{#if activeSlide.layout_type === 'quiz'}หัวข้อหลัก
-							{:else if activeSlide.layout_type === 'listicle'}หัวข้อย่อย
+							{:else if activeSlide.layout_type === 'listicle'}หัวข้อ Listicle
 							{:else if activeSlide.layout_type === 'stat'}ตัวเลขใหญ่
 							{:else}ข้อความหลัก{/if}
 						</span>
@@ -1669,39 +2244,68 @@
 
 					{#if activeSlide.layout_type === 'listicle'}
 						<div class="edit-section">
-							<span class="edit-label" style="color:{ACCENT_COLOR}">อันดับ</span>
+							<span class="edit-label" style="color:{ACCENT_COLOR}">Badge</span>
 							{#if isPanelEditing('accent')}
 								<input
 									class="edit-input-line"
 									bind:value={draftValue}
 									onblur={commitEdit}
 									use:focusOnMount
-									placeholder="เช่น #5"
+									placeholder="เช่น Top 5"
 								/>
 							{:else}
 								<button class="edit-value-btn accent" ondblclick={() => startEdit('accent')}>
-									{activeSlide.accent_text || '+ เพิ่มอันดับ (เช่น #5)'}
+									{activeSlide.accent_text || `Top ${activeSlide.options.length || 5}`}
 									<span class="edit-hint">double-click แก้ไข</span>
 								</button>
 							{/if}
 						</div>
 
 						<div class="edit-section">
-							<span class="edit-label">Caption</span>
+							<span class="edit-label">Hook / คำโปรย</span>
 							{#if isPanelEditing('subtext')}
 								<input
 									class="edit-input-line"
 									bind:value={draftValue}
 									onblur={commitEdit}
 									use:focusOnMount
-									placeholder="เช่น ปล่อยให้ไม้เดียวลากพอร์ตกลับไม่ได้"
+									placeholder="เช่น ข้อสุดท้ายเจอบ่อยที่สุด"
 								/>
 							{:else}
 								<button class="edit-value-btn" ondblclick={() => startEdit('subtext')}>
-									{activeSlide.subtext || '+ เพิ่ม caption'}
+									{activeSlide.subtext || '+ เพิ่ม hook'}
 									<span class="edit-hint">double-click แก้ไข</span>
 								</button>
 							{/if}
+						</div>
+
+						<div class="edit-section">
+							<div class="options-header">
+								<span class="edit-label">รายการอันดับ ({activeSlide.options.length})</span>
+								{#if activeSlide.options.length < getMaxOptions(activeSlide)}
+									<button class="add-opt-btn" onclick={addOption}>+ เพิ่ม</button>
+								{/if}
+							</div>
+							<div class="options-list">
+								{#each activeSlide.options as opt, i}
+									<div class="option-row">
+										<span class="option-letter" style="color:{ACCENT_COLOR}">{getListicleRankLabel(activeSlide, i)}</span>
+										{#if isPanelEditing(i)}
+											<input
+												class="option-input"
+												bind:value={draftValue}
+												onblur={commitEdit}
+												use:focusOnMount
+											/>
+										{:else}
+											<button class="option-text-btn" ondblclick={() => startEdit(i)}>
+												{opt || '—'}
+											</button>
+										{/if}
+										<button class="remove-opt-btn" onclick={() => removeOption(i)} title="ลบ">×</button>
+									</div>
+								{/each}
+							</div>
 						</div>
 					{:else if activeSlide.layout_type === 'stat'}
 						<div class="edit-section">
@@ -1753,6 +2357,48 @@
 							{:else}
 								<button class="edit-value-btn" ondblclick={() => startEdit(0)}>
 									{activeSlide.options[0] || '+ เพิ่ม source (ไม่บังคับ)'}
+									<span class="edit-hint">double-click แก้ไข</span>
+								</button>
+							{/if}
+							{#if activeSlide.sources && activeSlide.sources.length > 0}
+								<div class="sources-list">
+									<div class="sources-list-label">ลิงก์อ้างอิง ({activeSlide.sources.length})</div>
+									{#each activeSlide.sources as src}
+										<a
+											class="source-link"
+											href={src.url}
+											target="_blank"
+											rel="noopener noreferrer"
+											title={src.snippet}
+										>
+											<span class="source-title">{src.title}</span>
+											{#if src.published_date}
+												<span class="source-date">{src.published_date.slice(0, 10)}</span>
+											{/if}
+										</a>
+									{/each}
+								</div>
+							{/if}
+						</div>
+
+						<div class="edit-section">
+							<span class="edit-label">Caption / สรุปจากข้อมูลจริง</span>
+							{#if isPanelEditing('caption')}
+								<textarea
+									class="edit-input"
+									bind:value={draftValue}
+									onblur={commitEdit}
+									use:focusOnMount
+									rows="5"
+									placeholder="คำอธิบาย 2-4 ประโยค สรุปบริบทของตัวเลขจาก source"
+								></textarea>
+							{:else}
+								<button class="edit-value-btn caption-btn" ondblclick={() => startEdit('caption')}>
+									{#if activeSlide.caption}
+										<span class="caption-text">{activeSlide.caption}</span>
+									{:else}
+										<span class="caption-empty">+ เพิ่ม caption (สรุปจาก source)</span>
+									{/if}
 									<span class="edit-hint">double-click แก้ไข</span>
 								</button>
 							{/if}
@@ -2009,16 +2655,171 @@
 
 	/* Settings */
 	.settings-panel {
-		display: flex; align-items: center; gap: var(--space-3);
+		display: flex; align-items: flex-end; gap: var(--space-3); flex-wrap: wrap;
 		background: var(--color-bg-elevated); border: 1px solid var(--color-border);
 		border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
 		margin-bottom: var(--space-4);
+	}
+	.settings-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		min-width: 12rem;
+	}
+	.music-settings-field {
+		min-width: 17rem;
+		flex: 1 1 18rem;
+	}
+	.source-settings-field {
+		min-width: 12rem;
+	}
+	.jamendo-settings-field {
+		min-width: min(28rem, 100%);
+		flex: 2 1 30rem;
+	}
+	.volume-settings-field {
+		min-width: 12rem;
+	}
+	.music-source-toggle {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+		background: var(--color-bg);
+	}
+	.music-source-toggle button {
+		border: 0;
+		background: transparent;
+		color: var(--color-slate-500);
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: var(--fw-semibold);
+		padding: 0.45rem 0.65rem;
+		cursor: pointer;
+	}
+	.music-source-toggle button + button {
+		border-left: 1px solid var(--color-border);
+	}
+	.music-source-toggle button.active {
+		background: var(--color-primary-bg);
+		color: var(--color-primary);
+	}
+	.music-source-toggle button:disabled {
+		cursor: not-allowed;
+		opacity: 0.65;
+	}
+	.settings-range-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		min-height: 2.1rem;
+	}
+	.settings-range-row input {
+		width: 100%;
+		accent-color: var(--color-primary);
+	}
+	.settings-range-row strong {
+		min-width: 2.8rem;
+		text-align: right;
+		color: var(--color-primary);
+		font-size: var(--text-sm);
+	}
+	.music-note {
+		font-size: var(--text-xs);
+		line-height: 1.35;
+		color: var(--color-slate-400);
 	}
 	.field-label { font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--color-slate-700); white-space: nowrap; }
 	.field-select {
 		padding: 0.4rem 0.6rem; border: 1px solid var(--color-border);
 		border-radius: var(--radius-md); font-size: var(--text-sm); font-family: inherit;
 		color: var(--color-slate-900); background: var(--color-bg);
+	}
+	.field-input {
+		width: 100%;
+		padding: 0.45rem 0.65rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		font-size: var(--text-sm);
+		font-family: inherit;
+		color: var(--color-slate-900);
+		background: var(--color-bg);
+		min-width: 0;
+	}
+	.jamendo-search-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: var(--space-2);
+		align-items: center;
+	}
+	.selected-jamendo-track {
+		display: flex;
+		flex-direction: column;
+		gap: 0.12rem;
+		border: 1px solid var(--color-primary-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-primary-bg);
+		padding: 0.45rem 0.6rem;
+	}
+	.jamendo-track-title {
+		font-size: var(--text-sm);
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-900);
+		overflow-wrap: anywhere;
+	}
+	.jamendo-track-meta {
+		font-size: var(--text-xs);
+		color: var(--color-slate-500);
+		overflow-wrap: anywhere;
+	}
+	.jamendo-results {
+		display: grid;
+		gap: 0.35rem;
+		max-height: 13rem;
+		overflow: auto;
+		padding-right: 0.1rem;
+	}
+	.jamendo-result {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: var(--space-2);
+		align-items: center;
+		width: 100%;
+		text-align: left;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: var(--color-bg);
+		padding: 0.5rem 0.6rem;
+		cursor: pointer;
+	}
+	.jamendo-result:hover,
+	.jamendo-result.active {
+		border-color: var(--color-primary);
+		background: var(--color-primary-bg);
+	}
+	.jamendo-result strong,
+	.jamendo-result small {
+		display: block;
+		overflow-wrap: anywhere;
+	}
+	.jamendo-result strong {
+		font-size: var(--text-sm);
+		color: var(--color-slate-900);
+	}
+	.jamendo-result small {
+		margin-top: 0.1rem;
+		font-size: var(--text-xs);
+		color: var(--color-slate-500);
+	}
+	.jamendo-license {
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.12rem 0.42rem;
+		font-size: 0.68rem;
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-500);
+		background: var(--color-bg-elevated);
 	}
 
 	/* Body layout */
@@ -2226,6 +3027,22 @@
 		display: flex; align-items: center; justify-content: center;
 	}
 	.remove-opt-btn:hover { background: #fee2e2; color: #dc2626; }
+
+	.sources-list { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); }
+	.sources-list-label { font-size: var(--text-xs); color: var(--color-slate-500); font-weight: var(--fw-semibold); }
+	.source-link {
+		display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+		padding: 0.35rem 0.55rem; background: var(--color-slate-50); border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm); text-decoration: none; color: var(--color-slate-700);
+		font-size: var(--text-xs); transition: border-color var(--transition-fast), background var(--transition-fast);
+	}
+	.source-link:hover { border-color: var(--color-primary-border); background: var(--color-primary-bg); color: var(--color-primary); }
+	.source-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.source-date { color: var(--color-slate-400); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+	.caption-btn { white-space: normal; text-align: left; line-height: 1.5; padding: 0.6rem 0.7rem; }
+	.caption-text { display: block; font-size: var(--text-sm); color: var(--color-slate-700); white-space: pre-wrap; }
+	.caption-empty { color: var(--color-slate-400); font-style: italic; }
 
 	.position-header {
 		display: flex;

@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { Button, PageHeader, Spinner, toast } from '$lib';
 	import type {
+		VideoCarouselMusicSelection,
+		VideoCarouselMusicTrackId,
 		VideoCarouselProjectListItem,
 		VideoCarouselTemplateType,
 		VideoQuoteCategory
@@ -11,7 +13,15 @@
 		VIDEO_CAROUSEL_TEMPLATE_DESCRIPTIONS,
 		VIDEO_CAROUSEL_TEMPLATE_LABELS,
 		VIDEO_QUOTE_CATEGORY_LABELS,
-		FONT_PRESET_LABELS
+		VIDEO_LISTICLE_DEFAULT_ITEMS,
+		VIDEO_LISTICLE_MAX_ITEMS,
+		VIDEO_LISTICLE_MIN_ITEMS,
+		VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT,
+		VIDEO_CAROUSEL_MUSIC_TRACKS,
+		VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID,
+		FONT_PRESET_LABELS,
+		describeVideoCarouselMusicRecommendation,
+		recommendVideoCarouselMusicTrack
 	} from '$lib/video-carousel';
 	import type { CarouselFontPreset } from '$lib/types';
 
@@ -23,9 +33,24 @@
 	let clipCount = $state(1);
 	let durationSeconds = $state(10);
 	let fontPreset = $state<CarouselFontPreset>('biglot');
+	let musicSelection = $state<VideoCarouselMusicSelection>('auto');
+	let musicVolumePercent = $state(VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT);
 	let generating = $state(false);
 	let suggestingTopics = $state(false);
 	let topicSuggestions = $state<Array<{ title: string; angle: string | null }>>([]);
+	let countMin = $derived(templateType === 'listicle' ? VIDEO_LISTICLE_MIN_ITEMS : 1);
+	let countMax = $derived(templateType === 'listicle' ? VIDEO_LISTICLE_MAX_ITEMS : 10);
+	let totalDurationSeconds = $derived(templateType === 'listicle' ? durationSeconds : clipCount * durationSeconds);
+	let recommendedMusicTrackId = $derived(
+		recommendVideoCarouselMusicTrack({ template_type: templateType, topic })
+	);
+	let recommendedMusicReason = $derived(
+		describeVideoCarouselMusicRecommendation({ template_type: templateType, topic })
+	);
+	let musicTrackId: VideoCarouselMusicTrackId = $derived(
+		musicSelection === 'auto' ? recommendedMusicTrackId : musicSelection
+	);
+	let selectedMusicTrack = $derived(VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID[musicTrackId]);
 
 	// ── Project list ──────────────────────────────────────────────────────────
 	let projects = $state<VideoCarouselProjectListItem[]>([]);
@@ -74,6 +99,9 @@
 		if (templateType === nextTemplate) return;
 		templateType = nextTemplate;
 		topicSuggestions = [];
+		if (nextTemplate === 'listicle' && (clipCount < VIDEO_LISTICLE_MIN_ITEMS || clipCount > VIDEO_LISTICLE_MAX_ITEMS)) {
+			clipCount = VIDEO_LISTICLE_DEFAULT_ITEMS;
+		}
 	}
 
 	async function loadProjects() {
@@ -104,7 +132,9 @@
 					template_type: templateType,
 					clip_count: clipCount,
 					duration_seconds: durationSeconds,
-					font_preset: fontPreset
+					font_preset: fontPreset,
+					music_track_id: musicTrackId,
+					music_volume_percent: musicTrackId === 'none' ? 0 : musicVolumePercent
 				})
 			});
 			const data = await res.json();
@@ -207,6 +237,12 @@
 
 	$effect(() => {
 		loadProjects();
+	});
+
+	$effect(() => {
+		if (templateType === 'listicle' && (clipCount < VIDEO_LISTICLE_MIN_ITEMS || clipCount > VIDEO_LISTICLE_MAX_ITEMS)) {
+			clipCount = VIDEO_LISTICLE_DEFAULT_ITEMS;
+		}
 	});
 </script>
 
@@ -346,24 +382,28 @@
 		</div>
 
 		<div class="form-field">
-			<label for="vc-clips" class="field-label">จำนวน Video Clips</label>
+			<label for="vc-clips" class="field-label">
+				{templateType === 'listicle' ? 'จำนวนอันดับ' : 'จำนวน Video Clips'}
+			</label>
 			<div class="range-row">
 				<input
 					id="vc-clips"
 					type="range"
-					min="1"
-					max="10"
+					min={countMin}
+					max={countMax}
 					step="1"
 					bind:value={clipCount}
 					disabled={generating}
 					class="range-input"
 				/>
-				<span class="range-value">{clipCount} clips</span>
+				<span class="range-value">{clipCount} {templateType === 'listicle' ? 'อันดับ' : 'clips'}</span>
 			</div>
 		</div>
 
 		<div class="form-field">
-			<label for="vc-duration" class="field-label">ความยาวต่อ Clip</label>
+			<label for="vc-duration" class="field-label">
+				{templateType === 'listicle' ? 'ความยาว Video' : 'ความยาวต่อ Clip'}
+			</label>
 			<div class="range-row">
 				<input
 					id="vc-duration"
@@ -387,12 +427,54 @@
 				{/each}
 			</select>
 		</div>
+
+		<div class="form-field">
+			<label for="vc-music" class="field-label">เพลงปลอดลิขสิทธิ์</label>
+			<select id="vc-music" class="field-select" bind:value={musicSelection} disabled={generating}>
+				<option value="auto">Auto · {VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID[recommendedMusicTrackId].label}</option>
+				{#each VIDEO_CAROUSEL_MUSIC_TRACKS as track}
+					<option value={track.id}>{track.label}</option>
+				{/each}
+			</select>
+			<span class="music-safe-note">
+				{#if musicSelection === 'auto'}
+					แนะนำ: {selectedMusicTrack.label} · {recommendedMusicReason}
+				{:else}
+					{selectedMusicTrack.safe_note}
+				{/if}
+			</span>
+		</div>
+
+		<div class="form-field">
+			<label for="vc-music-volume" class="field-label">ระดับเสียงเพลง</label>
+			<div class="range-row">
+				<input
+					id="vc-music-volume"
+					type="range"
+					min="0"
+					max="100"
+					step="5"
+					bind:value={musicVolumePercent}
+					disabled={generating || musicTrackId === 'none'}
+					class="range-input"
+				/>
+				<span class="range-value">{musicTrackId === 'none' ? 'off' : `${musicVolumePercent}%`}</span>
+			</div>
+		</div>
 	</div>
 
 	<div class="summary-row">
 		<span class="summary-text">
-			{VIDEO_CAROUSEL_TEMPLATE_LABELS[templateType]} · รวม {clipCount} clips × {durationSeconds}s =
-			<strong>{clipCount * durationSeconds}s ({Math.ceil((clipCount * durationSeconds) / 60)}m)</strong>
+			{#if templateType === 'listicle'}
+				{VIDEO_CAROUSEL_TEMPLATE_LABELS[templateType]} · 1 video · {clipCount} อันดับ ·
+				<strong>{formatDuration(totalDurationSeconds)}</strong>
+			{:else}
+				{VIDEO_CAROUSEL_TEMPLATE_LABELS[templateType]} · รวม {clipCount} clips × {durationSeconds}s =
+				<strong>{formatDuration(totalDurationSeconds)}</strong>
+			{/if}
+			{#if musicTrackId !== 'none'}
+				· เพลง {selectedMusicTrack.label} ({musicVolumePercent}%)
+			{/if}
 		</span>
 	</div>
 
@@ -474,7 +556,18 @@
 								<span class="template-badge">
 									{VIDEO_CAROUSEL_TEMPLATE_LABELS[project.template_type]}
 								</span>
-								<span class="meta-text">{project.slide_count} clips</span>
+								{#if project.music_source === 'jamendo' && project.music_title}
+									<span class="music-badge">
+										Jamendo · {project.music_title}
+									</span>
+								{:else if project.music_track_id !== 'none'}
+									<span class="music-badge">
+										{VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID[project.music_track_id]?.label ?? 'Music'}
+									</span>
+								{/if}
+								<span class="meta-text">
+									{project.template_type === 'listicle' ? '1 video' : `${project.slide_count} clips`}
+								</span>
 								<span class="meta-text">{new Date(project.updated_at).toLocaleDateString('th-TH')}</span>
 							</span>
 						</span>
@@ -717,6 +810,12 @@
 	.field-select:focus {
 		outline: none;
 		border-color: var(--color-primary);
+	}
+
+	.music-safe-note {
+		font-size: var(--text-xs);
+		line-height: 1.35;
+		color: var(--color-slate-400);
 	}
 
 	.quote-category-row {
@@ -996,7 +1095,8 @@
 	.status-ready { background: #d1fae5; color: #065f46; }
 	.status-exported { background: var(--color-primary-bg); color: var(--color-primary); }
 
-	.template-badge {
+	.template-badge,
+	.music-badge {
 		font-size: 0.7rem;
 		font-weight: var(--fw-semibold);
 		color: var(--color-slate-500);
@@ -1005,6 +1105,15 @@
 		border-radius: 999px;
 		padding: 0.15rem 0.45rem;
 		white-space: nowrap;
+	}
+
+	.music-badge {
+		color: #047857;
+		background: #ecfdf5;
+		border-color: #a7f3d0;
+		max-width: min(20rem, 100%);
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.meta-text {

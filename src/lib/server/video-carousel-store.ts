@@ -1,4 +1,9 @@
 import { supabaseAdmin } from '$lib/server/supabase-admin';
+import {
+	VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT,
+	VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID,
+	recommendVideoCarouselMusicTrack
+} from '$lib/video-carousel';
 import type {
 	VideoCarouselProject,
 	VideoCarouselProjectListItem,
@@ -9,7 +14,11 @@ import type {
 	VideoLayoutType,
 	VideoCarouselTemplateType,
 	VideoFilterType,
-	VideoTextBoxTransforms
+	VideoTextBoxTransforms,
+	VideoSlideSource,
+	VideoCarouselMusicTrackId,
+	VideoCarouselMusicSource,
+	VideoCarouselExternalMusicTrack
 } from '$lib/video-carousel';
 import type { CarouselFontPreset } from '$lib/types';
 
@@ -40,6 +49,32 @@ function normalizeTemplateType(value: unknown): VideoCarouselTemplateType {
 	return 'quiz';
 }
 
+function normalizeMusicTrackId(value: unknown): VideoCarouselMusicTrackId {
+	if (typeof value === 'string' && value in VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID) {
+		return value as VideoCarouselMusicTrackId;
+	}
+	return 'none';
+}
+
+function normalizeMusicSource(value: unknown): VideoCarouselMusicSource {
+	return value === 'jamendo' ? 'jamendo' : 'generated';
+}
+
+function normalizeMusicVolumePercent(value: unknown): number {
+	const numberValue = typeof value === 'number' ? value : Number(value);
+	if (!Number.isFinite(numberValue)) return VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT;
+	return Math.min(Math.max(Math.round(numberValue), 0), 100);
+}
+
+function normalizeNullableString(value: unknown): string | null {
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeNullableInteger(value: unknown): number | null {
+	const numberValue = typeof value === 'number' ? value : Number(value);
+	return Number.isFinite(numberValue) ? Math.max(0, Math.round(numberValue)) : null;
+}
+
 function normalizeProject(row: JsonRecord): VideoCarouselProject {
 	return {
 		id: row.id as string,
@@ -47,6 +82,18 @@ function normalizeProject(row: JsonRecord): VideoCarouselProject {
 		status: normalizeStatus(row.status),
 		template_type: normalizeTemplateType(row.template_type),
 		font_preset: normalizeFontPreset(row.font_preset),
+		music_track_id: normalizeMusicTrackId(row.music_track_id),
+		music_source: normalizeMusicSource(row.music_source),
+		music_external_id: normalizeNullableString(row.music_external_id),
+		music_title: normalizeNullableString(row.music_title),
+		music_artist_name: normalizeNullableString(row.music_artist_name),
+		music_audio_url: normalizeNullableString(row.music_audio_url),
+		music_page_url: normalizeNullableString(row.music_page_url),
+		music_license_url: normalizeNullableString(row.music_license_url),
+		music_attribution_text: normalizeNullableString(row.music_attribution_text),
+		music_duration_seconds: normalizeNullableInteger(row.music_duration_seconds),
+		music_image_url: normalizeNullableString(row.music_image_url),
+		music_volume_percent: normalizeMusicVolumePercent(row.music_volume_percent),
 		aspect_ratio: '9:16',
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
@@ -81,6 +128,27 @@ function normalizeOptions(value: unknown): string[] {
 function normalizeInteger(value: unknown, fallback = 0): number {
 	const numberValue = typeof value === 'number' ? value : Number(value);
 	return Number.isFinite(numberValue) ? Math.round(numberValue) : fallback;
+}
+
+function normalizeSources(value: unknown): VideoSlideSource[] {
+	if (!Array.isArray(value)) return [];
+	const out: VideoSlideSource[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== 'object') continue;
+		const raw = item as Record<string, unknown>;
+		const url = typeof raw.url === 'string' ? raw.url.trim() : '';
+		if (!url) continue;
+		out.push({
+			title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : url,
+			url,
+			snippet: typeof raw.snippet === 'string' ? raw.snippet : '',
+			published_date:
+				typeof raw.published_date === 'string' && raw.published_date.trim()
+					? raw.published_date.trim()
+					: null
+		});
+	}
+	return out;
 }
 
 function normalizeTextBoxTransforms(value: unknown): VideoTextBoxTransforms {
@@ -120,6 +188,8 @@ function normalizeSlide(row: JsonRecord): VideoCarouselSlide {
 		video_filter: normalizeVideoFilter(row.video_filter),
 		duration_seconds: Number(row.duration_seconds ?? 10),
 		search_query: typeof row.search_query === 'string' ? row.search_query : null,
+		sources: normalizeSources(row.sources_json),
+		caption: typeof row.caption === 'string' && row.caption.trim() ? row.caption.trim() : null,
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
@@ -199,11 +269,50 @@ export async function getVideoCarouselSlides(projectId: string): Promise<VideoCa
 	return ((data ?? []) as JsonRecord[]).map(normalizeSlide);
 }
 
+function externalMusicColumns(track: VideoCarouselExternalMusicTrack | null | undefined): JsonRecord {
+	if (!track) {
+		return {
+			music_source: 'generated',
+			music_external_id: null,
+			music_title: null,
+			music_artist_name: null,
+			music_audio_url: null,
+			music_page_url: null,
+			music_license_url: null,
+			music_attribution_text: null,
+			music_duration_seconds: null,
+			music_image_url: null
+		};
+	}
+
+	return {
+		music_source: 'jamendo',
+		music_external_id: track.external_id,
+		music_title: track.title,
+		music_artist_name: track.artist_name,
+		music_audio_url: track.audio_url,
+		music_page_url: track.page_url,
+		music_license_url: track.license_url,
+		music_attribution_text: track.attribution_text,
+		music_duration_seconds: track.duration_seconds,
+		music_image_url: track.image_url
+	};
+}
+
 export async function createVideoCarouselProject(input: {
 	title: string;
 	template_type?: VideoCarouselTemplateType;
 	font_preset?: CarouselFontPreset;
+	music_track_id?: VideoCarouselMusicTrackId;
+	music_source?: VideoCarouselMusicSource;
+	external_music?: VideoCarouselExternalMusicTrack | null;
+	music_volume_percent?: number;
 }): Promise<VideoCarouselProject> {
+	const musicColumns =
+		input.music_source === 'jamendo'
+			? externalMusicColumns(input.external_music)
+			: externalMusicColumns(null);
+
 	const { data, error } = await db()
 		.from('video_carousel_projects')
 		.insert({
@@ -211,6 +320,16 @@ export async function createVideoCarouselProject(input: {
 			status: 'draft',
 			template_type: input.template_type ?? 'quiz',
 			font_preset: input.font_preset ?? 'biglot',
+			music_track_id:
+				input.music_source === 'jamendo'
+					? 'none'
+					: (input.music_track_id ??
+						recommendVideoCarouselMusicTrack({
+							template_type: input.template_type ?? 'quiz',
+							topic: input.title
+						})),
+			...musicColumns,
+			music_volume_percent: normalizeMusicVolumePercent(input.music_volume_percent),
 			aspect_ratio: '9:16'
 		})
 		.select('*')
@@ -239,6 +358,8 @@ export async function upsertVideoCarouselSlides(
 		video_filter?: VideoFilterType;
 		duration_seconds: number;
 		search_query?: string | null;
+		sources?: VideoSlideSource[];
+		caption?: string | null;
 	}>
 ): Promise<VideoCarouselSlide[]> {
 	const { error: deleteError } = await db()
@@ -267,7 +388,9 @@ export async function upsertVideoCarouselSlides(
 		thumbnail_url: s.thumbnail_url ?? null,
 		video_filter: s.video_filter ?? 'none',
 		duration_seconds: s.duration_seconds,
-		search_query: s.search_query ?? null
+		search_query: s.search_query ?? null,
+		sources_json: s.sources ?? [],
+		caption: s.caption ?? null
 	}));
 
 	const { data, error } = await db()
@@ -298,6 +421,8 @@ export async function updateVideoCarouselSlide(
 		thumbnail_url: string | null;
 		video_filter: VideoFilterType;
 		duration_seconds: number;
+		sources_json: VideoSlideSource[];
+		caption: string | null;
 	}>
 ): Promise<VideoCarouselSlide> {
 	const { data, error } = await db()
@@ -317,6 +442,18 @@ export async function updateVideoCarouselProject(
 		status: VideoCarouselStatus;
 		template_type: VideoCarouselTemplateType;
 		font_preset: CarouselFontPreset;
+		music_track_id: VideoCarouselMusicTrackId;
+		music_source: VideoCarouselMusicSource;
+		music_external_id: string | null;
+		music_title: string | null;
+		music_artist_name: string | null;
+		music_audio_url: string | null;
+		music_page_url: string | null;
+		music_license_url: string | null;
+		music_attribution_text: string | null;
+		music_duration_seconds: number | null;
+		music_image_url: string | null;
+		music_volume_percent: number;
 	}>
 ): Promise<VideoCarouselProject> {
 	const { data, error } = await db()

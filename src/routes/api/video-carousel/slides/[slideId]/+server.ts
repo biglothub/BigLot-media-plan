@@ -24,6 +24,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		if (typeof body.thumbnail_url === 'string') patch.thumbnail_url = body.thumbnail_url;
 		if (typeof body.video_filter === 'string') patch.video_filter = body.video_filter as VideoFilterType;
 		if (typeof body.duration_seconds === 'number') patch.duration_seconds = body.duration_seconds;
+		if ('caption' in body) {
+			patch.caption =
+				typeof body.caption === 'string' && body.caption.trim() ? body.caption.trim() : null;
+		}
 
 		const slide = await updateVideoCarouselSlide(params.slideId, patch);
 		return json(slide);

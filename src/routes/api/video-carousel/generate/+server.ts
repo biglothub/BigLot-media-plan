@@ -2,12 +2,85 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { generateVideoScript } from '$lib/server/video-ai';
 import { searchPexelsVideos, pickBestVideoFile } from '$lib/server/pexels';
+import { assertJamendoAudioUrl } from '$lib/server/jamendo';
 import {
 	createVideoCarouselProject,
 	upsertVideoCarouselSlides
 } from '$lib/server/video-carousel-store';
 import type { CarouselFontPreset } from '$lib/types';
-import type { VideoCarouselTemplateType, VideoTextPosition } from '$lib/video-carousel';
+import {
+	VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT,
+	VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID,
+	recommendVideoCarouselMusicTrack,
+	type VideoCarouselExternalMusicTrack,
+	type VideoCarouselMusicTrackId,
+	type VideoCarouselMusicSource,
+	type VideoCarouselTemplateType,
+	type VideoTextPosition
+} from '$lib/video-carousel';
+
+function normalizeMusicTrackId(
+	value: unknown,
+	templateType: VideoCarouselTemplateType,
+	topic: string
+): VideoCarouselMusicTrackId {
+	if (value === undefined || value === null || value === 'auto') {
+		return recommendVideoCarouselMusicTrack({ template_type: templateType, topic });
+	}
+	if (typeof value === 'string' && value in VIDEO_CAROUSEL_MUSIC_TRACK_BY_ID) {
+		return value as VideoCarouselMusicTrackId;
+	}
+	return recommendVideoCarouselMusicTrack({ template_type: templateType, topic });
+}
+
+function normalizeMusicVolumePercent(value: unknown): number {
+	const numberValue = typeof value === 'number' ? value : Number(value);
+	if (!Number.isFinite(numberValue)) return VIDEO_CAROUSEL_DEFAULT_MUSIC_VOLUME_PERCENT;
+	return Math.min(Math.max(Math.round(numberValue), 0), 100);
+}
+
+function normalizeExternalMusic(value: unknown): VideoCarouselExternalMusicTrack | null {
+	if (!value || typeof value !== 'object') return null;
+	const raw = value as Record<string, unknown>;
+	if (
+		raw.source !== 'jamendo' ||
+		typeof raw.external_id !== 'string' ||
+		!raw.external_id.trim() ||
+		typeof raw.title !== 'string' ||
+		!raw.title.trim() ||
+		typeof raw.artist_name !== 'string' ||
+		!raw.artist_name.trim() ||
+		typeof raw.audio_url !== 'string' ||
+		!raw.audio_url.trim()
+	) {
+		return null;
+	}
+	let audioUrl: string;
+	try {
+		audioUrl = assertJamendoAudioUrl(raw.audio_url.trim());
+	} catch {
+		return null;
+	}
+	return {
+		source: 'jamendo',
+		external_id: raw.external_id.trim(),
+		title: raw.title.trim(),
+		artist_name: raw.artist_name.trim(),
+		audio_url: audioUrl,
+		page_url: typeof raw.page_url === 'string' && raw.page_url.trim() ? raw.page_url.trim() : null,
+		license_url: typeof raw.license_url === 'string' && raw.license_url.trim() ? raw.license_url.trim() : null,
+		attribution_text:
+			typeof raw.attribution_text === 'string' && raw.attribution_text.trim()
+				? raw.attribution_text.trim()
+				: `${raw.title.trim()} - ${raw.artist_name.trim()}`,
+		duration_seconds:
+			typeof raw.duration_seconds === 'number' && Number.isFinite(raw.duration_seconds)
+				? Math.max(0, Math.round(raw.duration_seconds))
+				: null,
+		image_url: typeof raw.image_url === 'string' && raw.image_url.trim() ? raw.image_url.trim() : null,
+		tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === 'string') : []
+	};
+}
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -19,12 +92,19 @@ export const POST: RequestHandler = async ({ request }) => {
 		const durationSeconds = typeof body.duration_seconds === 'number' ? body.duration_seconds : 10;
 		const fontPreset: CarouselFontPreset =
 			typeof body.font_preset === 'string' ? (body.font_preset as CarouselFontPreset) : 'biglot';
+		const musicVolumePercent = normalizeMusicVolumePercent(body.music_volume_percent);
 		const templateType: VideoCarouselTemplateType =
 			body.template_type === 'quote' ||
 			body.template_type === 'listicle' ||
 			body.template_type === 'stat'
 				? body.template_type
 				: 'quiz';
+		const musicTrackId = normalizeMusicTrackId(body.music_track_id, templateType, topic);
+		const musicSource: VideoCarouselMusicSource = body.music_source === 'jamendo' ? 'jamendo' : 'generated';
+		const externalMusic = normalizeExternalMusic(body.external_music);
+		if (musicSource === 'jamendo' && !externalMusic) {
+			return json({ error: 'external_music is required for Jamendo music' }, { status: 400 });
+		}
 
 		// Step 1: AI generates script
 		const script = await generateVideoScript(topic, clipCount, durationSeconds, templateType);
@@ -38,7 +118,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		const project = await createVideoCarouselProject({
 			title: script.title,
 			template_type: templateType,
-			font_preset: fontPreset
+			font_preset: fontPreset,
+			music_track_id: musicTrackId,
+			music_source: musicSource,
+			external_music: externalMusic,
+			music_volume_percent: musicVolumePercent
 		});
 
 		// Step 4: Persist slides — pick the first video for each segment
@@ -59,7 +143,9 @@ export const POST: RequestHandler = async ({ request }) => {
 				video_url: bestFile?.link ?? null,
 				thumbnail_url: best?.image ?? null,
 				duration_seconds: seg.duration_seconds,
-				search_query: seg.search_query
+				search_query: seg.search_query,
+				sources: seg.sources,
+				caption: seg.caption
 			};
 		});
 

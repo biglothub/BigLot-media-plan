@@ -1,9 +1,13 @@
 import { chat } from '$lib/server/minimax';
+import { researchStats, formatResearchForPrompt } from '$lib/server/research';
 import {
 	VIDEO_QUOTE_CATEGORY_LABELS,
 	VIDEO_QUOTE_CATEGORY_PROMPTS,
+	VIDEO_LISTICLE_MAX_ITEMS,
+	VIDEO_LISTICLE_MIN_ITEMS,
 	type VideoCarouselTemplateType,
-	type VideoQuoteCategory
+	type VideoQuoteCategory,
+	type VideoSlideSource
 } from '$lib/video-carousel';
 
 export interface VideoScriptSegment {
@@ -16,6 +20,8 @@ export interface VideoScriptSegment {
 	search_query: string;
 	text_position: 'top' | 'center' | 'bottom';
 	duration_seconds: number;
+	sources: VideoSlideSource[];
+	caption: string | null;
 }
 
 export interface VideoScriptDraft {
@@ -34,6 +40,10 @@ function cleanJson(raw: string): string {
 
 function clampDuration(value: number): number {
 	return Math.min(Math.max(Math.round(value), 5), 60);
+}
+
+function clampListicleItemCount(value: number): number {
+	return Math.min(Math.max(Math.round(value), VIDEO_LISTICLE_MIN_ITEMS), VIDEO_LISTICLE_MAX_ITEMS);
 }
 
 function normalizeTextPosition(value: unknown): 'top' | 'center' | 'bottom' {
@@ -83,6 +93,25 @@ function normalizeTopicSuggestions(value: unknown, count: number): VideoTopicSug
 function normalizeTemplateType(value: VideoCarouselTemplateType): VideoCarouselTemplateType {
 	if (value === 'quote' || value === 'listicle' || value === 'stat') return value;
 	return 'quiz';
+}
+
+function normalizeListicleOptionText(value: string): string {
+	return value
+		.replace(/^#?\d+\s*[\).:\-–—]?\s*/u, '')
+		.trim();
+}
+
+function normalizeListicleOptions(options: string[], count: number, fallbackTopic: string): string[] {
+	const cleaned = options
+		.map(normalizeListicleOptionText)
+		.filter((value) => value.length > 0)
+		.slice(0, count);
+
+	while (cleaned.length < count) {
+		cleaned.push(`${fallbackTopic} ข้อ ${count - cleaned.length}`);
+	}
+
+	return cleaned;
 }
 
 export async function generateVideoTopicSuggestions(input: {
@@ -214,9 +243,11 @@ export async function generateVideoScript(
 	durationSeconds: number,
 	templateType: VideoCarouselTemplateType = 'quiz'
 ): Promise<VideoScriptDraft> {
-	const clampedCount = Math.min(Math.max(Math.round(clipCount), 1), 10);
 	const clampedDuration = clampDuration(durationSeconds);
 	const selectedTemplate = normalizeTemplateType(templateType);
+	const rawCount = Math.min(Math.max(Math.round(clipCount), 1), 10);
+	const clampedCount = selectedTemplate === 'listicle' ? clampListicleItemCount(rawCount) : rawCount;
+	const expectedSegmentCount = selectedTemplate === 'listicle' ? 1 : clampedCount;
 	const expectedLayout = selectedTemplate;
 
 	const systemPrompt = `คุณคือ video content strategist ของทีม BigLot ซึ่งสร้างเนื้อหาเกี่ยวกับการเทรดทอง XAUUSD
@@ -244,16 +275,17 @@ export async function generateVideoScript(
 		defaultTextPosition = 'center';
 		templateInstruction = `Template: Listicle / อันดับ Top N
 - layout_type ให้ใช้ "listicle" เสมอ
-- เรียง segment เป็นการนับถอยหลัง: segment แรกคือ #${clampedCount} → segment สุดท้ายคือ #1 (ข้อที่หนักสุด/น่าตกใจสุด)
-- accent_text = "#${clampedCount}", "#${Math.max(clampedCount - 1, 1)}", ... จนถึง "#1" (ใส่เครื่องหมาย # เสมอ)
-- text = หัวข้อย่อยของอันดับนั้น ภาษาไทย ไม่เกิน 8 คำ คมและจำง่าย
-- subtext = caption อธิบายอันดับนั้น 1 บรรทัด ไม่เกิน 14 คำ
-- options = []
-- text_position ให้ใช้ "center" ทุก segment`;
-		exampleSegment = `      "text": "ไม่ตั้ง stop loss",
-      "accent_text": "#${clampedCount}",
-      "subtext": "ปล่อยให้ไม้เดียวลากพอร์ตกลับไม่ได้",
-      "options": [],
+- ต้องสร้างเป็น video เดียวเท่านั้น: segments มี 1 object เดียว
+- text = หัวข้อหลักของ listicle ภาษาไทย ไม่เกิน 9 คำ เช่น "Indicator หลอกคนเทรดทอง"
+- accent_text = "Top ${clampedCount}" หรือ "${clampedCount} อันดับ"
+- subtext = hook สั้น ๆ ไม่เกิน 12 คำ เช่น "ข้อสุดท้ายเจอบ่อยที่สุด"
+- options = รายการอันดับ ${clampedCount} ข้อ เรียงจาก #${clampedCount} → #1
+- แต่ละ option เป็นข้อความอันดับนั้น ไม่ต้องใส่เลข # นำหน้า ไม่เกิน 10 คำ
+- text_position ให้ใช้ "center"`;
+		exampleSegment = `      "text": "Indicator หลอกคนเทรดทอง",
+      "accent_text": "Top ${clampedCount}",
+      "subtext": "ข้อสุดท้ายเจอบ่อยที่สุด",
+      "options": [${Array.from({ length: clampedCount }, (_, i) => `"ตัวอย่างอันดับ ${clampedCount - i}"`).join(', ')}],
       "text_position": "center"`;
 	} else if (selectedTemplate === 'stat') {
 		defaultTextPosition = 'center';
@@ -263,12 +295,22 @@ export async function generateVideoScript(
 - text = ตัวเลขล้วน ๆ เช่น "90", "1 ใน 3", "6 เดือน" ไม่ต้องมีหน่วย (ความยาวสูงสุด 6 ตัวอักษรรวมเว้นวรรค)
 - accent_text = หน่วย/สัญลักษณ์สั้น ๆ เช่น "%", "บาท", "เดือน", "X" หรือ null ถ้าตัวเลขมีหน่วยในตัวแล้ว
 - subtext = claim อธิบายตัวเลขนั้น 1 บรรทัด ภาษาไทย ไม่เกิน 16 คำ
-- options = ใส่ source/อ้างอิงเป็น array 1 ข้อ เช่น ["ที่มา: SEC, 2024"] หรือ [] ถ้าไม่มี
-- text_position ให้ใช้ "center" ทุก segment`;
+- options = ใส่ "ที่มา: <ชื่อแหล่ง>, <ปี>" เป็น array 1 ข้อ ใช้ชื่อแหล่งจริงจาก research ที่ให้มา
+- sources = array ของ source ที่ใช้จริง อ้างอิง [S1], [S2]... ที่ปรากฏในบล็อก research ด้านล่าง — ห้ามแต่ง URL หรือชื่อแหล่งเอง
+- caption = คำอธิบายยาว 2-4 ประโยค ภาษาไทย สรุปบริบท/วิธีการศึกษา/เหตุผลของตัวเลขนี้ จากเนื้อหา research จริง — ใช้เป็น caption ใต้โพสต์/วิดีโอ ห้ามเดาเอง สรุปจาก [S1]..[Sn] เท่านั้น ถ้าใน research มีตัวเลขเสริม/เงื่อนไขที่ทำให้เข้าใจดีขึ้น ให้ใส่ลงไป
+- text_position ให้ใช้ "center" ทุก segment
+
+กฎเด็ดขาดสำหรับ stat:
+- ห้ามแต่งตัวเลขเอง — ต้องใช้ตัวเลขที่ปรากฏใน research block ด้านล่างเท่านั้น
+- ถ้า research block ไม่มีตัวเลขที่เหมาะ ให้ตั้ง text เป็น "?" และ subtext อธิบายว่าหาข้อมูลไม่เจอ พร้อม sources = [] และ caption = null
+- ทุกตัวเลขต้องอ้างอิงได้ใน sources โดยใช้ url ตรงจาก [S1]..[Sn]
+- caption ห้ามใช้ตัวเลขที่ไม่ปรากฏใน research, ห้ามอ้าง "การศึกษาแสดงว่า..." ถ้า research ไม่มีระบุชัด`;
 		exampleSegment = `      "text": "90",
       "accent_text": "%",
       "subtext": "ของเทรดเดอร์มือใหม่ขาดทุนใน 6 เดือนแรก",
-      "options": ["ที่มา: SEC Thailand"],
+      "options": ["ที่มา: SEC Thailand, 2024"],
+      "sources": [{ "ref": "S1", "url": "https://example.com/study", "title": "Retail Trader Performance Study", "snippet": "..." }],
+      "caption": "ข้อมูลจาก SEC Thailand ปี 2024 ติดตามนักเทรดรายย่อย 12,000 บัญชี พบว่า 90% มีผลขาดทุนสะสมภายใน 6 เดือนแรกของการเปิดบัญชี โดยปัจจัยหลักมาจากการ overtrade และไม่ตั้ง stop loss",
       "text_position": "center"`;
 	} else {
 		defaultTextPosition = 'top';
@@ -285,11 +327,28 @@ export async function generateVideoScript(
       "text_position": "top"`;
 	}
 
+	let researchBlock = '';
+	let availableSources: VideoSlideSource[] = [];
+	if (selectedTemplate === 'stat') {
+		const result = await researchStats(topic);
+		if (result && result.snippets.length > 0) {
+			researchBlock = `\n\n=== ข้อมูล research จริงจาก web (ใช้เป็นแหล่งของตัวเลข) ===\n${formatResearchForPrompt(result)}\n=== จบ research ===\n`;
+			availableSources = result.snippets.map((s) => ({
+				title: s.title,
+				url: s.url,
+				snippet: s.content.length > 400 ? `${s.content.slice(0, 400)}...` : s.content,
+				published_date: s.published_date
+			}));
+		} else {
+			researchBlock = `\n\n=== ข้อมูล research ===\nไม่พบข้อมูลจาก web — ให้ใช้ "?" เป็น text และ subtext = "ยังไม่มีข้อมูลยืนยัน" พร้อม sources = [] และ caption = null\n=== จบ research ===\n`;
+		}
+	}
+
 	const userPrompt = `สร้าง video script สำหรับ Reels/Shorts 9:16 เกี่ยวกับหัวข้อ: "${topic}"
 
-จำนวน clip: ${clampedCount}
-ความยาวต่อ clip: ${clampedDuration} วินาที
-${templateInstruction}
+${selectedTemplate === 'listicle' ? `จำนวนอันดับ: ${clampedCount}\nจำนวน video/segment: 1` : `จำนวน clip: ${clampedCount}`}
+${selectedTemplate === 'listicle' ? 'ความยาว video' : 'ความยาวต่อ clip'}: ${clampedDuration} วินาที
+${templateInstruction}${researchBlock}
 
 ส่งคืนเป็น JSON ตามรูปแบบนี้:
 {
@@ -307,14 +366,15 @@ ${exampleSegment},
 
 กฎสำคัญ:
 - search_query = English คำที่ describe visual เช่น "gold bar trading desk"
-- จำนวน segments ต้องเท่ากับ ${clampedCount}`;
+- จำนวน segments ต้องเท่ากับ ${expectedSegmentCount}
+${selectedTemplate === 'listicle' ? `- สำหรับ listicle: options ต้องมี ${clampedCount} ข้อ เพราะทุกอันดับต้องอยู่ใน video เดียว` : ''}`;
 
 	const raw = await chat(
 		[
 			{ role: 'system', content: systemPrompt },
 			{ role: 'user', content: userPrompt }
 		],
-		{ temperature: 0.8, max_tokens: 3000 }
+		{ temperature: selectedTemplate === 'stat' ? 0.4 : 0.8, max_tokens: 3000 }
 	);
 
 	let parsed: { title?: string; segments?: unknown[] };
@@ -325,10 +385,13 @@ ${exampleSegment},
 	}
 
 	const segments = Array.isArray(parsed.segments) ? parsed.segments : [];
+	const selectedSegments = segments.slice(0, expectedSegmentCount);
+
+	const sourcesByUrl = new Map(availableSources.map((s) => [s.url, s]));
 
 	return {
 		title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : topic,
-		segments: segments.slice(0, clampedCount).map((seg, i) => {
+		segments: selectedSegments.map((seg, i) => {
 			const s = seg as Record<string, unknown>;
 			const opts = Array.isArray(s.options)
 				? (s.options as unknown[]).filter((o): o is string => typeof o === 'string')
@@ -338,12 +401,32 @@ ${exampleSegment},
 					? opts
 					: selectedTemplate === 'stat'
 						? opts.slice(0, 1)
-						: [];
+						: selectedTemplate === 'listicle'
+							? normalizeListicleOptions(opts, clampedCount, topic)
+							: [];
+
+			const sources: VideoSlideSource[] =
+				selectedTemplate === 'stat'
+					? extractStatSources(s.sources, sourcesByUrl)
+					: [];
+
+			const caption: string | null =
+				selectedTemplate === 'stat' && sources.length > 0
+					? typeof s.caption === 'string' && s.caption.trim()
+						? s.caption.trim()
+						: null
+					: null;
+
 			return {
 				position: i + 1,
 				layout_type: expectedLayout,
 				text: typeof s.text === 'string' && s.text.trim() ? s.text.trim() : topic,
-				accent_text: typeof s.accent_text === 'string' && s.accent_text.trim() ? s.accent_text.trim() : null,
+				accent_text:
+					typeof s.accent_text === 'string' && s.accent_text.trim()
+						? s.accent_text.trim()
+						: selectedTemplate === 'listicle'
+							? `Top ${clampedCount}`
+							: null,
 				subtext: typeof s.subtext === 'string' && s.subtext.trim() ? s.subtext.trim() : null,
 				options: optionsForTemplate,
 				search_query:
@@ -354,8 +437,50 @@ ${exampleSegment},
 						: defaultTextPosition,
 				duration_seconds: clampDuration(
 					typeof s.duration_seconds === 'number' ? s.duration_seconds : clampedDuration
-				)
+				),
+				sources,
+				caption
 			};
 		})
 	};
+}
+
+function extractStatSources(
+	raw: unknown,
+	allowedByUrl: Map<string, VideoSlideSource>
+): VideoSlideSource[] {
+	if (!Array.isArray(raw)) return [];
+
+	const seen = new Set<string>();
+	const out: VideoSlideSource[] = [];
+
+	for (const item of raw) {
+		if (!item || typeof item !== 'object') continue;
+		const r = item as Record<string, unknown>;
+		const url = typeof r.url === 'string' ? r.url.trim() : '';
+		if (!url || seen.has(url)) continue;
+
+		const trusted = allowedByUrl.get(url);
+		if (trusted) {
+			out.push(trusted);
+			seen.add(url);
+			continue;
+		}
+
+		try {
+			new URL(url);
+		} catch {
+			continue;
+		}
+		const title = typeof r.title === 'string' && r.title.trim() ? r.title.trim() : url;
+		const snippet = typeof r.snippet === 'string' ? r.snippet.trim() : '';
+		const published =
+			typeof r.published_date === 'string' && r.published_date.trim()
+				? r.published_date.trim()
+				: null;
+		out.push({ title, url, snippet, published_date: published });
+		seen.add(url);
+	}
+
+	return out.slice(0, 5);
 }
